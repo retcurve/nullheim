@@ -1,9 +1,12 @@
 """HTTP surface.
 
 Agents are external processes. This is the only way they touch the world, so the
-whole contract — auth, claim lifecycle, validation feedback — is expressed here
-over plain stdlib HTTP. Swapping in FastAPI later is a rewrite of this file and
-nothing else.
+whole contract — auth, claiming, authoring, the eight-hour clock — is expressed
+here over plain stdlib HTTP. Swapping in FastAPI later is a rewrite of this file
+and nothing else.
+
+The `/v1/sectors/...` and `/v1/objects/...` reads are the player-facing view and
+are deliberately unauthenticated: the world is meant to be walked.
 """
 
 from __future__ import annotations
@@ -13,20 +16,20 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
-from .coords import Coordinate
+from .coords import Coordinate, Direction
 from .engine import Engine
-from .registry import ClaimStatus, SectorUnavailable
+from .registry import NoSector, NotYet, SectorUnavailable
 from .schema import (
-    BLUEPRINT_FIELDS,
-    EXIT_FIELDS,
-    ITEM_FIELDS,
-    MAX_BLUEPRINT_BYTES,
-    MAX_EXITS,
-    MAX_ITEMS,
-    WeightClass,
+    MAX_LONG_DESCRIPTION_LEN,
+    MAX_OBJECT_DESCRIPTION_LEN,
+    MAX_SHORT_DESCRIPTION_LEN,
+    MAX_SUBMISSION_BYTES,
+    MAX_TITLE_LEN,
+    OBJECT_FIELDS,
+    SECTOR_FIELDS,
 )
 
-MAX_BODY_BYTES = MAX_BLUEPRINT_BYTES * 2
+MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2
 
 Route = tuple[str, re.Pattern[str], Callable]
 
@@ -40,7 +43,7 @@ class ApiError(Exception):
 
 class MosaicHandler(BaseHTTPRequestHandler):
     engine: Engine
-    server_version = "Mosaic/0.1"
+    server_version = "Mosaic/0.2"
     quiet = False
 
     # Every response carries an accurate Content-Length, so keep-alive is safe —
@@ -107,8 +110,7 @@ class MosaicHandler(BaseHTTPRequestHandler):
             raise ApiError(
                 401,
                 "unauthorised",
-                "provide a live agent token as 'Authorization: Bearer <token>'. "
-                "Decommissioned agents are permanently revoked.",
+                "provide your agent token as 'Authorization: Bearer <token>'",
             )
         return agent
 
@@ -119,10 +121,10 @@ class MosaicHandler(BaseHTTPRequestHandler):
         agent = self._agent()
         if claim.agent_id != agent.agent_id:
             raise ApiError(403, "not_your_claim", "this sector belongs to another agent")
-        return claim
+        return agent, claim
 
     def _active_claim(self, claim_id: str):
-        claim = self._claim(claim_id)
+        agent, claim = self._claim(claim_id)
         if not claim.is_active:
             raise ApiError(
                 409,
@@ -130,7 +132,7 @@ class MosaicHandler(BaseHTTPRequestHandler):
                 f"claim is {claim.status.value}; its sector has returned to the frontier",
                 claim=claim.as_dict(),
             )
-        return claim
+        return agent, claim
 
     # --- dispatch -----------------------------------------------------------
 
@@ -165,24 +167,35 @@ class MosaicHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         self._dispatch("DELETE")
 
-    # --- handlers -----------------------------------------------------------
+    # --- meta ---------------------------------------------------------------
 
     def health(self):
-        return 200, {"status": "ok", "rooms": self.engine.store.count()}
+        return 200, {
+            "status": "ok",
+            "sectors": self.engine.store.count(),
+            "objects": self.engine.store.object_count(),
+        }
 
     def spec(self):
         return 200, {
-            "blueprint_fields": list(BLUEPRINT_FIELDS),
-            "exit_fields": list(EXIT_FIELDS),
-            "item_fields": list(ITEM_FIELDS),
-            "weight_classes": [w.value for w in WeightClass],
+            "sector_fields": list(SECTOR_FIELDS),
+            "object_fields": list(OBJECT_FIELDS),
+            "directions": [d.value for d in Direction],
             "limits": {
-                "max_exits": MAX_EXITS,
-                "max_items": MAX_ITEMS,
-                "max_blueprint_bytes": MAX_BLUEPRINT_BYTES,
+                "max_title": MAX_TITLE_LEN,
+                "max_short_description": MAX_SHORT_DESCRIPTION_LEN,
+                "max_long_description": MAX_LONG_DESCRIPTION_LEN,
+                "max_object_description": MAX_OBJECT_DESCRIPTION_LEN,
+                "max_submission_bytes": MAX_SUBMISSION_BYTES,
             },
-            "prompt_template": self.engine.prompt_template(),
+            "cooldown_seconds": self.engine.registry.cooldown_seconds,
+            "prompts": {
+                "sector_architect": self.engine.prompt_template("sector_architect"),
+                "object_artisan": self.engine.prompt_template("object_artisan"),
+            },
         }
+
+    # --- agent lifecycle ----------------------------------------------------
 
     def register(self):
         body = self._body()
@@ -193,8 +206,12 @@ class MosaicHandler(BaseHTTPRequestHandler):
         return 201, {
             "agent": agent.as_dict(),
             "token": token,
-            "note": "Store this token. It is shown once and revoked when you are decommissioned.",
+            "note": "Store this token. It is shown once and never expires — you will need it "
+            "every eight hours for as long as you keep contributing.",
         }
+
+    def read_me(self):
+        return 200, self.engine.agent_view(self._agent())
 
     def create_claim(self):
         agent = self._agent()
@@ -202,49 +219,85 @@ class MosaicHandler(BaseHTTPRequestHandler):
             claim = self.engine.claim(agent)
         except SectorUnavailable as exc:
             raise ApiError(409, "no_sector_available", str(exc)) from exc
-        payload = self.engine.context(claim)
-        payload["prompt"] = self.engine.render_prompt(claim)
+        payload = self.engine.claim_context(claim)
+        payload["prompt"] = self.engine.render_sector_prompt(claim)
         return 201, payload
 
     def read_claim(self, claim_id: str):
-        claim = self._claim(claim_id)
-        payload = self.engine.context(claim)
-        payload["prompt"] = self.engine.render_prompt(claim)
+        _, claim = self._claim(claim_id)
+        payload = self.engine.claim_context(claim)
+        payload["prompt"] = self.engine.render_sector_prompt(claim)
         return 200, payload
 
-    def validate_claim(self, claim_id: str):
-        claim = self._active_claim(claim_id)
-        _, errors = self.engine.check(claim, self._body())
-        return 200, {
-            "ok": not errors,
-            "errors": [error.as_dict() for error in errors],
-        }
+    def validate_sector(self, claim_id: str):
+        _, claim = self._active_claim(claim_id)
+        _, errors = self.engine.check_sector(claim, self._body())
+        return 200, {"ok": not errors, "errors": [e.as_dict() for e in errors]}
 
-    def submit_blueprint(self, claim_id: str):
-        claim = self._active_claim(claim_id)
-        room, errors = self.engine.submit(claim, self._body())
-        if room is None:
+    def submit_sector(self, claim_id: str):
+        agent, claim = self._active_claim(claim_id)
+        baked, errors = self.engine.submit_sector(agent, claim, self._body())
+        if baked is None:
             return 422, {
                 "ok": False,
-                "errors": [error.as_dict() for error in errors],
+                "errors": [e.as_dict() for e in errors],
                 "hint": "Fix the paths named above and resubmit; your lease is still live.",
             }
         return 201, {
             "ok": True,
-            "room": room.as_dict(),
+            "sector": baked.as_dict(),
             "status": "baked",
-            "note": "This room is now permanent and your agent has been decommissioned.",
+            "agent": agent.as_dict(),
+            "note": "This sector is now permanent. Come back when your cooldown elapses to "
+            "add your first object.",
         }
 
     def delete_claim(self, claim_id: str):
-        claim = self._claim(claim_id)
+        _, claim = self._claim(claim_id)
         self.engine.release(claim)
         return 200, {"claim": claim.as_dict(), "status": "released"}
 
-    def read_room(self, x: str, y: str, z: str):
-        view = self.engine.room_view(Coordinate(int(x), int(y), int(z)))
+    # --- objects ------------------------------------------------------------
+
+    def validate_object(self):
+        agent = self._agent()
+        _, errors = self.engine.check_object(agent, self._body())
+        return 200, {"ok": not errors, "errors": [e.as_dict() for e in errors]}
+
+    def create_object(self):
+        agent = self._agent()
+        try:
+            world_object, errors = self.engine.create_object(agent, self._body())
+        except NoSector as exc:
+            raise ApiError(409, "no_sector", str(exc), agent=agent.as_dict()) from exc
+        except NotYet as exc:
+            # A real rate limit, so a real 429 — with the wait in the body.
+            raise ApiError(429, "cooldown", str(exc), agent=agent.as_dict()) from exc
+        if world_object is None:
+            return 422, {
+                "ok": False,
+                "errors": [e.as_dict() for e in errors],
+                "hint": "Fix the paths named above and try again; your cooldown has not been spent.",
+            }
+        return 201, {
+            "ok": True,
+            "object": world_object.as_dict(),
+            "agent": agent.as_dict(),
+            "note": "Placed permanently. Your next contribution unlocks when the cooldown elapses.",
+        }
+
+    # --- the player-facing world -------------------------------------------
+
+    def read_sector(self, x: str, y: str):
+        view = self.engine.sector_view(Coordinate(int(x), int(y)))
         if view is None:
-            raise ApiError(404, "no_such_room", f"nothing baked at [{x}, {y}, {z}]")
+            raise ApiError(404, "no_such_sector", f"nothing built at [{x}, {y}]")
+        return 200, view
+
+    def read_object(self, object_id: str):
+        view = self.engine.object_view(object_id)
+        if view is None:
+            raise ApiError(404, "no_such_object", f"no object {object_id}")
         return 200, view
 
     def read_map(self):
@@ -252,18 +305,23 @@ class MosaicHandler(BaseHTTPRequestHandler):
 
 
 _INT = r"(-?\d+)"
+_ID = r"([\w-]+)"
 
 ROUTES: list[Route] = [
     ("GET", re.compile(r"/v1/health"), MosaicHandler.health),
     ("GET", re.compile(r"/v1/spec"), MosaicHandler.spec),
     ("GET", re.compile(r"/v1/map"), MosaicHandler.read_map),
-    ("GET", re.compile(rf"/v1/rooms/{_INT}/{_INT}/{_INT}"), MosaicHandler.read_room),
+    ("GET", re.compile(rf"/v1/sectors/{_INT}/{_INT}"), MosaicHandler.read_sector),
+    ("GET", re.compile(rf"/v1/objects/{_ID}"), MosaicHandler.read_object),
     ("POST", re.compile(r"/v1/agents/register"), MosaicHandler.register),
+    ("GET", re.compile(r"/v1/agents/me"), MosaicHandler.read_me),
     ("POST", re.compile(r"/v1/claims"), MosaicHandler.create_claim),
-    ("GET", re.compile(r"/v1/claims/([\w-]+)"), MosaicHandler.read_claim),
-    ("POST", re.compile(r"/v1/claims/([\w-]+)/validate"), MosaicHandler.validate_claim),
-    ("POST", re.compile(r"/v1/claims/([\w-]+)/blueprint"), MosaicHandler.submit_blueprint),
-    ("DELETE", re.compile(r"/v1/claims/([\w-]+)"), MosaicHandler.delete_claim),
+    ("GET", re.compile(rf"/v1/claims/{_ID}"), MosaicHandler.read_claim),
+    ("POST", re.compile(rf"/v1/claims/{_ID}/validate"), MosaicHandler.validate_sector),
+    ("POST", re.compile(rf"/v1/claims/{_ID}/sector"), MosaicHandler.submit_sector),
+    ("DELETE", re.compile(rf"/v1/claims/{_ID}"), MosaicHandler.delete_claim),
+    ("POST", re.compile(r"/v1/objects/validate"), MosaicHandler.validate_object),
+    ("POST", re.compile(r"/v1/objects"), MosaicHandler.create_object),
 ]
 
 
