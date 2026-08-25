@@ -98,6 +98,11 @@ class InMemoryWorldStore:
     def __init__(self, path: str | None = None) -> None:
         self._sectors: dict[Coordinate, BakedSector] = {}
         self._objects: dict[str, WorldObject] = {}
+        # Two indexes maintained on write rather than recomputed on read. Both
+        # answer questions the store already knows the answer to at bake time,
+        # and both sit on paths hit constantly — claiming and room views.
+        self._frontier: set[Coordinate] = set()
+        self._objects_by_coordinate: dict[Coordinate, list[WorldObject]] = {}
         self._lock = threading.RLock()
         self._path = path
         if path:
@@ -115,6 +120,7 @@ class InMemoryWorldStore:
             if baked.coordinate in self._sectors:
                 raise KeyError(f"{baked.coordinate} is already baked and cannot be rewritten")
             self._sectors[baked.coordinate] = baked
+            self._index_frontier_locked(baked.coordinate)
             self._persist_locked()
 
     def sectors(self) -> list[BakedSector]:
@@ -128,6 +134,31 @@ class InMemoryWorldStore:
     def is_baked(self, coordinate: Coordinate) -> bool:
         with self._lock:
             return coordinate in self._sectors
+
+    def _index_frontier_locked(self, coordinate: Coordinate) -> None:
+        """Fold one newly baked sector into the frontier.
+
+        Exactly five coordinates can change: the one just filled, and its four
+        neighbours, any of which may now touch the world for the first time.
+        """
+        self._frontier.discard(coordinate)
+        for _, neighbour in coordinate.neighbours():
+            if neighbour not in self._sectors and neighbour.in_bounds:
+                self._frontier.add(neighbour)
+
+    def _rebuild_indexes_locked(self) -> None:
+        """Recompute both indexes from scratch. Startup only."""
+        self._frontier = set()
+        for coordinate in self._sectors:
+            self._index_frontier_locked(coordinate)
+
+        self._objects_by_coordinate = {}
+        # Snapshot dict order is not guaranteed to match creation order, so sort
+        # rather than trusting it — objects_in() promises oldest first.
+        for world_object in sorted(self._objects.values(), key=lambda o: o.created_at):
+            self._objects_by_coordinate.setdefault(world_object.coordinate, []).append(
+                world_object
+            )
 
     # --- derived exits ------------------------------------------------------
 
@@ -163,14 +194,13 @@ class InMemoryWorldStore:
         sector with three neighbours already is worth exactly as much as a slot
         beside a lonely one. The world is allowed to grow a corridor if that is
         where the dice fall.
+
+        Maintained incrementally in ``bake``. It used to be recomputed here by
+        scanning every sector, which cost ten seconds a claim at a million
+        sectors; the frontier itself only grows as about 7.6·√N.
         """
-        slots: set[Coordinate] = set()
         with self._lock:
-            for coordinate in self._sectors:
-                for _, neighbour in coordinate.neighbours():
-                    if neighbour not in self._sectors and neighbour.in_bounds:
-                        slots.add(neighbour)
-        return slots
+            return set(self._frontier)
 
     def edges(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -190,6 +220,11 @@ class InMemoryWorldStore:
             if world_object.object_id in self._objects:
                 raise KeyError(f"{world_object.object_id} already exists")
             self._objects[world_object.object_id] = world_object
+            # Objects are created in timestamp order, so appending keeps the
+            # oldest-first ordering objects_in() promises.
+            self._objects_by_coordinate.setdefault(world_object.coordinate, []).append(
+                world_object
+            )
             self._persist_locked()
 
     def get_object(self, object_id: str) -> WorldObject | None:
@@ -197,11 +232,13 @@ class InMemoryWorldStore:
             return self._objects.get(object_id)
 
     def objects_in(self, coordinate: Coordinate) -> list[WorldObject]:
+        """Everything standing in one sector, oldest first.
+
+        Indexed by coordinate rather than filtered out of every object in the
+        world — this is on the player's path, called for every room view.
+        """
         with self._lock:
-            return sorted(
-                (o for o in self._objects.values() if o.coordinate == coordinate),
-                key=lambda o: o.created_at,
-            )
+            return list(self._objects_by_coordinate.get(coordinate, ()))
 
     def children_of(self, parent_id: str | None, coordinate: Coordinate) -> list[WorldObject]:
         return [o for o in self.objects_in(coordinate) if o.parent_id == parent_id]
@@ -243,3 +280,4 @@ class InMemoryWorldStore:
                 key: WorldObject.from_dict(value)
                 for key, value in payload.get("objects", {}).items()
             }
+            self._rebuild_indexes_locked()

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import secrets
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -197,7 +198,16 @@ class Engine:
         }
 
     def object_tree(self, coordinate: Coordinate) -> list[dict[str, Any]]:
-        """The full object tree in one sector — what its own author may see."""
+        """The full object tree in one sector — what its own author may see.
+
+        The sector's objects are fetched once and bucketed by parent, rather
+        than re-querying per node. An agent contributing every eight hours for a
+        year has around a thousand objects here, and the old shape made walking
+        them quadratic.
+        """
+        by_parent: dict[str | None, list] = defaultdict(list)
+        for world_object in self.store.objects_in(coordinate):
+            by_parent[world_object.parent_id].append(world_object)
 
         def branch(parent_id: str | None) -> list[dict[str, Any]]:
             return [
@@ -207,7 +217,7 @@ class Engine:
                     "description": o.description,
                     "contains": branch(o.object_id),
                 }
-                for o in self.store.children_of(parent_id, coordinate)
+                for o in by_parent[parent_id]
             ]
 
         return branch(None)
