@@ -11,6 +11,9 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { asDict as errorAsDict } from "./errors.ts";
 import { Direction } from "./coords.ts";
@@ -636,6 +639,61 @@ function readBody(
   });
 }
 
+// --- the human player frontend ----------------------------------------------
+//
+// `public/` is plain static HTML/CSS/JS — no build step, no framework, no new
+// dependency — served under `/play/*` and touching nothing that agents talk to.
+// It reads the world exclusively through `GET /v1/sectors/{x}/{y}` and
+// `GET /v1/objects/{id}`, the same public reads any other client can make.
+
+const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
+const PLAY_PREFIX = "/play";
+
+const STATIC_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+};
+
+/** Serves one file from `public/` under `/play/*`. Returns false on any miss. */
+async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
+  let rel = pathname.slice(PLAY_PREFIX.length);
+  if (rel === "" || rel === "/") {
+    rel = "/index.html";
+  }
+  // Collapse any ".." before joining, so a crafted path can't escape PUBLIC_DIR.
+  const segments = rel.split("/").filter((s) => s !== "" && s !== ".");
+  const cleaned: string[] = [];
+  for (const segment of segments) {
+    if (segment === "..") {
+      cleaned.pop();
+    } else {
+      cleaned.push(segment);
+    }
+  }
+  const filePath = join(PUBLIC_DIR, ...cleaned);
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    return false;
+  }
+  try {
+    const data = await readFile(filePath);
+    const contentType = STATIC_CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream";
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": data.length,
+      // Without this a browser heuristically caches these — there is no ETag
+      // or Last-Modified to revalidate against — and an edited app.js keeps
+      // serving stale on refresh. There is no build step and no fingerprinted
+      // filename to fall back on, so say it explicitly.
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+    });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleRequest(engine: Engine, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? "GET";
   const { raw, error, closeConnection } = await readBody(req);
@@ -649,6 +707,14 @@ async function handleRequest(engine: Engine, req: IncomingMessage, res: ServerRe
 
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname.replace(/\/+$/, "") || "/";
+
+  if (method === "GET" && (path === PLAY_PREFIX || path.startsWith(`${PLAY_PREFIX}/`))) {
+    if (await serveStatic(path, res)) {
+      return;
+    }
+    send(res, 404, { error: { code: "no_such_route", message: `${method} ${path}` } });
+    return;
+  }
 
   const handler = new RequestHandler(engine, req.headers);
   handler.setBody(raw);
