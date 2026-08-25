@@ -4,7 +4,7 @@ import random
 import time
 import unittest
 
-from helpers import build, codes, make_engine, obj, sector, settle
+from helpers import build, codes, make_engine, obj, root, sector, settle
 
 from mosaic.coords import ORIGIN, Coordinate
 from mosaic.registry import (
@@ -225,19 +225,19 @@ class ContributionClockTests(unittest.TestCase):
         engine = make_engine()
         agent, _ = engine.register("drifter")
         with self.assertRaises(SectorRequired):
-            engine.create_object(agent, obj())
+            engine.create_object(agent, obj("sec_whatever"))
 
     def test_a_fresh_sector_starts_a_cooldown(self):
         engine = make_engine(cooldown_seconds=3600)
         agent, _, _ = settle(engine)
         with self.assertRaises(NotYet):
-            engine.create_object(agent, obj())
+            engine.create_object(agent, obj("sec_whatever"))
 
     def test_an_elapsed_cooldown_allows_exactly_one_object(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
 
-        first, errors = engine.create_object(agent, obj(title="One"))
+        first, errors = engine.create_object(agent, obj(root(engine, agent), title="One"))
         self.assertEqual(errors, [])
         self.assertEqual(agent.objects_created, 1)
         self.assertIsNotNone(first)
@@ -245,18 +245,18 @@ class ContributionClockTests(unittest.TestCase):
     def test_each_object_restarts_the_clock(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        engine.create_object(agent, obj())
+        engine.create_object(agent, obj(root(engine, agent)))
 
         engine.registry._cooldown_seconds = 3600  # the next wait is a long one
         engine.registry.note_contribution(agent)
         with self.assertRaises(NotYet):
-            engine.create_object(agent, obj())
+            engine.create_object(agent, obj("sec_whatever"))
 
     def test_a_rejected_object_does_not_spend_the_cooldown(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
 
-        rejected, errors = engine.create_object(agent, obj(parent_id="obj_nope"))
+        rejected, errors = engine.create_object(agent, obj("obj_nope"))
         self.assertIsNone(rejected)
         self.assertIn("no_such_parent", codes(errors))
         self.assertEqual(agent.objects_created, 0)
@@ -266,9 +266,9 @@ class ContributionClockTests(unittest.TestCase):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
 
-        can, _ = engine.create_object(agent, obj(title="Watering Can"))
-        key, _ = engine.create_object(agent, obj(title="Key", parent_id=can.object_id))
-        engine.create_object(agent, obj(title="Label"))
+        can, _ = engine.create_object(agent, obj(root(engine, agent), title="Watering Can"))
+        key, _ = engine.create_object(agent, obj(can.object_id, title="Key"))
+        engine.create_object(agent, obj(root(engine, agent), title="Label"))
 
         tree = engine.object_tree(agent.coordinate)
         self.assertEqual([node["title"] for node in tree], ["Watering Can", "Label"])
@@ -301,7 +301,7 @@ class ReadModelTests(unittest.TestCase):
     def test_the_players_view_shows_long_description_and_object_titles(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        engine.create_object(agent, obj(title="A Thing", description="Longer detail."))
+        engine.create_object(agent, obj(root(engine, agent), title="A Thing", description="Longer detail."))
 
         view = engine.sector_view(agent.coordinate)
         self.assertEqual(view["description"], "It is a place, and it is here.")
@@ -312,8 +312,8 @@ class ReadModelTests(unittest.TestCase):
     def test_looking_at_an_object_shows_its_description_and_contents(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        can, _ = engine.create_object(agent, obj(title="Can", description="Dented."))
-        engine.create_object(agent, obj(title="Key", parent_id=can.object_id))
+        can, _ = engine.create_object(agent, obj(root(engine, agent), title="Can", description="Dented."))
+        engine.create_object(agent, obj(can.object_id, title="Key"))
 
         view = engine.object_view(can.object_id)
         self.assertEqual(view["description"], "Dented.")
@@ -322,8 +322,8 @@ class ReadModelTests(unittest.TestCase):
     def test_nested_objects_do_not_appear_at_sector_level(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        can, _ = engine.create_object(agent, obj(title="Can"))
-        engine.create_object(agent, obj(title="Key", parent_id=can.object_id))
+        can, _ = engine.create_object(agent, obj(root(engine, agent), title="Can"))
+        engine.create_object(agent, obj(can.object_id, title="Key"))
 
         view = engine.sector_view(agent.coordinate)
         self.assertEqual([t["title"] for t in view["things_you_can_see"]], ["Can"])
@@ -341,9 +341,9 @@ class SnapshotTests(unittest.TestCase):
             first = Engine(state_path=path, cooldown_seconds=0)
             agent, _ = first.register("architect")
             claim = first.claim(agent)
-            first.submit_sector(agent, claim, sector(claim.coordinate, title="Kept"))
-            can, _ = first.create_object(agent, obj(title="Can"))
-            first.create_object(agent, obj(title="Key", parent_id=can.object_id))
+            baked, _ = first.submit_sector(agent, claim, sector(claim.coordinate, title="Kept"))
+            can, _ = first.create_object(agent, obj(baked.sector_id, title="Can"))
+            first.create_object(agent, obj(can.object_id, title="Key"))
 
             reloaded = Engine(state_path=path)
             self.assertEqual(reloaded.store.count(), first.store.count())

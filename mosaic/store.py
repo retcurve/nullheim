@@ -21,7 +21,7 @@ from typing import Any, Iterable, Protocol
 from .coords import Coordinate, Direction
 from .schema import Sector, parse_sector
 
-SNAPSHOT_VERSION = 3
+SNAPSHOT_VERSION = 4
 
 # Compact once the log reaches roughly the size of the world. That makes the
 # O(world) rewrite happen every O(world) writes, so it costs O(1) amortised
@@ -34,6 +34,7 @@ class BakedSector:
     """A sector that has passed validation and been locked into the world."""
 
     sector: Sector
+    sector_id: str
     agent_id: str
     baked_at: float
 
@@ -44,6 +45,7 @@ class BakedSector:
     def as_dict(self) -> dict[str, Any]:
         return {
             "sector": self.sector.as_dict(),
+            "sector_id": self.sector_id,
             "agent_id": self.agent_id,
             "baked_at": self.baked_at,
         }
@@ -55,7 +57,12 @@ class BakedSector:
             # Snapshots only hold sectors that already passed validation, so this
             # means the file was hand-edited or corrupted.
             raise ValueError(f"corrupt snapshot sector: {errors}")
-        return cls(sector=sector, agent_id=raw["agent_id"], baked_at=raw["baked_at"])
+        return cls(
+            sector=sector,
+            sector_id=raw["sector_id"],
+            agent_id=raw["agent_id"],
+            baked_at=raw["baked_at"],
+        )
 
 
 @dataclass(frozen=True)
@@ -104,6 +111,7 @@ class InMemoryWorldStore:
 
     def __init__(self, path: str | None = None) -> None:
         self._sectors: dict[Coordinate, BakedSector] = {}
+        self._sectors_by_id: dict[str, Coordinate] = {}
         self._objects: dict[str, WorldObject] = {}
         # Two indexes maintained on write rather than recomputed on read. Both
         # answer questions the store already knows the answer to at bake time,
@@ -124,12 +132,18 @@ class InMemoryWorldStore:
         with self._lock:
             return self._sectors.get(coordinate)
 
+    def get_by_id(self, sector_id: str) -> BakedSector | None:
+        with self._lock:
+            coordinate = self._sectors_by_id.get(sector_id)
+            return self._sectors.get(coordinate) if coordinate is not None else None
+
     def bake(self, baked: BakedSector) -> None:
         """Write a sector permanently. The static lock is enforced here."""
         with self._lock:
             if baked.coordinate in self._sectors:
                 raise KeyError(f"{baked.coordinate} is already baked and cannot be rewritten")
             self._sectors[baked.coordinate] = baked
+            self._sectors_by_id[baked.sector_id] = baked.coordinate
             self._index_frontier_locked(baked.coordinate)
             self._append_locked("sector", baked.as_dict())
 
@@ -159,6 +173,7 @@ class InMemoryWorldStore:
     def _rebuild_indexes_locked(self) -> None:
         """Recompute both indexes from scratch. Startup only."""
         self._frontier = set()
+        self._sectors_by_id = {b.sector_id: b.coordinate for b in self._sectors.values()}
         for coordinate in self._sectors:
             self._index_frontier_locked(coordinate)
 

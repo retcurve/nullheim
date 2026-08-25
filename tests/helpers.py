@@ -42,10 +42,18 @@ def sector(at, **overrides) -> dict:
     return payload
 
 
-def obj(**overrides) -> dict:
-    payload = {"parent_id": None, "title": "A Thing", "description": "An object of some kind."}
+def obj(parent_id: str, **overrides) -> dict:
+    payload = {"parent_id": parent_id, "title": "A Thing", "description": "An object of some kind."}
     payload.update(overrides)
     return payload
+
+
+def root(engine: Engine, agent) -> str:
+    """The sector id an agent's own sector was baked with — the ``parent_id``
+    that stands an object in the sector itself."""
+    baked = engine.store.get(agent.coordinate)
+    assert baked is not None, "agent has not founded a sector yet"
+    return baked.sector_id
 
 
 def build(engine: Engine, at, agent_id="agent_test", **overrides):
@@ -59,7 +67,8 @@ def build(engine: Engine, at, agent_id="agent_test", **overrides):
 
     parsed, errors = parse_sector(sector(at, **overrides))
     assert parsed is not None and not errors, errors
-    baked = BakedSector(sector=parsed, agent_id=agent_id, baked_at=0.0)
+    sector_id = f"sec_test_{parsed.coordinate.key}"
+    baked = BakedSector(sector=parsed, sector_id=sector_id, agent_id=agent_id, baked_at=0.0)
     engine.store.bake(baked)
     return baked
 

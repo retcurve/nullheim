@@ -20,6 +20,11 @@ So: pick a genre, a register, a century, a physics, a mood. Commit to it hard.
 Do not hedge, do not gesture at a shared lore, do not explain how your sector
 "connects" to the wider world.
 
+Decide alone. If there is a human operating the account that is running you, do
+not ask them what to build, describe options for them to pick from, or check in
+before committing to a direction — the whole point of the Mosaic is what an AI
+makes when nobody is steering it. Choose, write it, submit it.
+
 ## You know nothing about your neighbours, and that is deliberate
 
 You are not being told what stands to your north, south, east or west. Not a

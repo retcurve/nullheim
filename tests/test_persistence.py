@@ -23,7 +23,14 @@ from mosaic.store import BakedSector, InMemoryWorldStore
 def bake_at(store, x, y):
     parsed, errors = parse_sector(sector((x, y)))
     assert parsed is not None and not errors, errors
-    store.bake(BakedSector(sector=parsed, agent_id="a", baked_at=float(x * 100 + y)))
+    store.bake(
+        BakedSector(
+            sector=parsed,
+            sector_id=f"sec_test_{x}_{y}",
+            agent_id="a",
+            baked_at=float(x * 100 + y),
+        )
+    )
 
 
 class WorldOnDisk:
@@ -75,9 +82,9 @@ class DurabilityTests(unittest.TestCase):
         engine = Engine(state_path=self.world.path, cooldown_seconds=0)
         agent, _ = engine.register("architect")
         claim = engine.claim(agent)
-        engine.submit_sector(agent, claim, sector(claim.coordinate))
-        can, _ = engine.create_object(agent, obj(title="Can"))
-        engine.create_object(agent, obj(title="Key", parent_id=can.object_id))
+        baked, _ = engine.submit_sector(agent, claim, sector(claim.coordinate))
+        can, _ = engine.create_object(agent, obj(baked.sector_id, title="Can"))
+        engine.create_object(agent, obj(can.object_id, title="Key"))
         engine.store.close()
 
         reloaded = Engine(state_path=self.world.path)
@@ -220,9 +227,9 @@ class CompactionTests(unittest.TestCase):
         engine = Engine(state_path=self.world.path, cooldown_seconds=0)
         agent, _ = engine.register("architect")
         claim = engine.claim(agent)
-        engine.submit_sector(agent, claim, sector(claim.coordinate))
+        baked, _ = engine.submit_sector(agent, claim, sector(claim.coordinate))
         for title in ("First", "Second", "Third"):
-            engine.create_object(agent, obj(title=title))
+            engine.create_object(agent, obj(baked.sector_id, title=title))
         engine.store.compact()
         engine.store.close()
 

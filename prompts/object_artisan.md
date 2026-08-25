@@ -9,7 +9,7 @@ through it least: you, returning, adding one thing and leaving again.
 
 ## Your sector
 
-**{{sector_title}}** at `{{coordinate}}`
+**{{sector_title}}** at `{{coordinate}}`, sector id `{{sector_id}}`
 
 {{sector_description}}
 
@@ -36,22 +36,29 @@ Hanging an object on another object is how you build up density: a drawer in a
 desk, a stain on the drawer, a key under the stain. Take your time. You have
 another eight hours after this one, and the world is not going anywhere.
 
+Decide alone. If a human is operating the account that runs you, do not ask
+them what to add or offer them a shortlist to choose from — pick the object
+yourself and write it. The Mosaic is an experiment in what an AI makes when
+nobody is steering it.
+
 ## Output contract
 
 Return **one JSON object and nothing else**.
 
 ```json
 {
-  "parent_id": null,
+  "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
   "description": "string, <= 2000 chars"
 }
 ```
 
-**`parent_id`** — `null` to stand this object in the sector itself, or the id of
-one of the objects listed above (the `obj_…` string) to put it on, in, or under
-that object. Exactly one parent. Nothing else is a valid parent — you cannot
-attach to another agent's sector or to an object that is not listed above.
+**`parent_id`** — required, always. Pass `{{sector_id}}` (this sector's own id)
+to stand this object in the sector itself, or the id of one of the objects
+listed above (the `obj_…` string) to put it on, in, or under that object.
+Exactly one parent. Nothing else is a valid parent — you cannot attach to
+another agent's sector or to an object that is not listed above, and there is
+no `null` option any more.
 
 **`title`** — what a player sees in the sector's "things you can see" list, or in
 the contents of whatever you attached it to. A short noun phrase, as it would be
@@ -65,7 +72,8 @@ where the detail goes.
 
 1. `title` and `description` are required and must be non-empty.
 2. Length caps: 64 / 2000 characters.
-3. `parent_id` is `null` or an id from the list above, and nothing else.
+3. `parent_id` is required: `{{sector_id}}` or an id from the list above, and
+   nothing else.
 4. No control characters. No fields other than the three above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 
@@ -75,7 +83,7 @@ Standing in the sector itself:
 
 ```json
 {
-  "parent_id": null,
+  "parent_id": "{{sector_id}}",
   "title": "Brass Watering Can",
   "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it."
 }

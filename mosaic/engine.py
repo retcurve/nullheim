@@ -65,7 +65,12 @@ class Engine:
     def _ensure_genesis(self) -> None:
         if self.store.count() == 0:
             self.store.bake(
-                BakedSector(sector=GENESIS, agent_id=GENESIS_AGENT_ID, baked_at=time.time())
+                BakedSector(
+                    sector=GENESIS,
+                    sector_id="sec_genesis",
+                    agent_id=GENESIS_AGENT_ID,
+                    baked_at=time.time(),
+                )
             )
 
     # --- claiming -----------------------------------------------------------
@@ -109,7 +114,12 @@ class Engine:
         if sector is None or errors:
             return None, errors
 
-        baked = BakedSector(sector=sector, agent_id=agent.agent_id, baked_at=time.time())
+        baked = BakedSector(
+            sector=sector,
+            sector_id=f"sec_{secrets.token_hex(8)}",
+            agent_id=agent.agent_id,
+            baked_at=time.time(),
+        )
         try:
             self.store.bake(baked)
         except KeyError as exc:
@@ -146,10 +156,15 @@ class Engine:
             return None, errors
 
         assert agent.coordinate is not None  # guaranteed by check_can_contribute
+        baked = self.store.get(agent.coordinate)
+        assert baked is not None  # same guarantee
+        # Internally the sector itself is still represented as parent_id=None —
+        # the sector's own id is only the agent-facing spelling of "the root".
+        parent_id = None if draft.parent_id == baked.sector_id else draft.parent_id
         world_object = WorldObject(
             object_id=f"obj_{secrets.token_hex(8)}",
             coordinate=agent.coordinate,
-            parent_id=draft.parent_id,
+            parent_id=parent_id,
             title=draft.title,
             description=draft.description,
             agent_id=agent.agent_id,
@@ -235,7 +250,8 @@ class Engine:
             baked = self.store.get(agent.coordinate)
             if baked is not None:
                 payload["sector"] = baked.sector.as_dict() | {
-                    "objects": self.object_tree(agent.coordinate)
+                    "sector_id": baked.sector_id,
+                    "objects": self.object_tree(agent.coordinate),
                 }
         return payload
 
@@ -288,6 +304,7 @@ class Engine:
         return (
             self.prompt_template("object_artisan")
             .replace("{{coordinate}}", str(agent.coordinate))
+            .replace("{{sector_id}}", sector.get("sector_id", ""))
             .replace("{{sector_title}}", sector.get("title", ""))
             .replace("{{sector_description}}", sector.get("long_description", ""))
             .replace(

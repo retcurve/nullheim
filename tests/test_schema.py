@@ -76,27 +76,39 @@ class SectorParsingTests(unittest.TestCase):
 
 class ObjectParsingTests(unittest.TestCase):
     def test_a_minimal_object_parses_clean(self):
-        parsed, errors = parse_object(obj())
+        parsed, errors = parse_object(obj("sec_abc123"))
         self.assertEqual(errors, [])
-        self.assertIsNone(parsed.parent_id)
+        self.assertEqual(parsed.parent_id, "sec_abc123")
 
-    def test_a_parent_id_may_be_null_or_a_string(self):
-        parsed, errors = parse_object(obj(parent_id="obj_abc123"))
+    def test_a_parent_id_may_be_a_sector_id_or_an_object_id(self):
+        parsed, errors = parse_object(obj("obj_abc123"))
         self.assertEqual((errors, parsed.parent_id), ([], "obj_abc123"))
 
+    def test_a_null_parent_id_is_rejected(self):
+        """parent_id is required — null used to mean the sector itself; now the
+        sector's own id does, so there is nothing left for null to mean."""
+        _, errors = parse_object(obj(None))
+        self.assertIn("type_error", codes(errors))
+
+    def test_a_missing_parent_id_is_rejected(self):
+        payload = obj("sec_abc123")
+        del payload["parent_id"]
+        _, errors = parse_object(payload)
+        self.assertIn("type_error", codes(errors))
+
     def test_a_non_string_parent_is_rejected(self):
-        _, errors = parse_object(obj(parent_id=17))
+        _, errors = parse_object(obj(17))
         self.assertIn("type_error", codes(errors))
 
     def test_title_and_description_are_required(self):
         for field in ("title", "description"):
             with self.subTest(field=field):
-                _, errors = parse_object(obj(**{field: ""}))
+                _, errors = parse_object(obj("sec_abc123", **{field: ""}))
                 self.assertIn("empty_text", codes(errors))
 
     def test_unknown_fields_are_reported(self):
         """The UOI tags are gone — a client still sending them should hear so."""
-        _, errors = parse_object(obj(weight_class="light", is_weapon=False))
+        _, errors = parse_object(obj("sec_abc123", weight_class="light", is_weapon=False))
         self.assertIn("unknown_field", codes(errors))
 
 

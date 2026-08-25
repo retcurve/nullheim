@@ -9,7 +9,7 @@ import json
 import unittest
 from pathlib import Path
 
-from helpers import make_engine, obj, sector, settle
+from helpers import make_engine, obj, root, sector, settle
 
 from mosaic.coords import Direction
 from mosaic.schema import (
@@ -119,7 +119,7 @@ class PlaceholderTests(unittest.TestCase):
     def test_the_object_prompt_is_fully_filled_and_lists_what_is_there(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        placed, _ = engine.create_object(agent, obj(title="Brass Can"))
+        placed, _ = engine.create_object(agent, obj(root(engine, agent), title="Brass Can"))
 
         rendered = engine.render_object_prompt(agent)
         self.assertNotIn("{{", rendered)

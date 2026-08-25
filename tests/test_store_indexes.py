@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import build, make_engine, obj, sector, settle
+from helpers import build, make_engine, obj, root, sector, settle
 
 from mosaic.coords import MAX_XY, ORIGIN, Coordinate
 from mosaic.engine import Engine
@@ -41,7 +41,9 @@ def reference_objects_in(store, coordinate) -> list[WorldObject]:
 def bake_at(store, x, y, agent_id="a"):
     parsed, errors = parse_sector(sector((x, y)))
     assert parsed is not None and not errors, errors
-    store.bake(BakedSector(sector=parsed, agent_id=agent_id, baked_at=0.0))
+    store.bake(
+        BakedSector(sector=parsed, sector_id=f"sec_test_{x}_{y}", agent_id=agent_id, baked_at=0.0)
+    )
 
 
 class FrontierIndexTests(unittest.TestCase):
@@ -122,7 +124,7 @@ class ObjectIndexTests(unittest.TestCase):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
         for title in ("First", "Second", "Third"):
-            engine.create_object(agent, obj(title=title))
+            engine.create_object(agent, obj(root(engine, agent), title=title))
 
         titles = [o.title for o in engine.store.objects_in(agent.coordinate)]
         self.assertEqual(titles, ["First", "Second", "Third"])
@@ -132,8 +134,8 @@ class ObjectIndexTests(unittest.TestCase):
         one, _, _ = settle(engine, "one")
         two, _, _ = settle(engine, "two")
         for index in range(4):
-            engine.create_object(one, obj(title=f"one-{index}"))
-            engine.create_object(two, obj(title=f"two-{index}"))
+            engine.create_object(one, obj(root(engine, one), title=f"one-{index}"))
+            engine.create_object(two, obj(root(engine, two), title=f"two-{index}"))
 
         for agent in (one, two):
             with self.subTest(agent=agent.label):
@@ -144,7 +146,7 @@ class ObjectIndexTests(unittest.TestCase):
     def test_callers_cannot_mutate_the_index_through_objects_in(self):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
-        engine.create_object(agent, obj())
+        engine.create_object(agent, obj(root(engine, agent)))
         engine.store.objects_in(agent.coordinate).clear()
         self.assertEqual(len(engine.store.objects_in(agent.coordinate)), 1)
 
@@ -160,9 +162,9 @@ class ObjectIndexTests(unittest.TestCase):
             first = Engine(state_path=path, cooldown_seconds=0)
             agent, _ = first.register("architect")
             claim = first.claim(agent)
-            first.submit_sector(agent, claim, sector(claim.coordinate))
+            baked, _ = first.submit_sector(agent, claim, sector(claim.coordinate))
             for title in ("First", "Second", "Third"):
-                first.create_object(agent, obj(title=title))
+                first.create_object(agent, obj(baked.sector_id, title=title))
             # Writes land in the log; force them into the snapshot so there is
             # a snapshot whose stored order can be scrambled.
             first.store.compact()
@@ -201,11 +203,11 @@ class ObjectTreeTests(unittest.TestCase):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
 
-        bench, _ = engine.create_object(agent, obj(title="Bench"))
-        can, _ = engine.create_object(agent, obj(title="Can", parent_id=bench.object_id))
-        engine.create_object(agent, obj(title="Key", parent_id=can.object_id))
-        engine.create_object(agent, obj(title="Rag", parent_id=bench.object_id))
-        engine.create_object(agent, obj(title="Crate"))
+        bench, _ = engine.create_object(agent, obj(root(engine, agent), title="Bench"))
+        can, _ = engine.create_object(agent, obj(bench.object_id, title="Can"))
+        engine.create_object(agent, obj(can.object_id, title="Key"))
+        engine.create_object(agent, obj(bench.object_id, title="Rag"))
+        engine.create_object(agent, obj(root(engine, agent), title="Crate"))
 
         tree = engine.object_tree(agent.coordinate)
         self.assertEqual(tree, self.reference_tree(engine, agent.coordinate))
@@ -217,10 +219,10 @@ class ObjectTreeTests(unittest.TestCase):
         engine = make_engine(cooldown_seconds=0)
         agent, _, _ = settle(engine)
 
-        parent_id = None
+        parent_id = root(engine, agent)
         for depth in range(12):
             placed, _ = engine.create_object(
-                agent, obj(title=f"level-{depth}", parent_id=parent_id)
+                agent, obj(parent_id, title=f"level-{depth}")
             )
             parent_id = placed.object_id
 

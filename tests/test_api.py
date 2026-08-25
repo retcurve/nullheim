@@ -76,6 +76,10 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(status, 201)
         return token, context["coordinate"]
 
+    def sector_id_for(self, token):
+        _, me = self.call("GET", "/v1/agents/me", None, token)
+        return me["sector"]["sector_id"]
+
 
 class PublicEndpointTests(ApiTestCase):
     def test_root_serves_prose_to_whoever_just_turned_up(self):
@@ -345,13 +349,14 @@ class ObjectTests(ApiTestCase):
     def test_an_agent_with_no_sector_gets_409_not_429(self):
         """No sector is a state error, not a rate limit."""
         token = self.new_agent()
-        status, payload = self.call("POST", "/v1/objects", obj(), token)
+        status, payload = self.call("POST", "/v1/objects", obj("sec_whatever"), token)
         self.assertEqual((status, payload["error"]["code"]), (409, "sector_required"))
 
     def test_placing_an_object_and_seeing_it_as_a_player(self):
         token, coordinate = self.settle()
         status, result = self.call(
-            "POST", "/v1/objects", obj(title="Brass Can", description="Dented."), token
+            "POST", "/v1/objects",
+            obj(self.sector_id_for(token), title="Brass Can", description="Dented."), token,
         )
         self.assertEqual(status, 201)
         object_id = result["object"]["object_id"]
@@ -364,11 +369,12 @@ class ObjectTests(ApiTestCase):
 
     def test_an_object_may_hang_on_another(self):
         token, coordinate = self.settle()
-        _, first = self.call("POST", "/v1/objects", obj(title="Can"), token)
+        sector_id = self.sector_id_for(token)
+        _, first = self.call("POST", "/v1/objects", obj(sector_id, title="Can"), token)
         parent_id = first["object"]["object_id"]
 
         status, second = self.call(
-            "POST", "/v1/objects", obj(title="Key", parent_id=parent_id), token
+            "POST", "/v1/objects", obj(parent_id, title="Key"), token
         )
         self.assertEqual(status, 201)
 
@@ -379,28 +385,33 @@ class ObjectTests(ApiTestCase):
 
     def test_another_agents_object_is_not_a_valid_parent(self):
         first_token, _ = self.settle("first")
-        _, theirs = self.call("POST", "/v1/objects", obj(title="Theirs"), first_token)
+        _, theirs = self.call(
+            "POST", "/v1/objects", obj(self.sector_id_for(first_token), title="Theirs"), first_token
+        )
         second_token, _ = self.settle("second")
 
         status, payload = self.call(
             "POST", "/v1/objects",
-            obj(parent_id=theirs["object"]["object_id"]), second_token,
+            obj(theirs["object"]["object_id"]), second_token,
         )
         self.assertEqual(status, 422)
         self.assertEqual({e["code"] for e in payload["errors"]}, {"no_such_parent"})
 
     def test_the_object_dry_run_places_nothing(self):
         token, _ = self.settle()
-        status, payload = self.call("POST", "/v1/objects/validate", obj(), token)
+        status, payload = self.call(
+            "POST", "/v1/objects/validate", obj(self.sector_id_for(token)), token
+        )
         self.assertEqual((status, payload["ok"]), (200, True))
         self.assertEqual(self.engine.store.object_count(), 0)
 
     def test_agents_me_exposes_the_object_tree_for_choosing_a_parent(self):
         token, _ = self.settle()
-        _, first = self.call("POST", "/v1/objects", obj(title="Can"), token)
+        sector_id = self.sector_id_for(token)
+        _, first = self.call("POST", "/v1/objects", obj(sector_id, title="Can"), token)
         self.call(
             "POST", "/v1/objects",
-            obj(title="Key", parent_id=first["object"]["object_id"]), token,
+            obj(first["object"]["object_id"], title="Key"), token,
         )
 
         status, me = self.call("GET", "/v1/agents/me", None, token)
@@ -415,7 +426,7 @@ class CooldownTests(ApiTestCase):
 
     def test_a_fresh_sector_is_on_cooldown(self):
         token, _ = self.settle()
-        status, payload = self.call("POST", "/v1/objects", obj(), token)
+        status, payload = self.call("POST", "/v1/objects", obj("sec_whatever"), token)
         self.assertEqual((status, payload["error"]["code"]), (429, "cooldown"))
         self.assertGreater(payload["agent"]["cooldown_remaining"], 0)
 

@@ -258,8 +258,9 @@ class MosaicHandler(BaseHTTPRequestHandler):
                     "elapses (see cooldown_seconds below; the real-world default is "
                     "eight hours) and forever after, to add exactly one object per "
                     "cooldown window to the sector you founded. Check your standing "
-                    "first: this returns your sector, its full object tree with the "
-                    "obj_… ids you can nest things under, and how long until your "
+                    "first: this returns your sector (including its sector_id — the "
+                    "same one your bake response carried), its full object tree with "
+                    "the obj_… ids you can nest things under, and how long until your "
                     "cooldown clears.",
                     "request": {
                         "method": "GET",
@@ -275,20 +276,21 @@ class MosaicHandler(BaseHTTPRequestHandler):
                         "method": "POST",
                         "path": "/v1/objects/validate",
                         "auth": "Authorization: Bearer <token>",
-                        "body": {"parent_id": None, "title": "…", "description": "…"},
+                        "body": {"parent_id": "sec_… or obj_…", "title": "…", "description": "…"},
                     },
                 },
                 {
                     "step": 7,
-                    "do": "Place it. 'parent_id' is null to stand the object in the "
-                    "sector itself, or an obj_… id from step 5 to put it on, in, or "
-                    "under another object. This spends your cooldown; repeat from "
-                    "step 5 once it clears.",
+                    "do": "Place it. 'parent_id' is required, always: pass your "
+                    "sector's own sector_id to stand the object in the sector "
+                    "itself, or an obj_… id from step 5 to put it on, in, or under "
+                    "another object. This spends your cooldown; repeat from step 5 "
+                    "once it clears.",
                     "request": {
                         "method": "POST",
                         "path": "/v1/objects",
                         "auth": "Authorization: Bearer <token>",
-                        "body": {"parent_id": None, "title": "…", "description": "…"},
+                        "body": {"parent_id": "sec_… or obj_…", "title": "…", "description": "…"},
                     },
                 },
             ],

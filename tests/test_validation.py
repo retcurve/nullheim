@@ -7,7 +7,7 @@ now unrepresentable.
 
 import unittest
 
-from helpers import build, codes, make_engine, obj, sector, settle
+from helpers import build, codes, make_engine, obj, root, sector, settle
 
 from mosaic.coords import ORIGIN, Coordinate
 from mosaic.schema import parse_object, parse_sector
@@ -70,27 +70,34 @@ class SectorRuleTests(unittest.TestCase):
 class ObjectRuleTests(unittest.TestCase):
     def test_hanging_an_object_on_the_sector_is_always_fine(self):
         engine = make_engine()
-        self.assertEqual(check_object(engine, ORIGIN, obj(parent_id=None)), [])
+        genesis_id = engine.store.get(ORIGIN).sector_id
+        self.assertEqual(check_object(engine, ORIGIN, obj(genesis_id)), [])
+
+    def test_a_null_parent_id_is_refused(self):
+        """null used to mean the sector itself; the sector's own id does now."""
+        engine = make_engine()
+        errors = check_object(engine, ORIGIN, obj(None))
+        self.assertIn("type_error", codes(errors))
 
     def test_a_parent_that_does_not_exist_is_refused(self):
         engine = make_engine()
-        errors = check_object(engine, ORIGIN, obj(parent_id="obj_nope"))
+        errors = check_object(engine, ORIGIN, obj("obj_nope"))
         self.assertIn("no_such_parent", codes(errors))
 
     def test_an_object_may_hang_on_another_object_in_the_same_sector(self):
         engine = make_engine()
         agent, _, _ = settle(engine)
-        first, errors = engine.create_object(agent, obj())
+        first, errors = engine.create_object(agent, obj(root(engine, agent)))
         self.assertEqual(errors, [])
-        self.assertEqual(check_object(engine, agent.coordinate, obj(parent_id=first.object_id)), [])
+        self.assertEqual(check_object(engine, agent.coordinate, obj(first.object_id)), [])
 
     def test_an_object_in_another_agents_sector_is_not_a_valid_parent(self):
         engine = make_engine()
         one, _, _ = settle(engine, "one")
         two, _, _ = settle(engine, "two")
-        theirs, _ = engine.create_object(one, obj())
+        theirs, _ = engine.create_object(one, obj(root(engine, one)))
 
-        errors = check_object(engine, two.coordinate, obj(parent_id=theirs.object_id))
+        errors = check_object(engine, two.coordinate, obj(theirs.object_id))
         self.assertIn("no_such_parent", codes(errors))
 
     def test_someone_elses_object_is_indistinguishable_from_a_missing_one(self):
@@ -98,10 +105,10 @@ class ObjectRuleTests(unittest.TestCase):
         engine = make_engine()
         one, _, _ = settle(engine, "one")
         two, _, _ = settle(engine, "two")
-        theirs, _ = engine.create_object(one, obj(title="Their Secret Thing"))
+        theirs, _ = engine.create_object(one, obj(root(engine, one), title="Their Secret Thing"))
 
-        trespass = check_object(engine, two.coordinate, obj(parent_id=theirs.object_id))
-        missing = check_object(engine, two.coordinate, obj(parent_id="obj_deadbeefdeadbeef"))
+        trespass = check_object(engine, two.coordinate, obj(theirs.object_id))
+        missing = check_object(engine, two.coordinate, obj("obj_deadbeefdeadbeef"))
         self.assertEqual(codes(trespass), codes(missing))
         self.assertNotIn("Their Secret Thing", trespass[0].message)
 
@@ -109,8 +116,8 @@ class ObjectRuleTests(unittest.TestCase):
         """A parent must already exist, so a cycle is unrepresentable."""
         engine = make_engine()
         agent, _, _ = settle(engine)
-        first, _ = engine.create_object(agent, obj(title="Crate"))
-        second, _ = engine.create_object(agent, obj(title="Tin", parent_id=first.object_id))
+        first, _ = engine.create_object(agent, obj(root(engine, agent), title="Crate"))
+        second, _ = engine.create_object(agent, obj(first.object_id, title="Tin"))
 
         # The only way to close a loop would be to repoint an existing object,
         # and nothing in the API can do that.

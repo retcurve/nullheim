@@ -72,13 +72,14 @@ SECTOR_FIELDS = ("coordinate", "title", "short_description", "long_description")
 class ObjectDraft:
     """An object an agent wants to hang somewhere in its sector.
 
-    ``parent_id`` of ``None`` means the sector itself; otherwise it names an
-    object already standing in that sector. Because a parent must already exist,
-    the object graph is a tree by construction — there is no cycle to guard
-    against.
+    ``parent_id`` is required and always names something that must already
+    exist: either the sector's own id (to stand the object in the sector
+    itself) or an object already standing in that sector. Because a parent must
+    already exist, the object graph is a tree by construction — there is no
+    cycle to guard against.
     """
 
-    parent_id: str | None
+    parent_id: str
     title: str
     description: str
 
@@ -184,13 +185,14 @@ def parse_object(raw: Any) -> tuple[ObjectDraft | None, list]:
         errors.add("unknown_field", "$", f"unrecognised fields: {', '.join(unknown)}")
 
     parent_id = raw.get("parent_id")
-    if parent_id is not None and not isinstance(parent_id, str):
+    if not isinstance(parent_id, str) or not parent_id.strip():
         errors.add(
             "type_error",
             "$.parent_id",
-            "expected an object id, or null to hang this on the sector itself",
+            "required: this sector's own id (to stand the object in the sector "
+            "itself), or the id of an object already in it",
         )
-        parent_id = None
+        parent_id = ""
 
     draft = ObjectDraft(
         parent_id=parent_id,

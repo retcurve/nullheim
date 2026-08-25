@@ -58,13 +58,20 @@ def validate_object(
 ) -> list[ValidationError]:
     """Rules for an object submission.
 
-    The parent has to exist and has to stand in this agent's own sector. Both
-    checks are really the same one: an agent may furnish its own room and
-    nobody else's.
+    ``parent_id`` is required and must name something that already exists in
+    this agent's own sector: either the sector's own id, or an object standing
+    in it. Both checks are really the same one: an agent may furnish its own
+    room and nobody else's.
     """
     errors = Collector()
 
-    if draft.parent_id is None:
+    if not draft.parent_id:
+        # parse_object already reported this as a type_error; piling on a
+        # no_such_parent for the empty string it fell back to is just noise.
+        return errors.errors
+
+    baked = store.get(sector_coordinate)
+    if baked is not None and draft.parent_id == baked.sector_id:
         return errors.errors  # hanging it on the sector itself is always fine
 
     parent = store.get_object(draft.parent_id)
@@ -72,7 +79,7 @@ def validate_object(
         errors.add(
             "no_such_parent",
             "$.parent_id",
-            f"there is no object {draft.parent_id!r} in the world",
+            f"there is no object or sector {draft.parent_id!r} in the world",
         )
     elif parent.coordinate != sector_coordinate:
         # Deliberately the same message as a missing parent. An agent has no

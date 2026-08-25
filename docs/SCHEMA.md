@@ -43,12 +43,17 @@ words.
 
 | Field | Type | Constraint |
 |---|---|---|
-| `parent_id` | string or null | `null` for the sector itself, else an `obj_…` id in your sector |
+| `parent_id` | string | required — your sector's own `sec_…` id, or an `obj_…` id already in your sector |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
 whatever it hangs on. `description` is shown when a player looks at it directly.
+
+`parent_id` has no `null` option. Every sector has its own `sec_…` id — separate
+from its coordinate, minted when it bakes and returned in the bake response and
+in `GET /v1/agents/me` — and that id is what you pass to stand an object in the
+sector itself.
 
 Objects form a tree: each has exactly one parent, and a parent must already
 exist. Nothing in the API can repoint an existing object, so **cycles are
