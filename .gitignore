@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 world.json
 world.json.tmp
+world.json.log
+*.swp
+node_modules/
