@@ -14,6 +14,12 @@ html, body {
   height: 100%;
 }
 
+/* Set on <html> while the map popup is open — belt and suspenders against
+   page-level scroll, on top of the popup's own containment. */
+html.map-open, html.map-open body {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: #000;
@@ -104,6 +110,13 @@ body {
   font-weight: bold;
 }
 
+#output u {
+  color: var(--fg-bright);
+  font-weight: normal;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 #promptline {
   position: relative;
   display: flex;
@@ -178,4 +191,144 @@ body {
 
 #output::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* --- map overlay ----------------------------------------------------- */
+
+/* The dimmed backdrop behind the popup — fixed and full-viewport, but it's
+   not itself the thing that reads as "a popup"; #map-popup is. */
+#map-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+#map-overlay.hidden {
+  display: none;
+}
+
+/* Same framed-box language as #crt — a bordered, glowing terminal panel,
+   not a full-bleed wash — so opening the map reads as a popup on top of
+   the terminal rather than the whole browser window going dark. Sized to
+   fit the viewport outright (never larger), so unlike the scrollable grid
+   inside it, this box itself never needs to scroll or grow. */
+#map-popup {
+  width: min(900px, 96vw);
+  height: min(640px, 92vh);
+  background: var(--bg);
+  border: 2px solid var(--fg-dim);
+  border-radius: 10px;
+  box-shadow:
+    0 0 24px rgba(51, 255, 102, 0.35),
+    inset 0 0 60px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--fg);
+}
+
+#map-hint {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--fg-dim);
+  color: var(--fg-dim);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+#map-viewport {
+  flex: 1;
+  min-height: 0;
+  /* Hidden, not auto — no native scrollbar. Still fully scrollable: `hidden`
+     only turns off the browser's own scrollbar and wheel/touch handling,
+     not scriptable scrollTop/scrollLeft, so the wheel and arrow-key handlers
+     below drive it directly instead. */
+  overflow: hidden;
+  display: flex;
+  /* Breathing room lives here, as padding on the scrollable container, not
+     as margin on the grid — padding stays reachable at every scroll extreme
+     once the grid overflows, where a margin would just get clipped. */
+  padding: 24px;
+}
+
+#map-grid {
+  /* `margin: auto` on a flex child centers it when it's smaller than the
+     viewport and degrades to plain top-left-anchored, fully scrollable flow
+     the moment it's bigger — unlike `align/justify-items: center`, which
+     traps half the overflow behind the centering unless the browser
+     supports the newer `safe` keyword. This works everywhere. */
+  margin: auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--map-cols), var(--map-cell));
+  grid-template-rows: repeat(var(--map-rows), var(--map-cell));
+  gap: 3px;
+}
+
+.map-cell {
+  position: relative;
+  border: 1px solid var(--fg-dim);
+  background: rgba(51, 255, 102, 0.06);
+  overflow: hidden;
+}
+
+.map-cell.empty {
+  border-color: rgba(31, 153, 68, 0.25);
+  background: transparent;
+}
+
+.map-cell.filled {
+  cursor: pointer;
+  color: var(--fg-bright);
+}
+
+.map-cell.filled:hover {
+  background: rgba(51, 255, 102, 0.22);
+  border-color: var(--fg-bright);
+}
+
+.map-cell .map-cell-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+
+.map-cell .map-cell-label strong {
+  color: var(--fg-bright);
+  font-weight: bold;
+}
+
+#map-tooltip {
+  position: fixed;
+  z-index: 30;
+  background: var(--bg);
+  color: var(--fg-bright);
+  border: 1px solid var(--fg-dim);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: bold;
+  pointer-events: none;
+  text-shadow: 0 0 4px rgba(51, 255, 102, 0.6);
+  transform: translate(-50%, -140%);
+  white-space: nowrap;
+}
+
+#map-tooltip.hidden {
+  display: none;
 }

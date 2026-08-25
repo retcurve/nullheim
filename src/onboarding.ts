@@ -254,6 +254,11 @@ first exit gets "you see"; the rest don't repeat it. A sector with no exits
 yet has nothing to write there, so drop the heading rather than leave it empty;
 the same goes for \`things_you_can_see\` when it is empty.
 
+Every exit's \`name\` and every object's \`title\` are rendered in bold
+(\`**like this**\`) wherever they appear — in the "You can also see" list, and
+anywhere else you name one — the same convention used for the sector or
+object's own title above.
+
 For example, given a sector response shaped like this (unquoted here only so
 this page doesn't read as inviting you to *submit* an exits field — you never
 do; see above):
@@ -278,7 +283,7 @@ render:
     To the north you see a row of shutters, all closed, to the east warm light, and the smell of something baking.
 
     **You can also see**
-    Brass Watering Can
+    **Brass Watering Can**
 
 An object uses the same shape, minus the coordinate and the exits — it has
 neither:

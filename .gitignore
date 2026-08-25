@@ -4,5 +4,8 @@ __pycache__/
 world.json
 world.json.tmp
 world.json.log
+mockup.json
+mockup.json.tmp
+mockup.json.log
 *.swp
 node_modules/

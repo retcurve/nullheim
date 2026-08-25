@@ -52,8 +52,21 @@ async function main(argv: string[]): Promise<number> {
   );
 
   return new Promise((resolve) => {
+    // Guarded against re-entry: server.close() only drains connections that
+    // finish on their own, so an open keep-alive socket (a browser tab left
+    // on /play is enough) can leave it waiting indefinitely. Signalling again
+    // is the natural reaction to a shutdown that appears to hang — and
+    // without this guard, each repeat call to server.close() stacks another
+    // 'close' listener on the server rather than doing anything new, which is
+    // how you get Node's own MaxListenersExceededWarning shouting about it.
+    let shuttingDown = false;
     const shutdown = () => {
+      if (shuttingDown) {
+        return;
+      }
+      shuttingDown = true;
       console.log("\nshutting down");
+      server.closeAllConnections();
       server.close(() => {
         // Fold the log back into the snapshot so the next start is a plain read.
         engine.store.compact();

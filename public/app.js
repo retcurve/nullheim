@@ -20,6 +20,10 @@
   const hiddenInput = document.getElementById("hidden-input");
   const crt = document.getElementById("crt");
   const moreIndicator = document.getElementById("more-indicator");
+  const mapOverlay = document.getElementById("map-overlay");
+  const mapViewport = document.getElementById("map-viewport");
+  const mapGrid = document.getElementById("map-grid");
+  const mapTooltip = document.getElementById("map-tooltip");
 
   /** @type {{coordinate:[number,number], title:string, description:string, exits:Array, objects:Map}|null} */
   let model = null;
@@ -33,9 +37,11 @@
       .replace(/>/g, "&gt;");
   }
 
-  /** Turns our `**bold**` convention into real markup, after escaping. */
+  /** Turns our `**bold**`/`__underline__` conventions into real markup, after escaping. */
   function toHtml(text) {
-    return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    return escapeHtml(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/__(.+?)__/g, "<u>$1</u>");
   }
 
   function maxScroll() {
@@ -181,7 +187,7 @@
   }
 
   function exitsSentence(exits) {
-    const parts = exits.map((e, i) => `to the ${e.direction}${i === 0 ? " you see" : ""} ${e.name}`);
+    const parts = exits.map((e, i) => `to the ${e.direction}${i === 0 ? " you see" : ""} **${e.name}**`);
     const sentence = `${parts.join(", ")}.`;
     return sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
@@ -189,11 +195,11 @@
   function renderSectorText(m) {
     const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
     if (m.exits.length > 0) {
-      lines.push("", "**Exits**", exitsSentence(m.exits));
+      lines.push("", "__Exits__", exitsSentence(m.exits));
     }
     const objects = Array.from(m.objects.values());
     if (objects.length > 0) {
-      lines.push("", "**You can also see**", ...objects.map((o) => o.title));
+      lines.push("", "__You can also see__", ...objects.map((o) => `**${o.title}**`));
     }
     return lines.join("\n");
   }
@@ -202,7 +208,7 @@
     const lines = [`**${obj.title}**`, obj.description ?? ""];
     const kids = obj.things_you_can_see ?? [];
     if (kids.length > 0) {
-      lines.push("", "**You can also see**", ...kids.map((k) => k.title));
+      lines.push("", "__You can also see__", ...kids.map((k) => `**${k.title}**`));
     }
     return lines.join("\n");
   }
@@ -357,6 +363,218 @@
     await moveTo(matches[0].coordinate);
   }
 
+  // --- map overlay ----------------------------------------------------------
+  //
+  // A grid of every known sector, zoomed to fit on open. Each cell's label
+  // measures its own text once (font size is fixed, independent of zoom) so
+  // zooming only ever has to compare that width against the current cell
+  // size — never re-measure — to decide whether to show the title in place
+  // or fall back to a hover tooltip.
+
+  const MAP_CELL_MIN = 10;
+  const MAP_CELL_MAX = 160;
+  const MAP_LABEL_FONT = "bold 11px 'Courier New', ui-monospace, monospace";
+  const MAP_LABEL_PADDING = 6; // room (in both axes) the label text must fit within
+  const MAP_LABEL_LINE_HEIGHT = 13; // matches the 11px font at line-height: 1.2
+  const MAP_LABEL_MIN_CELL = 24; // below this a cell is too small to wrap into legibly
+
+  const measureCanvas = document.createElement("canvas").getContext("2d");
+  measureCanvas.font = MAP_LABEL_FONT;
+
+  let mapState = null; // { sectors, byKey, minX, maxX, minY, maxY, cols, rows, cell }
+
+  function coordKey(x, y) {
+    return `${x},${y}`;
+  }
+
+  function mapClampCell(px) {
+    return Math.min(MAP_CELL_MAX, Math.max(MAP_CELL_MIN, Math.round(px)));
+  }
+
+  function mapFitCell(cols, rows) {
+    // Leave room for the grid's own margin so a fitted map never starts
+    // pinned against the viewport edge.
+    const availW = mapViewport.clientWidth - 48;
+    const availH = mapViewport.clientHeight - 48;
+    return mapClampCell(Math.min(availW / cols, availH / rows));
+  }
+
+  function renderMapGrid() {
+    const s = mapState;
+    mapGrid.style.setProperty("--map-cols", s.cols);
+    mapGrid.style.setProperty("--map-rows", s.rows);
+    mapGrid.style.setProperty("--map-cell", `${s.cell}px`);
+    mapGrid.innerHTML = "";
+
+    const availWidth = s.cell - MAP_LABEL_PADDING;
+    const availHeight = s.cell - MAP_LABEL_PADDING;
+    const frag = document.createDocumentFragment();
+    for (let y = s.maxY; y >= s.minY; y--) {
+      for (let x = s.minX; x <= s.maxX; x++) {
+        const sector = s.byKey.get(coordKey(x, y));
+        const cell = document.createElement("div");
+        if (!sector) {
+          cell.className = "map-cell empty";
+          frag.appendChild(cell);
+          continue;
+        }
+        cell.className = "map-cell filled";
+        cell.dataset.x = String(x);
+        cell.dataset.y = String(y);
+        // Wrapping lets a long title span multiple lines, so "fits" is a
+        // vertical question too: estimate the lines it'll wrap to from its
+        // unwrapped width, and check the stack of them still fits the cell.
+        const wrappedLines = Math.max(1, Math.ceil(sector.textWidth / Math.max(1, availWidth)));
+        const willFit = s.cell >= MAP_LABEL_MIN_CELL && wrappedLines * MAP_LABEL_LINE_HEIGHT <= availHeight;
+        if (willFit) {
+          const label = document.createElement("div");
+          label.className = "map-cell-label";
+          label.innerHTML = toHtml(`**${sector.title}**`);
+          cell.appendChild(label);
+        }
+        frag.appendChild(cell);
+      }
+    }
+    mapGrid.appendChild(frag);
+  }
+
+  function mapZoomTo(cellPx, focus) {
+    const s = mapState;
+    if (!s) {
+      return;
+    }
+    // Keep whatever point under `focus` (viewport-relative px, defaults to
+    // center) still under it after the resize, so zooming feels anchored
+    // rather than yanking the view back to the top-left corner.
+    const before = focus ?? { x: mapViewport.clientWidth / 2, y: mapViewport.clientHeight / 2 };
+    const contentX = mapViewport.scrollLeft + before.x;
+    const contentY = mapViewport.scrollTop + before.y;
+    const ratio = mapClampCell(cellPx) / s.cell;
+
+    s.cell = mapClampCell(cellPx);
+    renderMapGrid();
+
+    mapViewport.scrollLeft = contentX * ratio - before.x;
+    mapViewport.scrollTop = contentY * ratio - before.y;
+  }
+
+  function openMapOverlay(data) {
+    const sectors = data.sectors ?? [];
+    const byKey = new Map();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const s of sectors) {
+      const [x, y] = s.coordinate;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      byKey.set(coordKey(x, y), {
+        coordinate: [x, y],
+        title: s.title,
+        textWidth: measureCanvas.measureText(s.title).width,
+      });
+    }
+    const cols = maxX - minX + 1;
+    const rows = maxY - minY + 1;
+
+    mapState = { byKey, minX, maxX, minY, maxY, cols, rows, cell: MAP_CELL_MIN };
+    mapOverlay.classList.remove("hidden");
+    mapState.cell = mapFitCell(cols, rows);
+    renderMapGrid();
+    mapViewport.scrollLeft = 0;
+    mapViewport.scrollTop = 0;
+
+    // Belt and suspenders: the popup's own scroll region is fully contained
+    // by design, but locking the page underneath means there is structurally
+    // nothing left for a stray wheel or arrow event to scroll instead.
+    document.documentElement.classList.add("map-open");
+    hiddenInput.blur();
+    document.addEventListener("keydown", onMapKeydown);
+  }
+
+  function closeMapOverlay() {
+    mapOverlay.classList.add("hidden");
+    mapTooltip.classList.add("hidden");
+    mapState = null;
+    document.documentElement.classList.remove("map-open");
+    document.removeEventListener("keydown", onMapKeydown);
+    refocus();
+  }
+
+  function onMapKeydown(ev) {
+    const MAP_PAN_STEP = 60;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeMapOverlay();
+      return;
+    }
+    if (ev.key === "+" || ev.key === "=") {
+      ev.preventDefault();
+      mapZoomTo(mapState.cell + 12);
+      return;
+    }
+    if (ev.key === "-" || ev.key === "_") {
+      ev.preventDefault();
+      mapZoomTo(mapState.cell - 12);
+      return;
+    }
+    if (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      ev.preventDefault();
+      const dx = ev.key === "ArrowLeft" ? -MAP_PAN_STEP : ev.key === "ArrowRight" ? MAP_PAN_STEP : 0;
+      const dy = ev.key === "ArrowUp" ? -MAP_PAN_STEP : ev.key === "ArrowDown" ? MAP_PAN_STEP : 0;
+      // The viewport clamps this natively — panning simply stops at the
+      // edge sectors, with no extra bookkeeping needed here.
+      mapViewport.scrollLeft += dx;
+      mapViewport.scrollTop += dy;
+    }
+  }
+
+  mapViewport.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    if (ev.ctrlKey) {
+      // A ctrl+wheel pinch/scroll zooms, anchored under the cursor.
+      const rect = mapViewport.getBoundingClientRect();
+      mapZoomTo(mapState.cell - ev.deltaY * 0.4, { x: ev.clientX - rect.left, y: ev.clientY - rect.top });
+      return;
+    }
+    // overflow is `hidden` on this element (no native scrollbar, see the
+    // CSS), which also means no native wheel scrolling — driven by hand here
+    // instead, the same as the arrow keys just below.
+    mapViewport.scrollLeft += ev.deltaX;
+    mapViewport.scrollTop += ev.deltaY;
+  });
+
+  mapGrid.addEventListener("mousemove", (ev) => {
+    const cellEl = ev.target.closest(".map-cell.filled");
+    if (!cellEl || cellEl.querySelector(".map-cell-label")) {
+      mapTooltip.classList.add("hidden");
+      return;
+    }
+    const sector = mapState.byKey.get(coordKey(Number(cellEl.dataset.x), Number(cellEl.dataset.y)));
+    mapTooltip.textContent = sector.title;
+    mapTooltip.style.left = `${ev.clientX}px`;
+    mapTooltip.style.top = `${ev.clientY}px`;
+    mapTooltip.classList.remove("hidden");
+  });
+
+  mapGrid.addEventListener("mouseleave", () => {
+    mapTooltip.classList.add("hidden");
+  });
+
+  mapGrid.addEventListener("click", (ev) => {
+    const cellEl = ev.target.closest(".map-cell.filled");
+    if (!cellEl) {
+      return;
+    }
+    const coordinate = [Number(cellEl.dataset.x), Number(cellEl.dataset.y)];
+    closeMapOverlay();
+    echoCommand(`teleport ${coordinate[0]} ${coordinate[1]}`);
+    moveTo(coordinate);
+  });
+
   async function doMap() {
     try {
       const data = await fetchJson("/v1/map");
@@ -364,11 +582,7 @@
         print("The world is empty.");
         return;
       }
-      const lines = ["**Known sectors**"];
-      for (const s of data.sectors) {
-        lines.push(`(${s.coordinate[0]}, ${s.coordinate[1]}) ${s.title}`);
-      }
-      print(lines.join("\n"));
+      openMapOverlay(data);
     } catch (exc) {
       printError(`Couldn't read the map: ${exc.message}`);
     }
@@ -462,7 +676,7 @@
       return;
     }
 
-    if (first === "go" || first === "walk" || first === "run" || first === "fly") {
+    if (first === "go" || first === "g" || first === "walk" || first === "run" || first === "fly") {
       const rest = parts.slice(1).join(" ");
       if (!rest) {
         printError("Go where?");
@@ -482,7 +696,7 @@
       return;
     }
 
-    if (first === "map") {
+    if (first === "map" || first === "m") {
       doMap();
       return;
     }
@@ -551,10 +765,27 @@
 
   // --- boot ---------------------------------------------------------------
 
+  async function pickStartCoordinate() {
+    // A fresh arrival lands somewhere in the built world at random, not
+    // always at the origin. Falls back to (0, 0) — which always exists, it's
+    // the one sector the engine seeds itself — if the map can't be read.
+    try {
+      const map = await fetchJson("/v1/map");
+      const sectors = map.sectors ?? [];
+      if (sectors.length > 0) {
+        return sectors[Math.floor(Math.random() * sectors.length)].coordinate;
+      }
+    } catch {
+      // fall through to the origin
+    }
+    return [0, 0];
+  }
+
   async function start() {
     print("Connecting to Mosaic...");
     try {
-      const data = await fetchJson("/v1/sectors/0/0");
+      const coordinate = await pickStartCoordinate();
+      const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
       print(renderSectorText(model));
     } catch (exc) {
