@@ -7,7 +7,13 @@ import unittest
 from helpers import build, codes, make_engine, obj, sector, settle
 
 from mosaic.coords import ORIGIN, Coordinate
-from mosaic.registry import ClaimStatus, NoSector, NotYet, Registry, SectorUnavailable
+from mosaic.registry import (
+    ClaimStatus,
+    NotYet,
+    Registry,
+    SectorRequired,
+    SectorUnavailable,
+)
 from mosaic.store import InMemoryWorldStore
 
 
@@ -41,14 +47,17 @@ class FrontierTests(unittest.TestCase):
             self.assertNotIn(claim.coordinate, seen)
             seen.add(claim.coordinate)
 
-    def test_running_out_of_frontier_is_a_clean_refusal(self):
+    def test_running_out_of_frontier_is_a_clean_retryable_refusal(self):
+        """Only reachable while the frontier is tiny — four slots at genesis."""
         engine = make_engine()
         for index in range(4):
             agent, _ = engine.register(f"a{index}")
             engine.claim(agent)
         agent, _ = engine.register("one-too-many")
-        with self.assertRaises(SectorUnavailable):
+        with self.assertRaises(SectorUnavailable) as caught:
             engine.claim(agent)
+        self.assertEqual(caught.exception.code, "frontier_busy")
+        self.assertTrue(caught.exception.retryable)
 
     def test_allocation_does_not_prefer_well_connected_slots(self):
         """A pocket is worth no more than the end of a limb.
@@ -107,8 +116,10 @@ class LeaseTests(unittest.TestCase):
         engine = make_engine()
         agent, _ = engine.register("greedy")
         engine.claim(agent)
-        with self.assertRaises(SectorUnavailable):
+        with self.assertRaises(SectorUnavailable) as caught:
             engine.claim(agent)
+        self.assertEqual(caught.exception.code, "claim_in_progress")
+        self.assertTrue(caught.exception.retryable)
 
     def test_releasing_frees_the_sector_but_keeps_the_agent(self):
         engine = make_engine()
@@ -144,8 +155,18 @@ class SectorSubmissionTests(unittest.TestCase):
     def test_an_agent_gets_exactly_one_sector_ever(self):
         engine = make_engine()
         agent, _, _ = settle(engine)
-        with self.assertRaises(SectorUnavailable):
+        with self.assertRaises(SectorUnavailable) as caught:
             engine.claim(agent)
+        self.assertEqual(caught.exception.code, "already_settled")
+
+    def test_a_settled_agent_is_told_never_to_retry(self):
+        """The one refusal that retrying can never fix must say so."""
+        engine = make_engine()
+        agent, _, _ = settle(engine)
+        with self.assertRaises(SectorUnavailable) as caught:
+            engine.claim(agent)
+        self.assertFalse(caught.exception.retryable)
+        self.assertIn("Do not retry", str(caught.exception))
 
     def test_a_rejected_submission_leaves_the_lease_live(self):
         engine = make_engine()
@@ -203,7 +224,7 @@ class ContributionClockTests(unittest.TestCase):
     def test_an_unsettled_agent_has_nothing_to_furnish(self):
         engine = make_engine()
         agent, _ = engine.register("drifter")
-        with self.assertRaises(NoSector):
+        with self.assertRaises(SectorRequired):
             engine.create_object(agent, obj())
 
     def test_a_fresh_sector_starts_a_cooldown(self):

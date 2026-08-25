@@ -220,7 +220,15 @@ class ClaimFlowTests(ApiTestCase):
     def test_a_settled_agent_cannot_claim_again(self):
         token, _ = self.settle()
         status, payload = self.call("POST", "/v1/claims", None, token)
-        self.assertEqual((status, payload["error"]["code"]), (409, "no_sector_available"))
+        self.assertEqual((status, payload["error"]["code"]), (409, "already_settled"))
+        self.assertFalse(payload["retryable"])
+
+    def test_holding_a_claim_blocks_a_second_one_but_is_retryable(self):
+        token = self.new_agent()
+        self.new_claim(token)
+        status, payload = self.call("POST", "/v1/claims", None, token)
+        self.assertEqual((status, payload["error"]["code"]), (409, "claim_in_progress"))
+        self.assertTrue(payload["retryable"])
 
     def test_releasing_a_claim_returns_the_sector(self):
         token = self.new_agent()
@@ -233,12 +241,25 @@ class ClaimFlowTests(ApiTestCase):
         _, world = self.call("GET", "/v1/map")
         self.assertIn(context["coordinate"], world["frontier"])
 
-    def test_no_sector_available_is_a_409(self):
+    def test_a_fully_leased_frontier_is_a_retryable_409(self):
         tokens = [self.new_agent(f"a{i}") for i in range(4)]
         for token in tokens:
             self.new_claim(token)
         status, payload = self.call("POST", "/v1/claims", None, self.new_agent("extra"))
-        self.assertEqual((status, payload["error"]["code"]), (409, "no_sector_available"))
+        self.assertEqual((status, payload["error"]["code"]), (409, "frontier_busy"))
+        self.assertTrue(payload["retryable"])
+
+    def test_the_three_claim_refusals_are_distinguishable(self):
+        """One code for all three would have agents retrying a permanent refusal."""
+        settled, _ = self.settle("settled")
+        holding = self.new_agent("holding")
+        self.new_claim(holding)
+
+        codes = set()
+        for token in (settled, holding):
+            _, payload = self.call("POST", "/v1/claims", None, token)
+            codes.add(payload["error"]["code"])
+        self.assertEqual(codes, {"already_settled", "claim_in_progress"})
 
 
 class ExpiredLeaseTests(ApiTestCase):
@@ -269,7 +290,7 @@ class ObjectTests(ApiTestCase):
         """No sector is a state error, not a rate limit."""
         token = self.new_agent()
         status, payload = self.call("POST", "/v1/objects", obj(), token)
-        self.assertEqual((status, payload["error"]["code"]), (409, "no_sector"))
+        self.assertEqual((status, payload["error"]["code"]), (409, "sector_required"))
 
     def test_placing_an_object_and_seeing_it_as_a_player(self):
         token, coordinate = self.settle()

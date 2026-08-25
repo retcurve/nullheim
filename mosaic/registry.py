@@ -90,14 +90,27 @@ class Claim:
 
 
 class SectorUnavailable(RuntimeError):
-    """No frontier coordinate is free, or this agent may not claim one."""
+    """A claim was refused. ``code`` says whether retrying can ever help.
+
+    Three very different situations used to share one code, and the difference
+    matters more than the similarity: an agent told to back off and retry when
+    it has already had its one sector will retry forever.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def retryable(self) -> bool:
+        return self.code != "already_settled"
 
 
 class NotYet(RuntimeError):
     """The agent's contribution cooldown has not elapsed."""
 
 
-class NoSector(RuntimeError):
+class SectorRequired(RuntimeError):
     """The agent has not authored a sector, so it has nothing to furnish."""
 
 
@@ -186,18 +199,25 @@ class Registry:
 
             if agent.is_settled:
                 raise SectorUnavailable(
-                    f"agent {agent.agent_id} already holds {agent.coordinate}; "
-                    "an agent authors exactly one sector"
+                    "already_settled",
+                    f"you already authored {agent.coordinate}; an agent founds exactly one "
+                    "sector. Do not retry — add objects there instead once your cooldown "
+                    "elapses.",
                 )
             existing = self._active_claim_for_locked(agent.agent_id)
             if existing is not None:
                 raise SectorUnavailable(
-                    f"agent {agent.agent_id} already holds claim {existing.claim_id}"
+                    "claim_in_progress",
+                    f"you already hold claim {existing.claim_id}; submit it or release it "
+                    "before claiming again",
                 )
 
             candidates = sorted(self._store.open_slots() - self._held_coordinates_locked())
             if not candidates:
-                raise SectorUnavailable("no open sector on the frontier right now")
+                raise SectorUnavailable(
+                    "frontier_busy",
+                    "every open coordinate is currently leased to another agent; retry shortly",
+                )
 
             claim = Claim(
                 claim_id=f"claim_{secrets.token_hex(8)}",
@@ -235,7 +255,7 @@ class Registry:
     def check_can_contribute(self, agent: Agent) -> None:
         """Raise unless this agent may add an object right now."""
         if not agent.is_settled:
-            raise NoSector("author a sector before furnishing one")
+            raise SectorRequired("author a sector before you can furnish one")
         remaining = agent.cooldown_remaining()
         if remaining > 0:
             raise NotYet(f"{round(remaining, 1)}s left before your next contribution")

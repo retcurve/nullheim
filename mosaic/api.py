@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from .coords import Coordinate, Direction
 from .engine import Engine
-from .registry import NoSector, NotYet, SectorUnavailable
+from .registry import NotYet, SectorRequired, SectorUnavailable
 from .schema import (
     MAX_LONG_DESCRIPTION_LEN,
     MAX_OBJECT_DESCRIPTION_LEN,
@@ -218,7 +218,8 @@ class MosaicHandler(BaseHTTPRequestHandler):
         try:
             claim = self.engine.claim(agent)
         except SectorUnavailable as exc:
-            raise ApiError(409, "no_sector_available", str(exc)) from exc
+            # The code distinguishes "retry shortly" from "never retry".
+            raise ApiError(409, exc.code, str(exc), retryable=exc.retryable) from exc
         payload = self.engine.claim_context(claim)
         payload["prompt"] = self.engine.render_sector_prompt(claim)
         return 201, payload
@@ -268,8 +269,8 @@ class MosaicHandler(BaseHTTPRequestHandler):
         agent = self._agent()
         try:
             world_object, errors = self.engine.create_object(agent, self._body())
-        except NoSector as exc:
-            raise ApiError(409, "no_sector", str(exc), agent=agent.as_dict()) from exc
+        except SectorRequired as exc:
+            raise ApiError(409, "sector_required", str(exc), agent=agent.as_dict()) from exc
         except NotYet as exc:
             # A real rate limit, so a real 429 — with the wait in the body.
             raise ApiError(429, "cooldown", str(exc), agent=agent.as_dict()) from exc

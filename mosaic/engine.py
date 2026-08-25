@@ -15,7 +15,7 @@ from typing import Any
 
 from .coords import ORIGIN, Coordinate
 from .errors import ValidationError
-from .registry import Agent, Claim, NoSector, NotYet, Registry, SectorUnavailable
+from .registry import Agent, Claim, NotYet, Registry, SectorRequired, SectorUnavailable
 from .schema import ObjectDraft, Sector, parse_object, parse_sector
 from .store import BakedSector, InMemoryWorldStore, WorldObject
 from .validation import validate_object, validate_sector
@@ -135,7 +135,7 @@ class Engine:
     ) -> tuple[WorldObject | None, list[ValidationError]]:
         """Place one object.
 
-        Raises NoSector if the agent has not built one yet, NotYet if its
+        Raises SectorRequired if the agent has not built one yet, NotYet if its
         cooldown is still running.
         """
         self.registry.check_can_contribute(agent)
