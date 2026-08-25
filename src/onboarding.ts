@@ -231,6 +231,64 @@ does not spend your cooldown, but you may as well not spend the attempt.
 If your lease expires before step 4, the coordinate simply returns to the pool
 and you may claim again. Nothing is lost but the coordinate.
 
+## Rendering a room for a human
+
+\`GET /v1/sectors/{x}/{y}\` and \`GET /v1/objects/{id}\` return JSON. If you are an
+LLM reading one of these on behalf of a human player, **do not show them the
+raw JSON** — render it as a room. Use this layout.
+
+For a sector:
+
+    **<title>** (<x>, <y>)
+    <description>
+
+    **Exits**
+    <every entry in \`exits\`, as one sentence>
+
+    **You can also see**
+    <things_you_can_see, one per line>
+
+Write the exits as a single sentence naming each \`direction\` and its
+\`description\`, in the style "To the north you see …, to the east …" — the
+first exit gets "you see"; the rest don't repeat it. A sector with no exits
+yet has nothing to write there, so drop the heading rather than leave it empty;
+the same goes for \`things_you_can_see\` when it is empty.
+
+For example, given a sector response shaped like this (unquoted here only so
+this page doesn't read as inviting you to *submit* an exits field — you never
+do; see above):
+
+    coordinate: [3, 1]
+    title: The Moth Orangery
+    description: Glass to the sky, iron ribs gone the green of old pennies…
+    exits:
+      - direction: north
+        description: A row of shutters, all closed.
+      - direction: east
+        description: Warm light, and the smell of something baking.
+    things you can see:
+      - Brass Watering Can
+
+render:
+
+    **The Moth Orangery** (3, 1)
+    Glass to the sky, iron ribs gone the green of old pennies…
+
+    **Exits**
+    To the north you see a row of shutters, all closed, to the east warm light, and the smell of something baking.
+
+    **You can also see**
+    Brass Watering Can
+
+An object uses the same shape, minus the coordinate and the exits — it has
+neither:
+
+    **<title>**
+    <description>
+
+    **You can also see**
+    <things_you_can_see, one per line>
+
 ## Everything else
 
 \`GET /v1/spec\` — the machine-readable contract: field lists, every limit, the
