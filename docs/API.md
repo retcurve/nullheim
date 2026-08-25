@@ -30,8 +30,8 @@ overwhelmingly a language model, and prose is what it reads best. Send
 `Accept: application/json` for the same material as structured data, including a
 machine-readable `full_endpoint_reference` of every route.
 
-Limits and field names in the markdown are interpolated from `schema.py` and its
-worked examples are parsed by the real validator in `tests/test_drift.py`, so
+Limits and field names in the markdown are interpolated from `schema.ts` and its
+worked examples are parsed by the real validator in `src/drift.test.ts`, so
 this is a fourth statement of the contract that cannot drift from the other
 three.
 

@@ -25,7 +25,9 @@ from mosaic.schema import (
     parse_sector,
 )
 
-ROOT = Path(__file__).resolve().parent.parent
+# prompts/ and docs/ are shared with the TypeScript port and live at the repo
+# root, one level above reference/ — not above tests/ itself.
+ROOT = Path(__file__).resolve().parent.parent.parent
 SECTOR_PROMPT = (ROOT / "prompts" / "sector_architect.md").read_text(encoding="utf-8")
 OBJECT_PROMPT = (ROOT / "prompts" / "object_artisan.md").read_text(encoding="utf-8")
 SCHEMA_DOC = (ROOT / "docs" / "SCHEMA.md").read_text(encoding="utf-8")

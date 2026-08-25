@@ -538,6 +538,7 @@ async function start(
   leadingArgs: string[],
   port: number,
   cooldownSeconds: number,
+  cwd: string,
 ): Promise<Server> {
   const child = spawn(
     command,
@@ -551,18 +552,24 @@ async function start(
       "--cooldown-seconds",
       String(cooldownSeconds),
     ],
-    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+    { cwd, stdio: ["ignore", "pipe", "pipe"] },
   );
   const base = `http://127.0.0.1:${port}`;
   await waitForHealth(base);
   return { name, base, process: child };
 }
 
+// The reference implementation now lives under reference/ — see
+// docs/PORTING.md — so `python -m mosaic` must run with that as its cwd for the
+// package to resolve, while the TypeScript server still runs from the repo root.
+const ROOT_DIR = new URL("..", import.meta.url).pathname;
+const REFERENCE_DIR = new URL("../reference", import.meta.url).pathname;
+
 const startPython = (port: number, cooldown: number) =>
-  start("python", "python3", ["-m", "mosaic"], port, cooldown);
+  start("python", "python3", ["-m", "mosaic"], port, cooldown, REFERENCE_DIR);
 
 const startTypeScript = (port: number, cooldown: number) =>
-  start("typescript", "node", ["src/cli.ts"], port, cooldown);
+  start("typescript", "node", ["src/cli.ts"], port, cooldown, ROOT_DIR);
 
 function stop(server: Server): void {
   server.process.kill("SIGKILL");

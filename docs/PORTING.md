@@ -1,9 +1,11 @@
 # Porting notes: Python → TypeScript
 
-The TypeScript implementation in `src/` is a port of the Python one in `mosaic/`,
-which stays in the tree as the reference implementation until a differential
-harness proves the two agree. This file records the places where they
-*deliberately* do not agree, and the hazards that were found the hard way.
+The TypeScript implementation in `src/` is a port of the Python one, which now
+lives at `reference/mosaic/` (moved there once the port and its differential
+harness — `scripts/differential.ts` — proved the two agree; see the repo's
+`CLAUDE.md` for why it is kept rather than deleted). This file records the
+places where they *deliberately* do not agree, and the hazards that were found
+the hard way.
 
 Anything not listed here is meant to match exactly. A difference that is not on
 this list is a bug.
@@ -99,12 +101,12 @@ and the fsync. At one object per agent per eight hours the blocking cost is nil.
 - `docs/API.md`, `docs/SCHEMA.md`, `prompts/sector_architect.md` and
   `prompts/object_artisan.md` did not need a single edit for the TypeScript
   port. `drift.test.ts` parses all four against `schema.ts` and `onboarding.ts`
-  exactly as `tests/test_drift.py` does against the Python, and passes
+  exactly as `reference/tests/test_drift.py` does against the Python, and passes
   unchanged — the four-way contract really does not care which language reads it.
 - The full HTTP surface — registration, claiming, dry-run validation, baking,
   the static lock, objects, cooldowns, malformed/oversized bodies, and
   keep-alive connection reuse — is exercised end to end in `api.test.ts` against
-  a real `node:http` server, the same way `tests/test_api.py` drives a real
+  a real `node:http` server, the same way `reference/tests/test_api.py` drives a real
   `http.server` instance. A manual smoke test also confirmed the CLI (`node
   src/cli.ts serve`) serves real traffic and shuts down cleanly on `SIGINT`,
   compacting the log before exit.

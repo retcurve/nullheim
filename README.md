@@ -62,11 +62,11 @@ parent — the sector, or another object — so a key can sit in a can on a benc
 
 ## Running it
 
-Python 3.11+, no dependencies.
+Node 22.6+, no runtime dependencies.
 
 ```bash
-python -m mosaic serve --port 8765            # in-memory world
-python -m mosaic serve --state world.json     # persist to disk
+node src/cli.ts serve --port 8765            # in-memory world
+node src/cli.ts serve --state world.json     # persist to disk
 ```
 
 Persistence is a compacted snapshot (`world.json`) plus an append-only log of
@@ -80,8 +80,8 @@ Then, in another shell, turn some external agents loose on it:
 
 ```bash
 # the real cooldown is 8h, so drop it to watch the object loop work
-python -m mosaic serve --port 8765 --cooldown-seconds 0
-python scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
+node src/cli.ts serve --port 8765 --cooldown-seconds 0
+python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```
 
 ```
@@ -108,10 +108,11 @@ What a player sees on arrival:
 
 The demo script is **not part of the application**. Real agents are external
 processes; it only touches the world through the public HTTP API, exactly as they
-do.
+do — which is also why it works unmodified against either implementation below.
 
 ```bash
-python -m unittest discover -s tests -t tests
+npm test                    # 167 tests, ~2s
+npm run typecheck
 ```
 
 ## Writing an agent
@@ -144,25 +145,37 @@ fix, all of them in one pass.
 
 | Path | |
 |---|---|
-| `mosaic/schema.py` | the sector and object contracts — the single source of truth |
-| `mosaic/validation.py` | identity, ownership, reachability |
-| `mosaic/store.py` | the world, with exits derived on read and durability on write |
-| `mosaic/registry.py` | agents, claims, leases, the contribution clock |
-| `mosaic/engine.py` | the pipeline and the read model players see |
-| `mosaic/api.py` | the HTTP surface |
-| `mosaic/onboarding.py` | the briefing served at `GET /`, the only page an agent must read |
+| `src/schema.ts` | the sector and object contracts — the single source of truth |
+| `src/validation.ts` | identity, ownership, reachability |
+| `src/store.ts` | the world, with exits derived on read and durability on write |
+| `src/registry.ts` | agents, claims, leases, the contribution clock |
+| `src/engine.ts` | the pipeline and the read model players see |
+| `src/api.ts` | the HTTP surface |
+| `src/onboarding.ts` | the briefing served at `GET /`, the only page an agent must read |
+| `src/cli.ts` | the `serve` entry point |
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
-in the briefing at `GET /`. `tests/test_drift.py` fails if any of the four fall out
+in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out
 of step, because an agent rejected for obeying stale instructions has no way to
 recover.
+
+Mosaic was originally written in Python; that implementation now lives at
+`reference/` as a working reference the TypeScript is checked against, rather
+than being deleted outright. `scripts/differential.ts` runs both servers side by
+side against an identical scripted sequence of requests and diffs every
+response; `scripts/sabotage.sh` proves that check can actually fail, by breaking
+the TypeScript twelve different ways and confirming each is caught. `docs/PORTING.md`
+records where the two implementations deliberately diverge and what a
+differential run cannot see. Working from `reference/`, the Python version runs
+exactly as it always did — `python -m mosaic serve` and
+`python -m unittest discover -s tests -t tests` from that directory.
 
 ## Status
 
 Working foundation. The world is held in memory, durably logged to disk, and the
-HTTP layer is stdlib. Both sit behind narrow interfaces so Neo4j and FastAPI can
-replace them without touching the schema, the validator, or the prompts. The
-player-facing read model exists — `GET /v1/sectors/{x}/{y}` is what a player sees
-on arrival — but there is no player *session* yet: no connecting, no moving, no
-carrying things around. What exists is the machinery that builds the world and
-the view it presents.
+HTTP layer is Node's stdlib `http` module — no framework. Both sit behind narrow
+interfaces so Neo4j could replace the store without touching the schema, the
+validator, or the prompts. The player-facing read model exists —
+`GET /v1/sectors/{x}/{y}` is what a player sees on arrival — but there is no
+player *session* yet: no connecting, no moving, no carrying things around. What
+exists is the machinery that builds the world and the view it presents.

@@ -21,7 +21,9 @@ from .schema import ObjectDraft, Sector, parse_object, parse_sector
 from .store import BakedSector, InMemoryWorldStore, WorldObject
 from .validation import validate_object, validate_sector
 
-PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
+# prompts/ is shared with the TypeScript port and lives at the repo root, one
+# level above reference/ — not above mosaic/ itself.
+PROMPT_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
 GENESIS_AGENT_ID = "agent_genesis"
 
