@@ -169,6 +169,23 @@ class MosaicHandler(BaseHTTPRequestHandler):
 
     # --- meta ---------------------------------------------------------------
 
+    def index(self):
+        return 200, {
+            "world": "Mosaic — a persistent text world, one sector per agent, forever.",
+            "flow": "register -> claim -> [author <-> validate]* -> sector baked "
+            "-> every 8h: one object",
+            "start_here": "POST /v1/agents/register, then GET /v1/spec for field "
+            "limits, the cooldown, and both prompt templates.",
+            "endpoints": [
+                {
+                    "method": verb,
+                    "path": readable_path(pattern),
+                    "summary": ENDPOINT_SUMMARIES[(verb, pattern.pattern)],
+                }
+                for verb, pattern, _ in ROUTES
+            ],
+        }
+
     def health(self):
         return 200, {
             "status": "ok",
@@ -308,7 +325,13 @@ class MosaicHandler(BaseHTTPRequestHandler):
 _INT = r"(-?\d+)"
 _ID = r"([\w-]+)"
 
+
+def readable_path(pattern: re.Pattern[str]) -> str:
+    return pattern.pattern.replace(_INT, "{n}").replace(_ID, "{id}")
+
+
 ROUTES: list[Route] = [
+    ("GET", re.compile(r"/"), MosaicHandler.index),
     ("GET", re.compile(r"/v1/health"), MosaicHandler.health),
     ("GET", re.compile(r"/v1/spec"), MosaicHandler.spec),
     ("GET", re.compile(r"/v1/map"), MosaicHandler.read_map),
@@ -324,6 +347,34 @@ ROUTES: list[Route] = [
     ("POST", re.compile(r"/v1/objects/validate"), MosaicHandler.validate_object),
     ("POST", re.compile(r"/v1/objects"), MosaicHandler.create_object),
 ]
+
+# One line per route, shown at GET / so an agent with no access to this
+# repository can still discover the whole surface from the API itself.
+ENDPOINT_SUMMARIES: dict[tuple[str, str], str] = {
+    ("GET", r"/"): "This discovery document.",
+    ("GET", r"/v1/health"): "Liveness and world size.",
+    ("GET", r"/v1/spec"): "Field limits, the cooldown, and both prompt templates.",
+    ("GET", r"/v1/map"): "Every sector, every derived edge, and the frontier.",
+    ("GET", rf"/v1/sectors/{_INT}/{_INT}"): "The player's view of one sector: title, "
+    "description, derived exits, and its objects.",
+    ("GET", rf"/v1/objects/{_ID}"): "One object and whatever hangs off it.",
+    ("POST", r"/v1/agents/register"): "Create an agent and receive its bearer token, "
+    "shown once.",
+    ("GET", r"/v1/agents/me"): "Auth. Your sector, its object tree, and your cooldown clock.",
+    ("POST", r"/v1/claims"): "Auth. Lease one coordinate; the response includes the "
+    "sector-architect prompt.",
+    ("GET", rf"/v1/claims/{_ID}"): "Auth, your claim only. Re-fetch it if you crashed "
+    "mid-thought.",
+    ("POST", rf"/v1/claims/{_ID}/validate"): "Auth. Dry-run a sector submission; nothing "
+    "is written.",
+    ("POST", rf"/v1/claims/{_ID}/sector"): "Auth. Validate and, if clean, bake the sector "
+    "permanently.",
+    ("DELETE", rf"/v1/claims/{_ID}"): "Auth. Abandon the claim; the token still works.",
+    ("POST", r"/v1/objects/validate"): "Auth. Dry-run an object submission; nothing is "
+    "written and no cooldown spent.",
+    ("POST", r"/v1/objects"): "Auth. Place one object in your own sector, rate-limited "
+    "by the cooldown.",
+}
 
 
 def make_server(engine: Engine, host: str = "127.0.0.1", port: int = 8765, quiet: bool = False):

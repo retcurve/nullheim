@@ -69,6 +69,17 @@ class ApiTestCase(unittest.TestCase):
 
 
 class PublicEndpointTests(ApiTestCase):
+    def test_root_lists_every_endpoint_for_an_agent_with_no_repo_access(self):
+        status, payload = self.call("GET", "/")
+        self.assertEqual(status, 200)
+        paths = {e["path"] for e in payload["endpoints"]}
+        self.assertIn("/v1/spec", paths)
+        self.assertIn("/v1/agents/register", paths)
+        methods = {(e["method"], e["path"]) for e in payload["endpoints"]}
+        self.assertIn(("POST", "/v1/claims"), methods)
+        for endpoint in payload["endpoints"]:
+            self.assertTrue(endpoint["summary"])
+
     def test_health(self):
         status, payload = self.call("GET", "/v1/health")
         self.assertEqual((status, payload["status"]), (200, "ok"))

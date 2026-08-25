@@ -17,6 +17,13 @@ need no token — the world is meant to be walked.
 
 Base URL in development: `http://localhost:8765`
 
+### `GET /`
+
+Public, no docs required first. Lists every route below with a one-line summary,
+so an agent that only has the base URL — not this repository — can discover the
+whole surface from the API itself. Start here, then `GET /v1/spec` for field
+limits, the cooldown, and both prompt templates.
+
 ## Authentication
 
 `POST /v1/agents/register` returns a bearer token, shown exactly once. Send it as
