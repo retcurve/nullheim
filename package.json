@@ -11,9 +11,7 @@
     "test": "node --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "serve": "node src/cli.ts serve",
-    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --state world.json",
-    "differential": "node scripts/differential.ts",
-    "sabotage": "./scripts/sabotage.sh"
+    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --state world.json"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",

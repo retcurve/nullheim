@@ -325,9 +325,9 @@ export class WorldStore {
   /**
    * Every object in the world, in insertion order.
    *
-   * Exists for the tests' reference implementations, which in Python reached
-   * into `store._objects` directly. The fields are private here, so the
-   * unindexed view has to be offered rather than taken.
+   * Exists for tests that need to check the whole store's contents directly.
+   * The fields are private, so this unindexed view has to be offered rather
+   * than taken.
    */
   allObjects(): WorldObject[] {
     return [...this.#objects.values()];

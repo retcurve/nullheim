@@ -144,11 +144,10 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
 /**
  * Reject a payload too large to be a good-faith submission.
  *
- * Known, deliberate divergence from the Python: `json.dumps` defaults to `", "`
- * and `": "` separators while `JSON.stringify` emits none, so the same payload
- * measures a few percent smaller here (107 bytes vs 99 on a representative
- * sector). The threshold is an arbitrary sanity bound and nothing sits near it,
- * so the compact form is used rather than reconstructing Python's spacing.
+ * Measured on `JSON.stringify`'s compact form (no separators between fields),
+ * not a padded one — a representative sector measures 99 bytes this way. The
+ * threshold is an arbitrary sanity bound and nothing sits near it, so the exact
+ * encoding doesn't matter.
  */
 function oversized(raw: unknown, errors: Collector): boolean {
   const encoded = Buffer.byteLength(JSON.stringify(raw) ?? "", "utf8");

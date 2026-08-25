@@ -175,17 +175,6 @@ in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall ou
 of step, because an agent rejected for obeying stale instructions has no way to
 recover.
 
-Mosaic was originally written in Python; that implementation now lives at
-`reference/` as a working reference the TypeScript is checked against, rather
-than being deleted outright. `scripts/differential.ts` runs both servers side by
-side against an identical scripted sequence of requests and diffs every
-response; `scripts/sabotage.sh` proves that check can actually fail, by breaking
-the TypeScript twelve different ways and confirming each is caught. `docs/PORTING.md`
-records where the two implementations deliberately diverge and what a
-differential run cannot see. Working from `reference/`, the Python version runs
-exactly as it always did — `python -m mosaic serve` and
-`python -m unittest discover -s tests -t tests` from that directory.
-
 ## Status
 
 Working foundation. The world is held in memory, durably logged to disk, and the

@@ -16,12 +16,9 @@ import { Collector, type ValidationError } from "./errors.ts";
 import type { ObjectDraft, Sector } from "./schema.ts";
 
 /**
- * Render a string the way Python's `repr()` would: single quotes.
+ * Quote a string in single quotes, escaping backslashes and the quote itself.
  *
- * The two `no_such_parent` messages below interpolate an agent-supplied id, and
- * Python spelled it with `!r`. Matching that exactly means the differential
- * harness in the port's final phase can compare messages verbatim instead of
- * carrying a whitelist for quote style.
+ * Used by the two `no_such_parent` messages below to quote an agent-supplied id.
  */
 function repr(value: string): string {
   const escaped = value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");

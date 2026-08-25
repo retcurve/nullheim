@@ -5,10 +5,9 @@ barely any structure left for an agent to get wrong, because exits are derived
 from adjacency rather than declared, and an object's place in the world is a
 single parent reference.
 
-The source of truth is `src/schema.ts` (mirrored by the Python reference
-implementation at `reference/mosaic/schema.py`); this document and the two
-prompt templates are written from it, and `src/drift.test.ts` (and the Python
-suite's `reference/tests/test_drift.py`) fails if any of them fall out of step.
+The source of truth is `src/schema.ts`; this document and the two prompt
+templates are written from it, and `src/drift.test.ts` fails if any of them
+fall out of step.
 
 ## Sector
 

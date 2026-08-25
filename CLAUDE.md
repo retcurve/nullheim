@@ -4,13 +4,7 @@ A persistent text world built one sector at a time by independent AI agents that
 connect from outside over HTTP. Start with `README.md` for what it is and how to
 run it; `docs/API.md` and `docs/SCHEMA.md` are the agent-facing contract.
 
-The implementation is TypeScript, in `src/`. It began as Python; that version now
-lives at `reference/` as a working reference the TypeScript is checked against —
-see `docs/PORTING.md` for the two implementations' deliberate divergences,
-`scripts/differential.ts` for the tool that diffs them live, and
-`scripts/sabotage.sh` for the proof that tool can actually fail. Everything below
-was true of the Python and carries over unchanged unless a note says otherwise;
-file paths point at the TypeScript.
+The implementation is TypeScript, in `src/`.
 
 This file exists for the things that are *not* obvious from the code: choices that
 were made deliberately after weighing an alternative, and limits that were measured
@@ -30,8 +24,6 @@ a U-shaped world, it makes a one-cell notch 3.5× likelier than the end of a lim
 roughly halves the perimeter at 20k sectors (1,087 → 586). The world is meant to
 sprawl raggedly, corridors included.
 Guard: `src/lifecycle.test.ts`'s `"allocation does not prefer well-connected slots"`
-(the Python original, still run from `reference/`, is
-`tests/test_lifecycle.py::test_allocation_does_not_prefer_well_connected_slots`)
 runs 60 seeds to prove a one-neighbour slot is still reachable.
 
 **A claim requires a built neighbour, never a merely claimed one.** This is why
@@ -41,9 +33,8 @@ every sector touches the world at the moment it bakes. Allowing claims next to u
 claims removes the first and forfeits the second; they are one rule seen from two
 sides, and this was proposed and rejected on those grounds.
 `validation.ts` still asserts `orphan_sector` as defence in depth, but nothing
-reaching through the API can trigger it — confirmed for both implementations by
-`scripts/sabotage.sh`, which shows the differential harness correctly cannot see
-a change to that code.
+reaching through the API can trigger it. `validation.test.ts` covers it directly
+since no sequence of public API calls ever will.
 
 **Agents are told nothing about their neighbours.** A claim response carries a
 coordinate and a deadline. Not a title, not a description, not even whether anything
@@ -101,10 +92,6 @@ side actually needs, not on principle.
 example — the prompts' and the onboarding document's — through the real validator.
 That is intentional: an agent rejected for obeying stale instructions has no way to
 recover. The fix for a drift failure is to update all four, never to relax the test.
-(The Python reference at `reference/` carries an equivalent `test_drift.py`,
-against its own `schema.py` and `onboarding.py` — the same four files in
-`docs/` and `prompts/` are shared, and are what a differential run actually
-proves both implementations agree on.)
 
 `onboarding.ts` earns its place as a fourth copy by interpolating every limit and
 field name from `schema.ts` rather than restating them, so the only thing that can
@@ -125,8 +112,7 @@ bug waiting for the next limit change.
   213 ms per call at 20k sectors before the frontier index (0.023 ms after);
   `objectsIn()` scanned every object in the world before the per-coordinate index.
   Both sat on paths hit constantly — claiming, and every player room view. If you add
-  a third such query, index it the same way rather than scanning. (Measured on the
-  original Python; nothing about the port changes the shape of the argument.)
+  a third such query, index it the same way rather than scanning.
 - **Persistence costs the same at any world size** — one appended line and one
   `fsync`. Measured flat as the world grew 60×: 0.185 ms per write at 1k sectors,
   0.109 ms at 60k.
@@ -157,41 +143,16 @@ python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 The demo needs both brakes off. `--cooldown-seconds 0` because at the real
 eight-hour cadence the object loop is unobservable, and `--claims-per-hour 0`
 because eight agents claiming at once would otherwise eat a quarter of the default
-hourly budget and the later rounds would start getting 429s. `scripts/demo_agents.py` is not part of the application — it stands
-in for external agents and touches the world only through the public HTTP API, which
-is the right way to test anything agent-facing. It is plain Python `urllib` with no
-dependency on either implementation, so it runs unmodified against `src/cli.ts` or,
-from `reference/`, `python -m mosaic serve`.
+hourly budget and the later rounds would start getting 429s. `scripts/demo_agents.py`
+is not part of the application — it stands in for external agents and touches the
+world only through the public HTTP API, which is the right way to test anything
+agent-facing. It is plain Python `urllib` with no dependency on the implementation,
+so a change to the server never requires touching it unless the wire contract
+itself changes.
 
-To run the Python reference directly (its own test suite, or its own server):
-
-```bash
-cd reference
-python -m unittest discover -s tests -t tests          # 149 tests, ~3s
-python -m mosaic serve --port 8765 --cooldown-seconds 0
-```
-
-To check the two implementations still agree:
-
-```bash
-node scripts/differential.ts   # runs both servers, diffs an identical scripted run
-./scripts/sabotage.sh          # proves that check can fail — breaks src/ 12 ways,
-                                # confirms each is caught, then reverts
-```
-
-> **Both are currently red.** Earned sectors and the world-wide claim rate landed
-> in `src/` only, so the agent wire shape has moved (`sector` → `sectors`,
-> `already_settled` → `sector_locked`) and the harness dies before it starts.
-> `reference/` also fails 2 of its own 149 tests, because `prompts/object_artisan.md`
-> is shared and its placeholders changed. `docs/PORTING.md` records exactly what
-> is outstanding — read it before assuming a green run means anything.
-
-When changing storage or allocation, prefer a test that compares against a reference
-implementation of the old behaviour over one that asserts the new code matches itself.
-Both index changes and the persistence rewrite were verified that way, in Python,
-before the port — and in two cases a test that looked correct turned out to pass for
-the wrong reason until it was checked against a deliberately broken build. The same
-discipline is why the TypeScript port kept the Python running as its own reference
-rather than trusting the port's own tests: `scripts/sabotage.sh` is that principle
-applied to the port itself, and it too caught real gaps (see `docs/PORTING.md`)
-before they could hide behind a green run.
+When changing storage or allocation, prefer a test that compares against a
+reference implementation of the old behaviour over one that asserts the new code
+matches itself — a test that only checks new code against itself can pass for the
+wrong reason. Both the store's index changes and the persistence rewrite were
+verified this way, against a plain from-scratch reimplementation of the prior
+behaviour kept only for the comparison and discarded once it passed.
