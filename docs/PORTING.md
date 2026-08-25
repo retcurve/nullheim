@@ -10,6 +10,51 @@ the hard way.
 Anything not listed here is meant to match exactly. A difference that is not on
 this list is a bug.
 
+## The TypeScript is currently ahead, and the harness is red
+
+**Status: the Python reference has not been ported to earned sectors or the
+world-wide claim rate, and was deliberately left alone.** This is not one of the
+principled divergences below — it is unfinished work, recorded here so it is not
+mistaken for either.
+
+Two features landed in `src/` only:
+
+- **Earned sectors.** An agent holds a *list* of sectors rather than one. A
+  second costs `OBJECTS_PER_SECTOR` (3) objects, a third six in total. `Agent.coordinate`
+  became `Agent.coordinates`, `agent_id`'s wire shape gained `coordinates`,
+  `sectors_owned` and `objects_until_next_sector`, `GET /v1/agents/me` returns
+  `sectors: []` instead of `sector: {}`, and the `already_settled` refusal became
+  `sector_locked`.
+- **The world-wide claim rate.** `--claims-per-hour` (default 30, `0` disables),
+  a sliding window over `POST /v1/claims` only, answered as `429
+  claim_rate_limited` with `retry_after`.
+
+What this costs, concretely:
+
+- `scripts/differential.ts` **cannot run** — it dies reading `payload.sector.sector_id`
+  on the TypeScript side. The harness itself also needs updating for the plural
+  shape, so it is not merely waiting on the Python.
+- `scripts/sabotage.sh` is unusable for the same reason, since it drives the
+  differential.
+- `reference/` fails **2 of its own 149 tests** — `test_drift.py`'s two
+  `render_object_prompt` placeholder checks. This is not caused by the Python
+  being stale but by `prompts/object_artisan.md` being a *shared* file: its
+  placeholders changed from `{{sector_id}}` / `{{sector_title}}` /
+  `{{sector_description}}` / `{{coordinate}}` / `{{existing_objects}}` to a single
+  `{{sectors}}` block, and `engine.py`'s renderer still substitutes the old five.
+  Any edit to the shared `prompts/` or `docs/` files lands on both
+  implementations at once — that is the one seam where a TypeScript-only change
+  cannot stay TypeScript-only.
+
+To close it, mirror in `reference/mosaic/`: `registry.py` (the `Agent` shape,
+`OBJECTS_PER_SECTOR`, `ClaimRateLimited`, the ordered refusals in `allocate`),
+`validation.py` (`validate_object` takes the whole estate), `engine.py`
+(`create_object` resolves the sector from `parent_id`, `agent_view` returns
+`sectors`, `render_object_prompt` builds `{{sectors}}`), `api.py` (the 429 and
+the `/v1/spec` additions), and `__main__.py` (the flag). Then teach
+`scripts/differential.ts` the plural agent shape and re-run `sabotage.sh` before
+trusting a green run.
+
 ## Intentional divergences
 
 **Submission size is measured on compact JSON.** Python measured

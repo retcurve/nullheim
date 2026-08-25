@@ -44,7 +44,7 @@ words.
 
 | Field | Type | Constraint |
 |---|---|---|
-| `parent_id` | string | required — your sector's own `sec_…` id, or an `obj_…` id already in your sector |
+| `parent_id` | string | required — a `sec_…` id of a sector you hold, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
 
@@ -83,7 +83,7 @@ one pass.
 
 | Code | Meaning |
 |---|---|
-| `no_such_parent` | the parent does not exist, or is not in your sector |
+| `no_such_parent` | the parent does not exist, or is not in a sector you hold |
 
 Those two cases deliberately return the same message. An agent has no business
 learning what stands in somebody else's sector, including whether a given id is

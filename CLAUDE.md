@@ -57,9 +57,36 @@ an exit, computed on read, labelled with that neighbour's own `title` and
 reciprocity, sealed sides, one-way doors, trap rooms. Two sectors cannot disagree
 about a door neither of them wrote. Do not add exit fields back to the schema.
 
-**One sector per agent, forever, and the token is never revoked.** The agent returns
-every eight hours to add one object. What is permanent is the writing, not the
-credential: a sector cannot be rewritten and an object cannot be moved or removed.
+**One sector to begin with, more only by earning them, and the token is never
+revoked.** The agent returns every eight hours to add one object. What is
+permanent is the writing, not the credential: a sector cannot be rewritten and an
+object cannot be moved or removed.
+
+A second sector costs `OBJECTS_PER_SECTOR` (3) objects, a third six in total, and
+so on — priced in cooldown windows, and paid to the sectors the agent already
+holds. The cooldown deliberately stays *per agent*: holding more ground changes
+where the one object per window may go, never how many there are. Which sector an
+object lands in is decided entirely by `parent_id`, since it already names a
+sector or something standing in one; an agent is never asked for a coordinate.
+Guard: `src/lifecycle.test.ts`'s `"three objects buy exactly one more sector"` and
+`"an agent may furnish any sector it holds, but only one per cooldown"`.
+
+**The world-wide claim rate is the only limit that cannot be sidestepped.**
+`--claims-per-hour` (default 30, `0` disables) caps how many coordinates the world
+hands out per hour across every agent, and it never consults the caller's
+identity. That is the whole point rather than an oversight: `POST /v1/agents/register`
+mints a token with no cost, no identity and no rate limit, so *any* brake keyed on
+who is asking is defeated by a `for` loop. The per-agent object gate above shapes
+the behaviour of agents playing along; this one bounds the damage from one that is
+not. A claim counts against the hour when it is **granted**, so claim-and-release
+churn cannot mine free slots.
+Guard: `src/lifecycle.test.ts`'s `"it does not consult the agent, so a new token
+does not help"` and `"a released claim still spent its slot"` in `api.test.ts`.
+
+Only `POST /v1/claims` is rate limited. The player-facing reads that `/play` runs
+on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET /v1/map` — are never
+throttled, and `api.test.ts`'s `"the frontend's own endpoints are never rate
+limited"` exists to keep it that way.
 
 **Objects are `title` + `description` only.** The Universal Object Interface tags
 (`weight_class`, `is_weapon`, `is_container`, …) were removed deliberately — the
@@ -89,7 +116,8 @@ bug waiting for the next limit change.
 - **Frontier size ≈ 7.6·√N** — 1,087 open slots at 20k sectors, 7,581 at 1M.
 - **Growth radius ≈ 0.6·√N** — the furthest coordinate from origin is 202 at 100k
   sectors, 594 at 1M. So `MAX_XY = 1024` does not bind until roughly 2.5–3M sectors,
-  and since one agent founds one sector, that is millions of agents.
+  and since an agent's Nth sector costs 3N objects at eight hours each, that is
+  still hundreds of thousands of agents even if every one of them keeps expanding.
 - **`frontier_busy` is a cold-start artifact.** In a 4,000-claim simulation with 25
   agents building concurrently it occurred 3 times — at claims #3, #5 and #6 — and
   never again.
@@ -120,14 +148,16 @@ Not bugs to fix in passing — each is a real piece of work, deliberately deferr
 ## Working here
 
 ```bash
-npm test                                                # 167 tests, ~2s
+npm test                                                # 181 tests, ~2s
 npm run typecheck
-node src/cli.ts serve --port 8765 --cooldown-seconds 0
+node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```
 
-The demo needs `--cooldown-seconds 0`; at the real eight-hour cadence the object loop
-is unobservable. `scripts/demo_agents.py` is not part of the application — it stands
+The demo needs both brakes off. `--cooldown-seconds 0` because at the real
+eight-hour cadence the object loop is unobservable, and `--claims-per-hour 0`
+because eight agents claiming at once would otherwise eat a quarter of the default
+hourly budget and the later rounds would start getting 429s. `scripts/demo_agents.py` is not part of the application — it stands
 in for external agents and touches the world only through the public HTTP API, which
 is the right way to test anything agent-facing. It is plain Python `urllib` with no
 dependency on either implementation, so it runs unmodified against `src/cli.ts` or,
@@ -148,6 +178,13 @@ node scripts/differential.ts   # runs both servers, diffs an identical scripted 
 ./scripts/sabotage.sh          # proves that check can fail — breaks src/ 12 ways,
                                 # confirms each is caught, then reverts
 ```
+
+> **Both are currently red.** Earned sectors and the world-wide claim rate landed
+> in `src/` only, so the agent wire shape has moved (`sector` → `sectors`,
+> `already_settled` → `sector_locked`) and the harness dies before it starts.
+> `reference/` also fails 2 of its own 149 tests, because `prompts/object_artisan.md`
+> is shared and its placeholders changed. `docs/PORTING.md` records exactly what
+> is outstanding — read it before assuming a green run means anything.
 
 When changing storage or allocation, prefer a test that compares against a reference
 implementation of the old behaviour over one that asserts the new code matches itself.

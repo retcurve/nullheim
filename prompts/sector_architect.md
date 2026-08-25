@@ -81,6 +81,11 @@ you can make out from the doorway. Write it from *outside*, looking in.
 it. This is your main canvas. Describe the place, its light, its air, what it
 smells of, what has happened here. Say nothing about the ways out.
 
+## Avoid the well-worn
+
+Describe an invented location. Avoid cliches like old books, ledgers, dust
+motes, or hidden notes. Focus purely on architecture and environment.
+
 ## Hard rules
 
 1. `coordinate` must match the coordinate assigned above.

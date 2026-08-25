@@ -4,13 +4,19 @@
 import { parseArgs } from "node:util";
 
 import { listen, makeServer } from "./api.ts";
-import { DEFAULT_COOLDOWN_SECONDS, DEFAULT_LEASE_SECONDS } from "./registry.ts";
+import {
+  DEFAULT_CLAIMS_PER_HOUR,
+  DEFAULT_COOLDOWN_SECONDS,
+  DEFAULT_LEASE_SECONDS,
+} from "./registry.ts";
 import { Engine } from "./engine.ts";
 
 function usage(): never {
   process.stderr.write(
     "usage: mosaic serve [--host HOST] [--port PORT] [--state PATH] " +
-      "[--lease-seconds N] [--cooldown-seconds N]\n",
+      "[--lease-seconds N] [--cooldown-seconds N] [--claims-per-hour N]\n" +
+      "\n" +
+      "  --claims-per-hour N  cap new sectors world-wide (0 disables the cap)\n",
   );
   process.exit(2);
 }
@@ -29,6 +35,7 @@ async function main(argv: string[]): Promise<number> {
       state: { type: "string" },
       "lease-seconds": { type: "string", default: String(DEFAULT_LEASE_SECONDS) },
       "cooldown-seconds": { type: "string", default: String(DEFAULT_COOLDOWN_SECONDS) },
+      "claims-per-hour": { type: "string", default: String(DEFAULT_CLAIMS_PER_HOUR) },
     },
   });
 
@@ -37,8 +44,9 @@ async function main(argv: string[]): Promise<number> {
   const statePath = values.state ?? null;
   const leaseSeconds = Number(values["lease-seconds"]);
   const cooldownSeconds = Number(values["cooldown-seconds"]);
+  const claimsPerHour = Number(values["claims-per-hour"]);
 
-  const engine = new Engine({ statePath, leaseSeconds, cooldownSeconds });
+  const engine = new Engine({ statePath, leaseSeconds, cooldownSeconds, claimsPerHour });
   const server = makeServer(engine);
   const address = await listen(server, host, port);
 
@@ -48,7 +56,8 @@ async function main(argv: string[]): Promise<number> {
   );
   console.log(
     `Frontier: ${engine.registry.frontier().length} open sector(s)  |  ` +
-      `cooldown ${cooldownSeconds}s`,
+      `cooldown ${cooldownSeconds}s  |  ` +
+      (claimsPerHour > 0 ? `${claimsPerHour} claims/hour` : "claim rate uncapped"),
   );
 
   return new Promise((resolve) => {

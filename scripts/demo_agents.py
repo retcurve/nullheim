@@ -185,9 +185,13 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
     title, description = palette["objects"][index % len(palette["objects"])]
 
     # Hang it on the sector, or on the last thing placed — deepening rather than
-    # spreading, which is what the object tree is for.
-    existing = me["sector"]["objects"]
-    parent_id = existing[-1]["object_id"] if existing and index % 2 else None
+    # spreading, which is what the object tree is for. An agent that has earned
+    # more ground furnishes the newest sector it holds.
+    sector = me["sectors"][-1]
+    existing = sector["objects"]
+    # parent_id is required and has no null form: the sector's own id is how you
+    # say "stand it in the room itself".
+    parent_id = existing[-1]["object_id"] if existing and index % 2 else sector["sector_id"]
 
     status, result = client.call(
         "POST", "/v1/objects",
@@ -200,7 +204,11 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
         print(f"  {label}: rejected — {result.get('errors', result)}")
         return False
 
-    where = f"on {existing[-1]['title']!r}" if parent_id else "in the sector"
+    where = (
+        f"on {existing[-1]['title']!r}"
+        if parent_id != sector["sector_id"]
+        else "in the sector"
+    )
     print(f"  {label}: placed {title!r} {where}")
     return True
 

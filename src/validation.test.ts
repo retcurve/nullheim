@@ -33,12 +33,13 @@ function checkSector(engine: Engine, at: Coordinate, payload: unknown): Validati
   return [...errors, ...validateSector(parsed, at, storeView(engine))];
 }
 
+/** `at` is the one sector under test; validateObject itself takes the whole estate. */
 function checkObject(engine: Engine, at: Coordinate, payload: unknown): ValidationError[] {
   const { parsed, errors } = parseObject(payload);
   if (parsed === null) {
     return errors;
   }
-  return [...errors, ...validateObject(parsed, at, storeView(engine))];
+  return [...errors, ...validateObject(parsed, [at], storeView(engine))];
 }
 
 describe("sector rules", () => {
@@ -122,7 +123,7 @@ describe("object rules", () => {
     const { agent } = settle(engine);
     const { object: first, errors } = engine.createObject(agent, obj(root(engine, agent)));
     assert.deepEqual(errors, []);
-    assert.deepEqual(checkObject(engine, agent.coordinate!, obj(first!.objectId)), []);
+    assert.deepEqual(checkObject(engine, agent.coordinates[0]!, obj(first!.objectId)), []);
   });
 
   test("an object in another agent's sector is not a valid parent", () => {
@@ -131,7 +132,7 @@ describe("object rules", () => {
     const { agent: two } = settle(engine, "two");
     const { object: theirs } = engine.createObject(one, obj(root(engine, one)));
 
-    const errors = checkObject(engine, two.coordinate!, obj(theirs!.objectId));
+    const errors = checkObject(engine, two.coordinates[0]!, obj(theirs!.objectId));
     assert.ok(codes(errors).has("no_such_parent"));
   });
 
@@ -145,8 +146,8 @@ describe("object rules", () => {
       obj(root(engine, one), { title: "Their Secret Thing" }),
     );
 
-    const trespass = checkObject(engine, two.coordinate!, obj(theirs!.objectId));
-    const missing = checkObject(engine, two.coordinate!, obj("obj_deadbeefdeadbeef"));
+    const trespass = checkObject(engine, two.coordinates[0]!, obj(theirs!.objectId));
+    const missing = checkObject(engine, two.coordinates[0]!, obj("obj_deadbeefdeadbeef"));
     assert.deepEqual(codes(trespass), codes(missing));
     assert.ok(!trespass[0]!.message.includes("Their Secret Thing"));
   });

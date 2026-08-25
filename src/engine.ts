@@ -20,6 +20,7 @@ import {
   claimAsDict,
   cooldownRemaining,
   isSettled,
+  objectsUntilNextSector,
   type Agent,
   type Claim,
   type RegistryOptions,
@@ -90,6 +91,9 @@ export class Engine {
       }
       if (options.cooldownSeconds !== undefined) {
         registryOptions.cooldownSeconds = options.cooldownSeconds;
+      }
+      if (options.claimsPerHour !== undefined) {
+        registryOptions.claimsPerHour = options.claimsPerHour;
       }
       if (options.rng !== undefined) {
         registryOptions.rng = options.rng;
@@ -196,23 +200,42 @@ export class Engine {
     raw: unknown,
   ): { draft: ObjectDraft | null; errors: ValidationError[] } {
     const { parsed, errors } = parseObject(raw);
-    if (parsed === null || agent.coordinate === null) {
+    if (parsed === null || agent.coordinates.length === 0) {
       return { draft: parsed, errors };
     }
     return {
       draft: parsed,
       errors: [
         ...errors,
-        ...validateObject(parsed, agent.coordinate, this.#validationStore()),
+        ...validateObject(parsed, agent.coordinates, this.#validationStore()),
       ],
     };
   }
 
   /**
-   * Place one object.
+   * Which of the agent's sectors a validated `parentId` points into.
+   *
+   * Only ever called after `validateObject` has passed, so one of these
+   * branches always matches — an agent holding several sectors picks between
+   * them by naming a parent, never by naming a coordinate.
+   */
+  #sectorFor(agent: Agent, parentId: string): BakedSector {
+    for (const coordinate of agent.coordinates) {
+      const baked = this.store.get(coordinate);
+      if (baked !== null && baked.sectorId === parentId) {
+        return baked;
+      }
+    }
+    return this.store.get(this.store.getObject(parentId)!.coordinate)!;
+  }
+
+  /**
+   * Place one object, in whichever of the agent's sectors `parent_id` names.
    *
    * Throws SectorRequired if the agent has not built one yet, NotYet if its
-   * cooldown is still running.
+   * cooldown is still running. The cooldown is per agent, not per sector, so
+   * holding more sectors buys somewhere else to put the object — never a second
+   * object in the same window.
    */
   createObject(
     agent: Agent,
@@ -225,15 +248,13 @@ export class Engine {
       return { object: null, errors };
     }
 
-    // Both guaranteed by checkCanContribute.
-    const coordinate = agent.coordinate!;
-    const baked = this.store.get(coordinate)!;
+    const baked = this.#sectorFor(agent, draft.parentId);
     // Internally the sector itself is still represented as parentId=null — the
     // sector's own id is only the agent-facing spelling of "the root".
     const parentId = draft.parentId === baked.sectorId ? null : draft.parentId;
     const world_object: WorldObject = {
       objectId: `obj_${randomBytes(8).toString("hex")}`,
-      coordinate,
+      coordinate: baked.sector.coordinate,
       parentId,
       title: draft.title,
       description: draft.description,
@@ -327,26 +348,28 @@ export class Engine {
     return branch(null);
   }
 
-  /** An agent's own standing: its sector, its objects, and its clock. */
+  /** An agent's own standing: every sector it holds, their objects, its clock. */
   agentView(agent: Agent): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      agent: agentAsDict(agent),
-      can_claim_sector: !isSettled(agent),
-      can_create_object: isSettled(agent) && cooldownRemaining(agent) <= 0,
-      cooldown_seconds: this.registry.cooldownSeconds,
-      sector: null,
-    };
-    if (agent.coordinate !== null) {
-      const baked = this.store.get(agent.coordinate);
+    const sectors: Record<string, unknown>[] = [];
+    for (const coordinate of agent.coordinates) {
+      const baked = this.store.get(coordinate);
       if (baked !== null) {
-        payload["sector"] = {
+        sectors.push({
           ...sectorAsDict(baked.sector),
           sector_id: baked.sectorId,
-          objects: this.objectTree(agent.coordinate),
-        };
+          objects: this.objectTree(coordinate),
+        });
       }
     }
-    return payload;
+    return {
+      agent: agentAsDict(agent),
+      // A fresh agent owes nothing, so its first sector is free. After that the
+      // same arithmetic is what gates the second and every one after it.
+      can_claim_sector: objectsUntilNextSector(agent) === 0,
+      can_create_object: isSettled(agent) && cooldownRemaining(agent) <= 0,
+      cooldown_seconds: this.registry.cooldownSeconds,
+      sectors,
+    };
   }
 
   worldMap(): Record<string, unknown> {
@@ -386,11 +409,15 @@ export class Engine {
       .replaceAll("{{claim_id}}", claim.claimId);
   }
 
+  /**
+   * The object prompt, carrying every sector this agent holds.
+   *
+   * An agent with one sector sees exactly what it always saw, one heading
+   * deeper. An agent with several is shown all of them and picks between them
+   * the same way it picks a shelf inside one: by naming a `parent_id`.
+   */
   renderObjectPrompt(agent: Agent): string {
-    const view = this.agentView(agent);
-    const sector = (view["sector"] ?? {}) as Record<string, unknown>;
-
-    const lines = (nodes: ObjectNode[], depth = 0): string[] => {
+    const lines = (nodes: ObjectNode[], depth: number): string[] => {
       const out: string[] = [];
       for (const node of nodes) {
         const pad = "  ".repeat(depth);
@@ -400,16 +427,27 @@ export class Engine {
       return out;
     };
 
-    const tree = lines((sector["objects"] as ObjectNode[]) ?? []);
-    return this.promptTemplate("object_artisan")
-      .replaceAll("{{coordinate}}", coords.toString(agent.coordinate!))
-      .replaceAll("{{sector_id}}", (sector["sector_id"] as string) ?? "")
-      .replaceAll("{{sector_title}}", (sector["title"] as string) ?? "")
-      .replaceAll("{{sector_description}}", (sector["long_description"] as string) ?? "")
-      .replaceAll(
-        "{{existing_objects}}",
+    const view = this.agentView(agent);
+    const blocks = ((view["sectors"] as Record<string, unknown>[]) ?? []).map((sector) => {
+      const tree = lines((sector["objects"] as ObjectNode[]) ?? [], 1);
+      const coordinate = sector["coordinate"] as [number, number];
+      return [
+        `### ${sector["title"] as string} — \`[${coordinate[0]}, ${coordinate[1]}]\``,
+        "",
+        `Sector id: \`${sector["sector_id"] as string}\``,
+        "",
+        sector["long_description"] as string,
+        "",
+        "What is already here:",
+        "",
         tree.join("\n") || "- (nothing yet — this sector is bare)",
-      );
+      ].join("\n");
+    });
+
+    return this.promptTemplate("object_artisan").replaceAll(
+      "{{sectors}}",
+      blocks.join("\n\n") || "- (you hold no sectors yet)",
+    );
   }
 }
 

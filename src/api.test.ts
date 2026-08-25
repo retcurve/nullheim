@@ -86,12 +86,14 @@ async function settle(
   return { token, coordinate: context.coordinate };
 }
 
-async function sectorIdFor(ctx: Ctx, token: string): Promise<string> {
+async function sectorIdFor(ctx: Ctx, token: string, index = 0): Promise<string> {
   const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
-  return payload.sector.sector_id;
+  return payload.sectors[index].sector_id;
 }
 
-function makeCtx(options: { cooldownSeconds?: number; leaseSeconds?: number } = {}): {
+type CtxOptions = { cooldownSeconds?: number; leaseSeconds?: number; claimsPerHour?: number };
+
+function makeCtx(options: CtxOptions = {}): {
   ctx: Ctx;
   engine: ReturnType<typeof makeEngine>;
 } {
@@ -102,7 +104,7 @@ function makeCtx(options: { cooldownSeconds?: number; leaseSeconds?: number } = 
 
 let current: { ctx: Ctx; engine: ReturnType<typeof makeEngine> } | null = null;
 
-async function setup(options: { cooldownSeconds?: number; leaseSeconds?: number } = {}): Promise<Ctx> {
+async function setup(options: CtxOptions = {}): Promise<Ctx> {
   current = makeCtx(options);
   const address = await listen(current.ctx.server, "127.0.0.1", 0);
   current.ctx.base = `http://${address.host}:${address.port}`;
@@ -386,11 +388,11 @@ describe("claim flow", () => {
     assert.equal(payload.error.code, "claim_not_active");
   });
 
-  test("a settled agent cannot claim again", async () => {
+  test("a settled agent cannot claim again until it has furnished", async () => {
     const { token } = await settle(ctx);
     const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
     assert.equal(status, 409);
-    assert.equal(payload.error.code, "already_settled");
+    assert.equal(payload.error.code, "sector_locked");
     assert.equal(payload.retryable, false);
   });
 
@@ -443,7 +445,7 @@ describe("claim flow", () => {
       const { payload } = await call(ctx, "POST", "/v1/claims", { token });
       codes.add(payload.error.code);
     }
-    assert.deepEqual(codes, new Set(["already_settled", "claim_in_progress"]));
+    assert.deepEqual(codes, new Set(["sector_locked", "claim_in_progress"]));
   });
 });
 
@@ -571,9 +573,154 @@ describe("objects", () => {
 
     const { status, payload: me } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.equal(status, 200);
-    const tree = me.sector.objects;
+    assert.equal(me.sectors.length, 1);
+    const tree = me.sectors[0].objects;
     assert.equal(tree[0].title, "Can");
     assert.equal(tree[0].contains[0].title, "Key");
+  });
+});
+
+describe("the world-wide claim rate", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0, claimsPerHour: 2 });
+  });
+  afterEach(teardown);
+
+  test("the cap counts claims across agents, not per agent", async () => {
+    // The whole point: a second token is not a way around it.
+    await newClaim(ctx, await newAgent(ctx, "one"));
+    await newClaim(ctx, await newAgent(ctx, "two"));
+
+    const { status, payload } = await call(ctx, "POST", "/v1/claims", {
+      token: await newAgent(ctx, "three"),
+    });
+    assert.equal(status, 429);
+    assert.equal(payload.error.code, "claim_rate_limited");
+    assert.equal(payload.claims_per_hour, 2);
+    assert.ok(payload.retry_after > 0);
+  });
+
+  test("a released claim still spent its slot", async () => {
+    // Otherwise claim/release in a loop would cost an attacker nothing.
+    const token = await newAgent(ctx, "churner");
+    const first = await newClaim(ctx, token);
+    await call(ctx, "DELETE", `/v1/claims/${first.claim.claim_id}`, { token });
+    await newClaim(ctx, token);
+
+    const { status } = await call(ctx, "POST", "/v1/claims", {
+      token: await newAgent(ctx, "late"),
+    });
+    assert.equal(status, 429);
+  });
+
+  test("zero disables the cap", async () => {
+    await teardown();
+    ctx = await setup({ cooldownSeconds: 0, claimsPerHour: 0 });
+    for (let i = 0; i < 4; i += 1) {
+      const { status } = await call(ctx, "POST", "/v1/claims", {
+        token: await newAgent(ctx, `a${i}`),
+      });
+      assert.equal(status, 201);
+    }
+  });
+
+  test("the frontend's own endpoints are never rate limited", async () => {
+    // /play reads the world through these three and nothing else. Exhaust the
+    // claim rate first, then confirm a player is entirely unaffected by it.
+    await newClaim(ctx, await newAgent(ctx, "one"));
+    await newClaim(ctx, await newAgent(ctx, "two"));
+
+    for (let i = 0; i < 12; i += 1) {
+      for (const path of ["/v1/sectors/0/0", "/v1/map", "/v1/health"]) {
+        const { status } = await call(ctx, "GET", path);
+        assert.equal(status, 200, `${path} on pass ${i}`);
+      }
+    }
+  });
+});
+
+describe("earning a second sector", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  test("three objects unlock another claim, over HTTP", async () => {
+    const { token } = await settle(ctx);
+    const sectorId = await sectorIdFor(ctx, token);
+
+    for (let i = 0; i < 3; i += 1) {
+      const { status } = await call(ctx, "POST", "/v1/objects", {
+        body: obj(sectorId, { title: `Thing ${i}` }),
+        token,
+      });
+      assert.equal(status, 201);
+    }
+
+    const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
+    assert.equal(status, 201);
+    assert.notDeepEqual(payload.coordinate, (await call(ctx, "GET", "/v1/agents/me", { token }))
+      .payload.agent.coordinates[0]);
+  });
+
+  test("agents/me counts down to the next sector", async () => {
+    const { token } = await settle(ctx);
+    const { payload: before } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.equal(before.agent.sectors_owned, 1);
+    assert.equal(before.agent.objects_until_next_sector, 3);
+    assert.equal(before.can_claim_sector, false);
+
+    const sectorId = await sectorIdFor(ctx, token);
+    for (let i = 0; i < 3; i += 1) {
+      await call(ctx, "POST", "/v1/objects", {
+        body: obj(sectorId, { title: `Thing ${i}` }),
+        token,
+      });
+    }
+
+    const { payload: after } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.equal(after.agent.objects_until_next_sector, 0);
+    assert.equal(after.can_claim_sector, true);
+  });
+
+  test("a fresh agent owes nothing for its first sector", async () => {
+    const token = await newAgent(ctx, "newcomer");
+    const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.equal(payload.agent.sectors_owned, 0);
+    assert.equal(payload.agent.objects_until_next_sector, 0);
+    assert.equal(payload.can_claim_sector, true);
+    assert.deepEqual(payload.sectors, []);
+  });
+
+  test("an object lands in whichever held sector parent_id names", async () => {
+    const { token } = await settle(ctx);
+    const first = await sectorIdFor(ctx, token, 0);
+    for (let i = 0; i < 3; i += 1) {
+      await call(ctx, "POST", "/v1/objects", { body: obj(first, { title: `T${i}` }), token });
+    }
+
+    const context = await newClaim(ctx, token);
+    await call(ctx, "POST", `/v1/claims/${context.claim.claim_id}/sector`, {
+      body: sector(context.coordinate),
+      token,
+    });
+    const second = await sectorIdFor(ctx, token, 1);
+
+    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(second, { title: "In The New One" }),
+      token,
+    });
+    assert.equal(status, 201);
+    assert.deepEqual(payload.object.coordinate, context.coordinate);
+
+    // And the older sector is still open for business.
+    const { status: backAgain } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(first, { title: "Back In The Old One" }),
+      token,
+    });
+    assert.equal(backAgain, 201);
   });
 });
 

@@ -49,16 +49,24 @@ export function codes(errors: readonly ValidationError[]): Set<string> {
 /**
  * A fresh in-memory world with a deterministic frontier allocator.
  *
- * Cooldown defaults to zero so object tests do not have to wait out a lease; the
- * tests that care about the clock set it explicitly.
+ * Cooldown defaults to zero so object tests do not have to wait out a lease, and
+ * the world-wide claim rate is uncapped so a test that founds a few hundred
+ * sectors does not trip a brake it was not written to exercise. The tests that
+ * care about either clock set it explicitly.
  */
 export function makeEngine(
-  options: { leaseSeconds?: number; cooldownSeconds?: number; seed?: number } = {},
+  options: {
+    leaseSeconds?: number;
+    cooldownSeconds?: number;
+    claimsPerHour?: number;
+    seed?: number;
+  } = {},
 ): Engine {
   const store = new WorldStore();
   const registry = new Registry(store, {
     leaseSeconds: options.leaseSeconds ?? 900,
     cooldownSeconds: options.cooldownSeconds ?? 0,
+    claimsPerHour: options.claimsPerHour ?? 0,
     rng: seeded(options.seed ?? 1),
   });
   return new Engine({ store, registry });
@@ -90,14 +98,16 @@ export function build(
 }
 
 /**
- * The sector id an agent's own sector was baked with — the `parentId` that
- * stands an object in the sector itself.
+ * The sector id one of an agent's own sectors was baked with — the `parentId`
+ * that stands an object in that sector itself. Defaults to the first sector the
+ * agent founded, which is the only one most fixtures have.
  */
-export function root(engine: Engine, agent: Agent): string {
-  if (agent.coordinate === null) {
-    throw new Error("agent has not founded a sector yet");
+export function root(engine: Engine, agent: Agent, index = 0): string {
+  const coordinate = agent.coordinates[index];
+  if (coordinate === undefined) {
+    throw new Error("agent has not founded that many sectors yet");
   }
-  const baked = engine.store.get(agent.coordinate);
+  const baked = engine.store.get(coordinate);
   if (baked === null) {
     throw new Error("agent has not founded a sector yet");
   }
@@ -110,6 +120,12 @@ export function settle(
   label = "tester",
 ): { agent: Agent; token: string; baked: BakedSector } {
   const { agent, token } = engine.register(label);
+  const baked = found(engine, agent);
+  return { agent, token, baked };
+}
+
+/** Take an already-registered agent through founding one more sector. */
+export function found(engine: Engine, agent: Agent): BakedSector {
   const claim = engine.claim(agent);
   const { baked, errors } = engine.submitSector(
     agent,
@@ -117,9 +133,27 @@ export function settle(
     sector(coords.asList(claim.coordinate)),
   );
   if (baked === null) {
-    throw new Error(`fixture agent could not settle: ${JSON.stringify(errors)}`);
+    throw new Error(`fixture agent could not found a sector: ${JSON.stringify(errors)}`);
   }
-  return { agent, token, baked };
+  return baked;
+}
+
+/**
+ * Place `count` objects in the agent's first sector.
+ *
+ * Enough of these and the agent has paid for its next sector — which is the
+ * only way past `sector_locked`, so most multi-sector fixtures start here.
+ */
+export function furnish(engine: Engine, agent: Agent, count: number): void {
+  for (let i = 0; i < count; i += 1) {
+    const { object, errors } = engine.createObject(
+      agent,
+      obj(root(engine, agent), { title: `A Thing ${i}` }),
+    );
+    if (object === null) {
+      throw new Error(`fixture object ${i} rejected: ${JSON.stringify(errors)}`);
+    }
+  }
 }
 
 export type { Coordinate };

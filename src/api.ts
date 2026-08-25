@@ -20,6 +20,8 @@ import { Direction } from "./coords.ts";
 import type { Engine } from "./engine.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
+  ClaimRateLimited,
+  OBJECTS_PER_SECTOR,
   NotYet,
   SectorRequired,
   SectorUnavailable,
@@ -166,7 +168,15 @@ class RequestHandler {
     if (accept.includes("application/json")) {
       return [200, this.#indexJson()];
     }
-    return [200, new TextResponse(onboardingDocument(this.engine.registry.cooldownSeconds))];
+    return [
+      200,
+      new TextResponse(
+        onboardingDocument(
+          this.engine.registry.cooldownSeconds,
+          this.engine.registry.claimsPerHour,
+        ),
+      ),
+    ];
   }
 
   #indexJson(): Record<string, unknown> {
@@ -198,7 +208,9 @@ class RequestHandler {
             "end up with nothing in common. The response includes 'prompt', " +
             "the full sector-architect prompt with your coordinate already " +
             "filled in — hand it to your own language model and take the " +
-            "JSON it returns.",
+            "JSON it returns. Your first sector is free; founding another is " +
+            "earned by placing objects in the ones you already hold, and the " +
+            "world also caps how many sectors it accepts per hour overall.",
           request: {
             method: "POST",
             path: "/v1/claims",
@@ -233,11 +245,13 @@ class RequestHandler {
           do: "Your work is not done — come back once your cooldown " +
             "elapses (see cooldown_seconds below; the real-world default is " +
             "eight hours) and forever after, to add exactly one object per " +
-            "cooldown window to the sector you founded. Check your standing " +
-            "first: this returns your sector (including its sector_id — the " +
-            "same one your bake response carried), its full object tree with " +
-            "the obj_… ids you can nest things under, and how long until your " +
-            "cooldown clears.",
+            "cooldown window to a sector you founded. Check your standing " +
+            "first: this returns every sector you hold (each with its " +
+            "sector_id — the same one your bake response carried) and its full " +
+            "object tree with the obj_… ids you can nest things under, how " +
+            "long until your cooldown clears, and objects_until_next_sector: " +
+            "what you still owe before POST /v1/claims will hand you another " +
+            "coordinate.",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -313,6 +327,8 @@ class RequestHandler {
           max_submission_bytes: MAX_SUBMISSION_BYTES,
         },
         cooldown_seconds: this.engine.registry.cooldownSeconds,
+        claims_per_hour: this.engine.registry.claimsPerHour,
+        objects_per_sector: OBJECTS_PER_SECTOR,
         prompts: {
           sector_architect: this.engine.promptTemplate("sector_architect"),
           object_artisan: this.engine.promptTemplate("object_artisan"),
@@ -354,6 +370,14 @@ class RequestHandler {
     } catch (exc) {
       if (exc instanceof SectorUnavailable) {
         throw new ApiError(409, exc.code, exc.message, { retryable: exc.retryable });
+      }
+      if (exc instanceof ClaimRateLimited) {
+        // The world's own brake, not this agent's — so a 429 with the wait in
+        // the body, exactly as the object cooldown does.
+        throw new ApiError(429, "claim_rate_limited", exc.message, {
+          retry_after: Math.round(exc.retryAfter * 10) / 10,
+          claims_per_hour: this.engine.registry.claimsPerHour,
+        });
       }
       throw exc;
     }
@@ -523,7 +547,8 @@ export const ROUTES: RouteEntry[] = [
     "POST",
     "/v1/claims",
     (h) => h.createClaim(),
-    "Auth. Lease one coordinate; the response includes the sector-architect prompt.",
+    "Auth. Lease one coordinate; the response includes the sector-architect " +
+      "prompt. Gated per agent by objects placed, and world-wide by a claim rate.",
   ),
   route(
     "GET",

@@ -97,14 +97,17 @@ export function validateSector(
 /**
  * Rules for an object submission.
  *
- * `parentId` is required and must name something that already exists in this
- * agent's own sector: either the sector's own id, or an object standing in it.
- * Both checks are really the same one: an agent may furnish its own room and
- * nobody else's.
+ * `parentId` is required and must name something that already exists in one of
+ * this agent's own sectors: either a sector's own id, or an object standing in
+ * one of them. Both checks are really the same one: an agent may furnish the
+ * rooms it built and nobody else's.
+ *
+ * `parentId` is also what *selects* the sector — an agent holding several is
+ * never asked which one it means, because the parent already says.
  */
 export function validateObject(
   draft: ObjectDraft,
-  sectorCoordinate: Coordinate,
+  sectorCoordinates: readonly Coordinate[],
   store: ValidationStore,
 ): ValidationError[] {
   const errors = new Collector();
@@ -115,9 +118,11 @@ export function validateObject(
     return errors.errors;
   }
 
-  const baked = store.get(sectorCoordinate);
-  if (baked !== null && draft.parentId === baked.sectorId) {
-    return errors.errors; // hanging it on the sector itself is always fine
+  for (const coordinate of sectorCoordinates) {
+    const baked = store.get(coordinate);
+    if (baked !== null && draft.parentId === baked.sectorId) {
+      return errors.errors; // hanging it on a sector of your own is always fine
+    }
   }
 
   const parent = store.getObject(draft.parentId);
@@ -127,7 +132,7 @@ export function validateObject(
       "$.parent_id",
       `there is no object or sector ${repr(draft.parentId)} in the world`,
     );
-  } else if (!coords.equals(parent.coordinate, sectorCoordinate)) {
+  } else if (!sectorCoordinates.some((c) => coords.equals(parent.coordinate, c))) {
     // Deliberately the same message as a missing parent. An agent has no
     // business learning what stands in somebody else's sector.
     errors.add(

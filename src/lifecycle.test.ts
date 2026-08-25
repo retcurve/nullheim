@@ -8,8 +8,10 @@ import { ORIGIN, coord } from "./coords.ts";
 import { Engine } from "./engine.ts";
 import { seeded } from "./random.ts";
 import {
+  ClaimRateLimited,
   ClaimStatus,
   NotYet,
+  OBJECTS_PER_SECTOR,
   Registry,
   SectorRequired,
   SectorUnavailable,
@@ -17,7 +19,17 @@ import {
   isActive,
 } from "./registry.ts";
 import { AlreadyBaked, WorldStore } from "./store.ts";
-import { build, codes, makeEngine, obj, root, sector, settle } from "./testing.ts";
+import {
+  build,
+  codes,
+  found,
+  furnish,
+  makeEngine,
+  obj,
+  root,
+  sector,
+  settle,
+} from "./testing.ts";
 
 function frontierKeys(engine: Engine): Set<string> {
   return new Set(engine.registry.frontier().map(coords.key));
@@ -157,6 +169,38 @@ describe("leases", () => {
   });
 });
 
+describe("the world-wide claim rate", () => {
+  test("it refuses once the hour is full, and says how long", () => {
+    const engine = makeEngine({ claimsPerHour: 2 });
+    for (const label of ["one", "two"]) {
+      engine.claim(engine.register(label).agent);
+    }
+    try {
+      engine.claim(engine.register("three").agent);
+      assert.fail("expected a refusal");
+    } catch (exc) {
+      assert.ok(exc instanceof ClaimRateLimited);
+      // The wait points at the oldest grant ageing out of the window, so it is
+      // the better part of an hour rather than a token back-off.
+      assert.ok(exc.retryAfter > 3500 && exc.retryAfter <= 3600, String(exc.retryAfter));
+    }
+  });
+
+  test("it does not consult the agent, so a new token does not help", () => {
+    // The reason this brake exists in the first place: registration is free.
+    const engine = makeEngine({ claimsPerHour: 1 });
+    engine.claim(engine.register("first").agent);
+    assert.throws(() => engine.claim(engine.register("second").agent), ClaimRateLimited);
+  });
+
+  test("what an agent owes is reported before the world's rate", () => {
+    // A locked agent polling a rate limit would be waiting on the wrong thing.
+    const engine = makeEngine({ claimsPerHour: 1 });
+    const { agent } = settle(engine);
+    assert.throws(() => engine.claim(agent), SectorUnavailable);
+  });
+});
+
 describe("submitting a sector", () => {
   test("a clean submission bakes and settles the agent", () => {
     const engine = makeEngine({ cooldownSeconds: 3600 });
@@ -171,7 +215,7 @@ describe("submitting a sector", () => {
     assert.deepEqual(errors, []);
     assert.notEqual(engine.store.get(claim.coordinate), null);
     assert.equal(engine.registry.getClaim(claim.claimId)?.status, ClaimStatus.BAKED);
-    assert.deepEqual(agent.coordinate, claim.coordinate);
+    assert.deepEqual(agent.coordinates, [claim.coordinate]);
     assert.ok(cooldownRemaining(agent) > 0);
   });
 
@@ -182,7 +226,7 @@ describe("submitting a sector", () => {
     assert.equal(engine.registry.authenticate(token), agent);
   });
 
-  test("an agent gets exactly one sector ever", () => {
+  test("a second sector is locked until the first is furnished", () => {
     const engine = makeEngine();
     const { agent } = settle(engine);
     try {
@@ -190,12 +234,13 @@ describe("submitting a sector", () => {
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
-      assert.equal(exc.code, "already_settled");
+      assert.equal(exc.code, "sector_locked");
     }
   });
 
-  test("a settled agent is told never to retry", () => {
-    // The one refusal that retrying can never fix must say so.
+  test("a locked agent is told never to retry", () => {
+    // The one refusal that retrying can never fix must say so — the agent has
+    // to go and do something else entirely before this endpoint will budge.
     const engine = makeEngine();
     const { agent } = settle(engine);
     try {
@@ -206,6 +251,50 @@ describe("submitting a sector", () => {
       assert.ok(!exc.retryable);
       assert.match(exc.message, /Do not retry/);
     }
+  });
+
+  test("three objects buy exactly one more sector", () => {
+    const engine = makeEngine();
+    const { agent } = settle(engine);
+
+    // Two is not enough, and the refusal counts down rather than just refusing.
+    furnish(engine, agent, OBJECTS_PER_SECTOR - 1);
+    assert.throws(() => engine.claim(agent), /place 1 more/);
+
+    furnish(engine, agent, 1);
+    const second = found(engine, agent);
+    assert.equal(agent.coordinates.length, 2);
+    assert.notDeepEqual(second.sector.coordinate, agent.coordinates[0]);
+
+    // And the price goes up with the estate: two sectors owe six objects, of
+    // which three are already paid.
+    assert.throws(() => engine.claim(agent), /place 3 more/);
+  });
+
+  test("an agent may furnish any sector it holds, but only one per cooldown", () => {
+    const engine = makeEngine();
+    const { agent } = settle(engine);
+    furnish(engine, agent, OBJECTS_PER_SECTOR);
+    found(engine, agent);
+
+    // parent_id alone decides which sector the object lands in.
+    const older = root(engine, agent, 0);
+    const newer = root(engine, agent, 1);
+    const { object } = engine.createObject(agent, obj(newer));
+    assert.notEqual(object, null);
+    assert.deepEqual(object!.coordinate, agent.coordinates[1]);
+
+    const { object: back } = engine.createObject(agent, obj(older));
+    assert.deepEqual(back!.coordinate, agent.coordinates[0]);
+  });
+
+  test("an agent cannot furnish a sector it does not hold", () => {
+    const engine = makeEngine();
+    const { agent } = settle(engine);
+    const { agent: neighbour } = settle(engine, "someone-else");
+
+    const { errors } = engine.checkObject(agent, obj(root(engine, neighbour)));
+    assert.ok(codes(errors).has("no_such_parent"));
   });
 
   test("a rejected submission leaves the lease live", () => {
@@ -221,7 +310,7 @@ describe("submitting a sector", () => {
     assert.equal(baked, null);
     assert.ok(codes(errors).has("empty_text"));
     assert.ok(isActive(claim));
-    assert.equal(agent.coordinate, null);
+    assert.deepEqual(agent.coordinates, []);
     assert.equal(claim.attempts, 1);
   });
 
@@ -338,7 +427,7 @@ describe("the contribution clock", () => {
     engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
     engine.createObject(agent, obj(root(engine, agent), { title: "Label" }));
 
-    const tree = engine.objectTree(agent.coordinate!);
+    const tree = engine.objectTree(agent.coordinates[0]!);
     assert.deepEqual(
       tree.map((node) => node.title),
       ["Watering Can", "Label"],
@@ -397,7 +486,7 @@ describe("the read model", () => {
       obj(root(engine, agent), { title: "A Thing", description: "Longer detail." }),
     );
 
-    const view = engine.sectorView(agent.coordinate!)!;
+    const view = engine.sectorView(agent.coordinates[0]!)!;
     assert.equal(view["description"], "It is a place, and it is here.");
     const things = view["things_you_can_see"] as { title: string }[];
     assert.deepEqual(
@@ -432,7 +521,7 @@ describe("the read model", () => {
     const { object: can } = engine.createObject(agent, obj(root(engine, agent), { title: "Can" }));
     engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
 
-    const view = engine.sectorView(agent.coordinate!)!;
+    const view = engine.sectorView(agent.coordinates[0]!)!;
     const things = view["things_you_can_see"] as { title: string }[];
     assert.deepEqual(
       things.map((t) => t.title),
@@ -450,7 +539,7 @@ describe("the read model", () => {
       parentId = object!.objectId;
     }
 
-    let node = engine.objectTree(agent.coordinate!);
+    let node = engine.objectTree(agent.coordinates[0]!);
     for (let depth = 0; depth < 12; depth += 1) {
       assert.equal(node.length, 1);
       assert.equal(node[0]!.title, `level-${depth}`);
