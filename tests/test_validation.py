@@ -1,176 +1,121 @@
-"""Semantic rules: borders, traps, and object graphs.
+"""Semantic rules: identity, ownership, and reachability.
 
-Each rule gets a passing fixture and a failing one, so a rule that quietly stops
-firing shows up as a failure rather than as a corrupted world.
+There is far less here than the border-contract design needed, and that is the
+point of deriving exits from adjacency — most of what used to be checkable is
+now unrepresentable.
 """
 
 import unittest
 
-from helpers import bake, blueprint, codes, item, make_engine
+from helpers import build, codes, make_engine, obj, sector, settle
 
-from mosaic.coords import Coordinate
-from mosaic.schema import parse_blueprint
-from mosaic.validation import validate
+from mosaic.coords import ORIGIN, Coordinate
+from mosaic.schema import parse_object, parse_sector
+from mosaic.validation import validate_object, validate_sector
 
 
-def check(engine, at, payload):
-    parsed, errors = parse_blueprint(payload)
+def check_sector(engine, at, payload):
+    parsed, errors = parse_sector(payload)
     if parsed is None:
         return errors
-    return list(errors) + validate(parsed, Coordinate(*at), engine.store)
+    return list(errors) + validate_sector(parsed, Coordinate(*at), engine.store)
 
 
-class CoordinateTests(unittest.TestCase):
-    def test_blueprint_must_match_the_claimed_sector(self):
+def check_object(engine, at, payload):
+    parsed, errors = parse_object(payload)
+    if parsed is None:
+        return errors
+    return list(errors) + validate_object(parsed, Coordinate(*at), engine.store)
+
+
+class SectorRuleTests(unittest.TestCase):
+    def test_a_valid_sector_passes(self):
         engine = make_engine()
-        errors = check(engine, (0, 1, 0), blueprint((5, 5, 0), directions=("south",)))
+        self.assertEqual(check_sector(engine, (0, 1), sector((0, 1))), [])
+
+    def test_submission_must_match_the_claimed_coordinate(self):
+        engine = make_engine()
+        errors = check_sector(engine, (0, 1), sector((5, 5)))
         self.assertIn("coordinate_mismatch", codes(errors))
 
-
-class ExitTests(unittest.TestCase):
-    def test_duplicate_directions_are_rejected(self):
+    def test_a_mismatched_coordinate_suppresses_the_other_rules(self):
+        """Reporting orphan/adjacency errors about the wrong square is noise."""
         engine = make_engine()
-        payload = blueprint((0, 1, 0), directions=("south", "south"))
-        self.assertIn("duplicate_exit", codes(check(engine, (0, 1, 0), payload)))
+        errors = check_sector(engine, (0, 1), sector((900, 900)))
+        self.assertEqual(codes(errors), {"coordinate_mismatch"})
 
-    def test_a_room_needs_at_least_one_exit(self):
+    def test_a_taken_coordinate_is_refused(self):
         engine = make_engine()
-        payload = blueprint((0, 1, 0), exits=[])
-        self.assertIn("no_exits", codes(check(engine, (0, 1, 0), payload)))
+        errors = check_sector(engine, ORIGIN, sector(ORIGIN))
+        self.assertIn("already_baked", codes(errors))
 
-    def test_exits_off_the_lattice_are_rejected(self):
+    def test_a_sector_touching_nothing_is_refused(self):
+        """Allocation cannot produce this, but an orphan would be unreachable."""
         engine = make_engine()
-        edge = (0, 0, 32)  # MAX_Z
-        payload = blueprint(edge, directions=("up",))
-        self.assertIn("out_of_bounds", codes(check(engine, edge, payload)))
+        errors = check_sector(engine, (40, 40), sector((40, 40)))
+        self.assertIn("orphan_sector", codes(errors))
 
-
-class ReciprocityTests(unittest.TestCase):
-    """The border contract, in both directions."""
-
-    def test_a_promised_doorway_must_be_returned(self):
+    def test_touching_the_world_on_any_single_side_is_enough(self):
         engine = make_engine()
-        # Genesis exits north into [0, 1, 0], so that room owes a south exit.
-        payload = blueprint((0, 1, 0), directions=("north",))
-        errors = check(engine, (0, 1, 0), payload)
-        self.assertIn("unfulfilled_promise", codes(errors))
+        for at in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            with self.subTest(at=at):
+                self.assertEqual(check_sector(engine, at, sector(at)), [])
 
-    def test_returning_the_promised_doorway_passes(self):
+    def test_a_coordinate_off_the_lattice_is_refused(self):
         engine = make_engine()
-        payload = blueprint((0, 1, 0), directions=("south",))
-        self.assertEqual(check(engine, (0, 1, 0), payload), [])
+        far = (1025, 0)
+        self.assertIn("out_of_bounds", codes(check_sector(engine, far, sector(far))))
 
-    def test_the_neighbours_doorway_text_is_quoted_back_in_the_error(self):
+
+class ObjectRuleTests(unittest.TestCase):
+    def test_hanging_an_object_on_the_sector_is_always_fine(self):
         engine = make_engine()
-        errors = check(engine, (0, 1, 0), blueprint((0, 1, 0), directions=("north",)))
-        message = next(e.message for e in errors if e.code == "unfulfilled_promise")
-        self.assertIn("grey opening", message)
+        self.assertEqual(check_object(engine, ORIGIN, obj(parent_id=None)), [])
 
-    def test_cannot_punch_a_one_way_door_into_a_finished_room(self):
+    def test_a_parent_that_does_not_exist_is_refused(self):
         engine = make_engine()
-        # [0, 1, 0] is finished and opens only south, back toward genesis. Its
-        # north face is sealed to anybody it did not invite.
-        bake(engine, (0, 1, 0), directions=("south",))
+        errors = check_object(engine, ORIGIN, obj(parent_id="obj_nope"))
+        self.assertIn("no_such_parent", codes(errors))
 
-        # Now [0, 2, 0] tries to open south into it without a promise.
-        payload = blueprint((0, 2, 0), directions=("south",))
-        self.assertIn("unsanctioned_exit", codes(check(engine, (0, 2, 0), payload)))
-
-
-class TrapTests(unittest.TestCase):
-    def test_a_room_where_every_exit_is_locked_is_a_trap(self):
+    def test_an_object_may_hang_on_another_object_in_the_same_sector(self):
         engine = make_engine()
-        payload = blueprint((0, 1, 0), directions=("south",))
-        payload["exits"][0]["is_locked"] = True
-        payload["exits"][0]["lock_hint"] = "It wants something you do not have."
-        self.assertIn("trap_room", codes(check(engine, (0, 1, 0), payload)))
+        agent, _, _ = settle(engine)
+        first, errors = engine.create_object(agent, obj())
+        self.assertEqual(errors, [])
+        self.assertEqual(check_object(engine, agent.coordinate, obj(parent_id=first.object_id)), [])
 
-    def test_one_unlocked_exit_is_enough(self):
+    def test_an_object_in_another_agents_sector_is_not_a_valid_parent(self):
         engine = make_engine()
-        payload = blueprint((0, 1, 0), directions=("south", "north"))
-        payload["exits"][1]["is_locked"] = True
-        payload["exits"][1]["lock_hint"] = "Sealed from the far side."
-        self.assertEqual(check(engine, (0, 1, 0), payload), [])
+        one, _, _ = settle(engine, "one")
+        two, _, _ = settle(engine, "two")
+        theirs, _ = engine.create_object(one, obj())
 
+        errors = check_object(engine, two.coordinate, obj(parent_id=theirs.object_id))
+        self.assertIn("no_such_parent", codes(errors))
 
-class ObjectGraphTests(unittest.TestCase):
-    """Loop guards — an object graph the physics engine could descend forever."""
+    def test_someone_elses_object_is_indistinguishable_from_a_missing_one(self):
+        """An agent has no business learning what stands in another sector."""
+        engine = make_engine()
+        one, _, _ = settle(engine, "one")
+        two, _, _ = settle(engine, "two")
+        theirs, _ = engine.create_object(one, obj(title="Their Secret Thing"))
 
-    def test_a_container_cannot_hold_its_own_namesake(self):
-        inner = item("Satchel")
-        outer = item("Satchel", is_container=True, container_capacity=1, contents=[inner])
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertIn("container_cycle", codes(check(make_engine(), (0, 1, 0), payload)))
+        trespass = check_object(engine, two.coordinate, obj(parent_id=theirs.object_id))
+        missing = check_object(engine, two.coordinate, obj(parent_id="obj_deadbeefdeadbeef"))
+        self.assertEqual(codes(trespass), codes(missing))
+        self.assertNotIn("Their Secret Thing", trespass[0].message)
 
-    def test_the_namesake_check_ignores_case_and_padding(self):
-        inner = item("  satchel ")
-        outer = item("Satchel", is_container=True, container_capacity=1, contents=[inner])
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertIn("container_cycle", codes(check(make_engine(), (0, 1, 0), payload)))
+    def test_the_object_graph_cannot_cycle(self):
+        """A parent must already exist, so a cycle is unrepresentable."""
+        engine = make_engine()
+        agent, _, _ = settle(engine)
+        first, _ = engine.create_object(agent, obj(title="Crate"))
+        second, _ = engine.create_object(agent, obj(title="Tin", parent_id=first.object_id))
 
-    def test_distinct_nested_containers_are_fine(self):
-        inner = item("Tin")
-        outer = item("Satchel", is_container=True, container_capacity=1, contents=[inner])
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertEqual(check(make_engine(), (0, 1, 0), payload), [])
-
-    def test_contents_cannot_exceed_capacity(self):
-        outer = item(
-            "Satchel",
-            is_container=True,
-            container_capacity=1,
-            contents=[item("Tin"), item("Spoon")],
-        )
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertIn("over_capacity", codes(check(make_engine(), (0, 1, 0), payload)))
-
-    def test_immovable_items_cannot_be_carried_or_wielded(self):
-        for flag in ("is_weapon", "is_wearable", "is_consumable"):
-            with self.subTest(flag=flag):
-                payload = blueprint(
-                    (0, 1, 0),
-                    directions=("south",),
-                    items=[item(weight_class="immovable", **{flag: True})],
-                )
-                self.assertIn(
-                    "immovable_conflict", codes(check(make_engine(), (0, 1, 0), payload))
-                )
-
-    def test_immovable_items_cannot_be_nested(self):
-        inner = item("Anvil", weight_class="immovable")
-        outer = item("Crate", is_container=True, container_capacity=1, contents=[inner])
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertIn("immovable_nested", codes(check(make_engine(), (0, 1, 0), payload)))
-
-    def test_a_bolted_down_container_is_still_legal(self):
-        outer = item("Safe", weight_class="immovable", is_container=True, container_capacity=2)
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertEqual(check(make_engine(), (0, 1, 0), payload), [])
-
-    def test_a_consumable_cannot_hold_contents(self):
-        outer = item(
-            "Pie",
-            is_container=True,
-            container_capacity=1,
-            is_consumable=True,
-            contents=[item("Blackbird")],
-        )
-        payload = blueprint((0, 1, 0), directions=("south",), items=[outer])
-        self.assertIn("consumable_container", codes(check(make_engine(), (0, 1, 0), payload)))
-
-
-class AccumulationTests(unittest.TestCase):
-    def test_every_problem_is_reported_in_one_pass(self):
-        """An agent should never have to resubmit to discover the next error."""
-        payload = blueprint(
-            (0, 1, 0),
-            directions=("north", "north"),
-            items=[item(weight_class="immovable", is_weapon=True)],
-        )
-        found = codes(check(make_engine(), (0, 1, 0), payload))
-        self.assertLessEqual(
-            {"duplicate_exit", "unfulfilled_promise", "immovable_conflict"}, found
-        )
+        # The only way to close a loop would be to repoint an existing object,
+        # and nothing in the API can do that.
+        self.assertEqual(second.parent_id, first.object_id)
+        self.assertIsNone(engine.store.get_object(first.object_id).parent_id)
 
 
 if __name__ == "__main__":

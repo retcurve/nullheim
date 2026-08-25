@@ -1,4 +1,4 @@
-"""The HTTP surface, exercised the way an external agent would use it."""
+"""The HTTP surface, exercised the way an external agent (or player) would use it."""
 
 import http.client
 import json
@@ -7,7 +7,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-from helpers import blueprint, make_engine
+from helpers import make_engine, obj, sector
 
 from mosaic.api import make_server
 
@@ -15,8 +15,10 @@ from mosaic.api import make_server
 class ApiTestCase(unittest.TestCase):
     """Boots a real server on an ephemeral port — agents are external, so is this."""
 
+    cooldown_seconds = 0
+
     def setUp(self):
-        self.engine = make_engine()
+        self.engine = make_engine(cooldown_seconds=self.cooldown_seconds)
         self.server = make_server(self.engine, host="127.0.0.1", port=0, quiet=True)
         self.base = "http://{}:{}".format(*self.server.server_address[:2])
         self.thread = threading.Thread(
@@ -54,10 +56,16 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(status, 201)
         return context
 
-    @staticmethod
-    def valid_for(context):
-        directions = [r["direction"] for r in context["required_exits"]]
-        return blueprint(context["coordinate"], directions or ("north",))
+    def settle(self, label="tester", **overrides):
+        token = self.new_agent(label)
+        context = self.new_claim(token)
+        claim_id = context["claim"]["claim_id"]
+        status, result = self.call(
+            "POST", f"/v1/claims/{claim_id}/sector",
+            sector(context["coordinate"], **overrides), token,
+        )
+        self.assertEqual(status, 201)
+        return token, context["coordinate"]
 
 
 class PublicEndpointTests(ApiTestCase):
@@ -65,30 +73,48 @@ class PublicEndpointTests(ApiTestCase):
         status, payload = self.call("GET", "/v1/health")
         self.assertEqual((status, payload["status"]), (200, "ok"))
 
-    def test_spec_carries_the_schema_and_the_prompt(self):
+    def test_spec_carries_both_schemas_and_both_prompts(self):
         status, payload = self.call("GET", "/v1/spec")
         self.assertEqual(status, 200)
-        self.assertIn("coordinate", payload["blueprint_fields"])
-        self.assertIn("weight_class", payload["item_fields"])
-        self.assertIn("Room Architect", payload["prompt_template"])
+        self.assertIn("short_description", payload["sector_fields"])
+        self.assertIn("parent_id", payload["object_fields"])
+        self.assertEqual(payload["directions"], ["north", "south", "east", "west"])
+        self.assertIn("Sector Architect", payload["prompts"]["sector_architect"])
+        self.assertIn("Object Artisan", payload["prompts"]["object_artisan"])
 
-    def test_reading_a_baked_room(self):
-        status, payload = self.call("GET", "/v1/rooms/0/0/0")
+    def test_reading_a_sector_gives_the_players_view(self):
+        status, payload = self.call("GET", "/v1/sectors/0/0")
         self.assertEqual(status, 200)
-        self.assertEqual(payload["blueprint"]["coordinate"], [0, 0, 0])
+        self.assertEqual(payload["title"], "The Nullpoint")
+        self.assertIn("description", payload)
+        self.assertEqual(payload["exits"], [])
+
+    def test_a_new_neighbour_creates_exits_on_both_sides(self):
+        _, coordinate = self.settle(title="Somewhere Else")
+        _, origin = self.call("GET", "/v1/sectors/0/0")
+        _, theirs = self.call("GET", "/v1/sectors/{}/{}".format(*coordinate))
+
+        self.assertEqual(len(origin["exits"]), 1)
+        self.assertEqual(origin["exits"][0]["name"], "Somewhere Else")
+        self.assertEqual(len(theirs["exits"]), 1)
+        self.assertEqual(theirs["exits"][0]["name"], "The Nullpoint")
 
     def test_reading_an_empty_coordinate_is_a_404(self):
-        status, payload = self.call("GET", "/v1/rooms/0/9/0")
-        self.assertEqual((status, payload["error"]["code"]), (404, "no_such_room"))
+        status, payload = self.call("GET", "/v1/sectors/0/9")
+        self.assertEqual((status, payload["error"]["code"]), (404, "no_such_sector"))
 
     def test_negative_coordinates_route_correctly(self):
-        status, _ = self.call("GET", "/v1/rooms/-1/-1/-1")
+        status, _ = self.call("GET", "/v1/sectors/-1/-1")
         self.assertEqual(status, 404)  # routed, just empty
 
-    def test_map_reports_rooms_edges_and_frontier(self):
+    def test_reading_a_missing_object_is_a_404(self):
+        status, payload = self.call("GET", "/v1/objects/obj_nope")
+        self.assertEqual((status, payload["error"]["code"]), (404, "no_such_object"))
+
+    def test_map_reports_sectors_edges_and_frontier(self):
         status, payload = self.call("GET", "/v1/map")
         self.assertEqual(status, 200)
-        self.assertEqual(len(payload["rooms"]), 1)
+        self.assertEqual(len(payload["sectors"]), 1)
         self.assertEqual(len(payload["frontier"]), 4)
 
     def test_unknown_route(self):
@@ -105,17 +131,13 @@ class AuthTests(ApiTestCase):
         status, _ = self.call("POST", "/v1/claims", None, "not-a-real-token")
         self.assertEqual(status, 401)
 
-    def test_a_decommissioned_token_is_revoked(self):
-        token = self.new_agent()
-        context = self.new_claim(token)
-        claim_id = context["claim"]["claim_id"]
-        status, _ = self.call(
-            "POST", f"/v1/claims/{claim_id}/blueprint", self.valid_for(context), token
-        )
-        self.assertEqual(status, 201)
-
-        status, payload = self.call("GET", f"/v1/claims/{claim_id}", None, token)
-        self.assertEqual((status, payload["error"]["code"]), (401, "unauthorised"))
+    def test_a_token_still_works_after_the_sector_is_baked(self):
+        """Agents are long-lived now — the credential outlives the building."""
+        token, _ = self.settle()
+        status, me = self.call("GET", "/v1/agents/me", None, token)
+        self.assertEqual(status, 200)
+        self.assertTrue(me["can_create_object"])
+        self.assertFalse(me["can_claim_sector"])
 
     def test_one_agent_cannot_read_anothers_claim(self):
         first = self.new_agent("first")
@@ -130,32 +152,33 @@ class AuthTests(ApiTestCase):
 
 
 class ClaimFlowTests(ApiTestCase):
-    def test_a_claim_returns_borders_and_a_rendered_prompt(self):
+    def test_a_claim_returns_a_coordinate_and_a_prompt_and_nothing_else(self):
         context = self.new_claim(self.new_agent())
-        self.assertEqual(len(context["required_exits"]), 1)
-        self.assertIn("Room Architect", context["prompt"])
+        self.assertEqual(set(context), {"claim", "coordinate", "world_sectors", "prompt"})
+        self.assertIn("Sector Architect", context["prompt"])
         self.assertIn(str(tuple(context["coordinate"])).replace("(", "[").replace(")", "]"),
                       context["prompt"])
 
-    def test_the_rendered_prompt_names_the_required_direction(self):
-        context = self.new_claim(self.new_agent())
-        direction = context["required_exits"][0]["direction"]
-        self.assertIn(direction, context["prompt"])
-        self.assertIn(context["required_exits"][0]["their_doorway"], context["prompt"])
+    def test_the_claim_payload_leaks_nothing_about_neighbours(self):
+        self.settle("neighbour", title="The Tell-Tale Orangery")
+        context = self.new_claim(self.new_agent("next"))
+        blob = json.dumps(context)
+        self.assertNotIn("Tell-Tale", blob)
+        self.assertNotIn("Nullpoint", blob)
 
     def test_dry_run_reports_errors_without_baking(self):
         token = self.new_agent()
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
 
-        bad = blueprint(context["coordinate"], ("up",))
+        bad = sector(context["coordinate"], title="")
         status, payload = self.call("POST", f"/v1/claims/{claim_id}/validate", bad, token)
         self.assertEqual(status, 200)
         self.assertFalse(payload["ok"])
         self.assertEqual(self.engine.store.count(), 1)
 
         status, payload = self.call(
-            "POST", f"/v1/claims/{claim_id}/validate", self.valid_for(context), token
+            "POST", f"/v1/claims/{claim_id}/validate", sector(context["coordinate"]), token
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(self.engine.store.count(), 1)
@@ -165,13 +188,10 @@ class ClaimFlowTests(ApiTestCase):
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
 
-        bad = blueprint(context["coordinate"], ("up",))
-        status, payload = self.call("POST", f"/v1/claims/{claim_id}/blueprint", bad, token)
+        bad = sector([99, 99], title="")
+        status, payload = self.call("POST", f"/v1/claims/{claim_id}/sector", bad, token)
         self.assertEqual(status, 422)
         self.assertFalse(payload["ok"])
-        self.assertEqual(
-            {"unfulfilled_promise"}, {e["code"] for e in payload["errors"]}
-        )
         self.assertTrue(all({"code", "path", "message"} <= set(e) for e in payload["errors"]))
 
     def test_a_rejection_leaves_the_lease_usable(self):
@@ -179,10 +199,9 @@ class ClaimFlowTests(ApiTestCase):
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
 
-        self.call("POST", f"/v1/claims/{claim_id}/blueprint",
-                  blueprint(context["coordinate"], ("up",)), token)
+        self.call("POST", f"/v1/claims/{claim_id}/sector", sector([99, 99]), token)
         status, payload = self.call(
-            "POST", f"/v1/claims/{claim_id}/blueprint", self.valid_for(context), token
+            "POST", f"/v1/claims/{claim_id}/sector", sector(context["coordinate"]), token
         )
         self.assertEqual((status, payload["status"]), (201, "baked"))
 
@@ -190,13 +209,18 @@ class ClaimFlowTests(ApiTestCase):
         token = self.new_agent()
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
-        self.call("POST", f"/v1/claims/{claim_id}/blueprint", self.valid_for(context), token)
+        self.call("POST", f"/v1/claims/{claim_id}/sector", sector(context["coordinate"]), token)
 
         status, payload = self.call(
-            "POST", f"/v1/claims/{claim_id}/blueprint", self.valid_for(context), token
+            "POST", f"/v1/claims/{claim_id}/sector", sector(context["coordinate"]), token
         )
-        # The token died with the agent, so the rewrite never reaches the graph.
-        self.assertEqual((status, payload["error"]["code"]), (401, "unauthorised"))
+        # The token still works, but the claim is spent — the sector is locked.
+        self.assertEqual((status, payload["error"]["code"]), (409, "claim_not_active"))
+
+    def test_a_settled_agent_cannot_claim_again(self):
+        token, _ = self.settle()
+        status, payload = self.call("POST", "/v1/claims", None, token)
+        self.assertEqual((status, payload["error"]["code"]), (409, "no_sector_available"))
 
     def test_releasing_a_claim_returns_the_sector(self):
         token = self.new_agent()
@@ -209,28 +233,6 @@ class ClaimFlowTests(ApiTestCase):
         _, world = self.call("GET", "/v1/map")
         self.assertIn(context["coordinate"], world["frontier"])
 
-    def test_submitting_against_an_expired_lease_is_a_409(self):
-        engine = make_engine(lease_seconds=0)
-        server = make_server(engine, host="127.0.0.1", port=0, quiet=True)
-        base = "http://{}:{}".format(*server.server_address[:2])
-        thread = threading.Thread(
-            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
-        )
-        thread.start()
-        try:
-            self.base = base
-            token = self.new_agent()
-            context = self.new_claim(token)
-            claim_id = context["claim"]["claim_id"]
-            status, payload = self.call(
-                "POST", f"/v1/claims/{claim_id}/blueprint", self.valid_for(context), token
-            )
-            self.assertEqual((status, payload["error"]["code"]), (409, "claim_not_active"))
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
-
     def test_no_sector_available_is_a_409(self):
         tokens = [self.new_agent(f"a{i}") for i in range(4)]
         for token in tokens:
@@ -239,13 +241,122 @@ class ClaimFlowTests(ApiTestCase):
         self.assertEqual((status, payload["error"]["code"]), (409, "no_sector_available"))
 
 
+class ExpiredLeaseTests(ApiTestCase):
+    def test_submitting_against_an_expired_lease_is_a_409(self):
+        engine = make_engine(lease_seconds=0)
+        server = make_server(engine, host="127.0.0.1", port=0, quiet=True)
+        thread = threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        )
+        thread.start()
+        try:
+            self.base = "http://{}:{}".format(*server.server_address[:2])
+            token = self.new_agent()
+            context = self.new_claim(token)
+            claim_id = context["claim"]["claim_id"]
+            status, payload = self.call(
+                "POST", f"/v1/claims/{claim_id}/sector", sector(context["coordinate"]), token
+            )
+            self.assertEqual((status, payload["error"]["code"]), (409, "claim_not_active"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
+class ObjectTests(ApiTestCase):
+    def test_an_agent_with_no_sector_gets_409_not_429(self):
+        """No sector is a state error, not a rate limit."""
+        token = self.new_agent()
+        status, payload = self.call("POST", "/v1/objects", obj(), token)
+        self.assertEqual((status, payload["error"]["code"]), (409, "no_sector"))
+
+    def test_placing_an_object_and_seeing_it_as_a_player(self):
+        token, coordinate = self.settle()
+        status, result = self.call(
+            "POST", "/v1/objects", obj(title="Brass Can", description="Dented."), token
+        )
+        self.assertEqual(status, 201)
+        object_id = result["object"]["object_id"]
+
+        _, view = self.call("GET", "/v1/sectors/{}/{}".format(*coordinate))
+        self.assertEqual([t["title"] for t in view["things_you_can_see"]], ["Brass Can"])
+
+        _, detail = self.call("GET", f"/v1/objects/{object_id}")
+        self.assertEqual(detail["description"], "Dented.")
+
+    def test_an_object_may_hang_on_another(self):
+        token, coordinate = self.settle()
+        _, first = self.call("POST", "/v1/objects", obj(title="Can"), token)
+        parent_id = first["object"]["object_id"]
+
+        status, second = self.call(
+            "POST", "/v1/objects", obj(title="Key", parent_id=parent_id), token
+        )
+        self.assertEqual(status, 201)
+
+        _, view = self.call("GET", "/v1/sectors/{}/{}".format(*coordinate))
+        self.assertEqual([t["title"] for t in view["things_you_can_see"]], ["Can"])
+        _, detail = self.call("GET", f"/v1/objects/{parent_id}")
+        self.assertEqual([t["title"] for t in detail["things_you_can_see"]], ["Key"])
+
+    def test_another_agents_object_is_not_a_valid_parent(self):
+        first_token, _ = self.settle("first")
+        _, theirs = self.call("POST", "/v1/objects", obj(title="Theirs"), first_token)
+        second_token, _ = self.settle("second")
+
+        status, payload = self.call(
+            "POST", "/v1/objects",
+            obj(parent_id=theirs["object"]["object_id"]), second_token,
+        )
+        self.assertEqual(status, 422)
+        self.assertEqual({e["code"] for e in payload["errors"]}, {"no_such_parent"})
+
+    def test_the_object_dry_run_places_nothing(self):
+        token, _ = self.settle()
+        status, payload = self.call("POST", "/v1/objects/validate", obj(), token)
+        self.assertEqual((status, payload["ok"]), (200, True))
+        self.assertEqual(self.engine.store.object_count(), 0)
+
+    def test_agents_me_exposes_the_object_tree_for_choosing_a_parent(self):
+        token, _ = self.settle()
+        _, first = self.call("POST", "/v1/objects", obj(title="Can"), token)
+        self.call(
+            "POST", "/v1/objects",
+            obj(title="Key", parent_id=first["object"]["object_id"]), token,
+        )
+
+        status, me = self.call("GET", "/v1/agents/me", None, token)
+        self.assertEqual(status, 200)
+        tree = me["sector"]["objects"]
+        self.assertEqual(tree[0]["title"], "Can")
+        self.assertEqual(tree[0]["contains"][0]["title"], "Key")
+
+
+class CooldownTests(ApiTestCase):
+    cooldown_seconds = 3600
+
+    def test_a_fresh_sector_is_on_cooldown(self):
+        token, _ = self.settle()
+        status, payload = self.call("POST", "/v1/objects", obj(), token)
+        self.assertEqual((status, payload["error"]["code"]), (429, "cooldown"))
+        self.assertGreater(payload["agent"]["cooldown_remaining"], 0)
+
+    def test_agents_me_reports_the_wait(self):
+        token, _ = self.settle()
+        _, me = self.call("GET", "/v1/agents/me", None, token)
+        self.assertFalse(me["can_create_object"])
+        self.assertEqual(me["cooldown_seconds"], 3600)
+        self.assertGreater(me["agent"]["cooldown_remaining"], 0)
+
+
 class MalformedInputTests(ApiTestCase):
     def test_a_non_json_body_is_a_400(self):
         token = self.new_agent()
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
         status, payload = self.call(
-            "POST", f"/v1/claims/{claim_id}/blueprint", None, token, raw_body=b"{nope"
+            "POST", f"/v1/claims/{claim_id}/sector", None, token, raw_body=b"{nope"
         )
         self.assertEqual((status, payload["error"]["code"]), (400, "malformed_json"))
 
@@ -254,11 +365,7 @@ class MalformedInputTests(ApiTestCase):
         context = self.new_claim(token)
         claim_id = context["claim"]["claim_id"]
         status, payload = self.call(
-            "POST",
-            f"/v1/claims/{claim_id}/blueprint",
-            None,
-            token,
-            raw_body=b"x" * 200_000,
+            "POST", f"/v1/claims/{claim_id}/sector", None, token, raw_body=b"x" * 200_000
         )
         self.assertEqual((status, payload["error"]["code"]), (413, "payload_too_large"))
 

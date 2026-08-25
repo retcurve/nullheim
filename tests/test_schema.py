@@ -2,96 +2,102 @@
 
 import unittest
 
-from helpers import blueprint, codes, item
+from helpers import codes, obj, sector
 
-from mosaic.schema import MAX_NAME_LEN, parse_blueprint
+from mosaic.schema import (
+    MAX_LONG_DESCRIPTION_LEN,
+    MAX_SHORT_DESCRIPTION_LEN,
+    MAX_TITLE_LEN,
+    parse_object,
+    parse_sector,
+)
 
 
-class ParsingTests(unittest.TestCase):
-    def test_minimal_blueprint_parses_clean(self):
-        parsed, errors = parse_blueprint(blueprint((0, 1, 0)))
+class SectorParsingTests(unittest.TestCase):
+    def test_a_minimal_sector_parses_clean(self):
+        parsed, errors = parse_sector(sector((0, 1)))
         self.assertEqual(errors, [])
-        self.assertEqual(parsed.coordinate, (0, 1, 0))
-        self.assertEqual(len(parsed.exits), 1)
+        self.assertEqual(parsed.coordinate, (0, 1))
 
     def test_non_object_payload_is_rejected(self):
-        parsed, errors = parse_blueprint(["not", "an", "object"])
+        parsed, errors = parse_sector(["not", "an", "object"])
         self.assertIsNone(parsed)
         self.assertEqual(codes(errors), {"type_error"})
 
-    def test_coordinate_must_be_three_integers(self):
-        for bad in ([0, 1], [0, 1, "z"], [True, 0, 0], "0,1,0"):
+    def test_coordinate_must_be_two_integers(self):
+        """The grid is flat — a three-component coordinate is a stale client."""
+        for bad in ([0], [0, 1, 0], [0, "y"], [True, 0], "0,1"):
             with self.subTest(bad=bad):
-                parsed, errors = parse_blueprint(blueprint((0, 1, 0), coordinate=bad))
+                parsed, errors = parse_sector(sector((0, 1), coordinate=bad))
                 self.assertIsNone(parsed)
                 self.assertEqual(codes(errors), {"type_error"})
 
-    def test_name_length_is_capped(self):
-        _, errors = parse_blueprint(blueprint((0, 1, 0), name="x" * (MAX_NAME_LEN + 1)))
-        self.assertIn("too_long", codes(errors))
+    def test_all_three_texts_are_required(self):
+        for field in ("title", "short_description", "long_description"):
+            with self.subTest(field=field):
+                _, errors = parse_sector(sector((0, 1), **{field: "  "}))
+                self.assertIn("empty_text", codes(errors))
+                _, errors = parse_sector(sector((0, 1), **{field: None}))
+                self.assertIn("type_error", codes(errors))
 
-    def test_blank_required_text_is_rejected(self):
-        _, errors = parse_blueprint(blueprint((0, 1, 0), name="   "))
-        self.assertIn("empty_text", codes(errors))
+    def test_each_text_has_its_own_cap(self):
+        caps = {
+            "title": MAX_TITLE_LEN,
+            "short_description": MAX_SHORT_DESCRIPTION_LEN,
+            "long_description": MAX_LONG_DESCRIPTION_LEN,
+        }
+        for field, cap in caps.items():
+            with self.subTest(field=field):
+                _, errors = parse_sector(sector((0, 1), **{field: "x" * (cap + 1)}))
+                self.assertIn("too_long", codes(errors))
+                _, errors = parse_sector(sector((0, 1), **{field: "x" * cap}))
+                self.assertEqual(errors, [])
 
-    def test_control_characters_are_rejected(self):
-        _, errors = parse_blueprint(blueprint((0, 1, 0), description="a\x07b"))
-        self.assertIn("control_characters", codes(errors))
-
-    def test_unknown_fields_are_reported(self):
-        _, errors = parse_blueprint(blueprint((0, 1, 0), secret_powers=["flight"]))
+    def test_declared_exits_are_rejected_as_an_unknown_field(self):
+        """Exits are derived from adjacency; declaring them is a stale client."""
+        _, errors = parse_sector(sector((0, 1), exits=[{"direction": "north"}]))
         self.assertIn("unknown_field", codes(errors))
 
-    def test_bad_direction_enum_is_rejected(self):
-        _, errors = parse_blueprint(blueprint((0, 1, 0), directions=("widdershins",)))
-        self.assertIn("bad_enum", codes(errors))
-
-    def test_bad_weight_class_is_rejected(self):
-        payload = blueprint((0, 1, 0), items=[item(weight_class="fluffy")])
-        _, errors = parse_blueprint(payload)
-        self.assertIn("bad_enum", codes(errors))
-
-    def test_lock_hint_required_only_when_locked(self):
-        locked = blueprint((0, 1, 0))
-        locked["exits"][0]["is_locked"] = True
-        _, errors = parse_blueprint(locked)
-        self.assertIn("type_error", codes(errors))
-
-        unlocked = blueprint((0, 1, 0))
-        unlocked["exits"][0]["lock_hint"] = "a hint nobody asked for"
-        _, errors = parse_blueprint(unlocked)
-        self.assertIn("not_applicable", codes(errors))
-
-    def test_container_capacity_required_for_containers(self):
-        payload = blueprint((0, 1, 0), items=[item(is_container=True, container_capacity=None)])
-        _, errors = parse_blueprint(payload)
-        self.assertIn("required_field", codes(errors))
-
-    def test_capacity_on_a_non_container_is_rejected(self):
-        payload = blueprint((0, 1, 0), items=[item(container_capacity=3)])
-        _, errors = parse_blueprint(payload)
-        self.assertIn("not_applicable", codes(errors))
-
-    def test_nesting_deeper_than_the_cap_is_rejected(self):
-        deepest = item("C", is_container=True, container_capacity=1, contents=[item("D")])
-        middle = item("B", is_container=True, container_capacity=1, contents=[deepest])
-        outer = item("A", is_container=True, container_capacity=1, contents=[middle])
-        _, errors = parse_blueprint(blueprint((0, 1, 0), items=[outer]))
-        self.assertIn("too_deep", codes(errors))
+    def test_control_characters_are_rejected(self):
+        _, errors = parse_sector(sector((0, 1), long_description="a\x07b"))
+        self.assertIn("control_characters", codes(errors))
 
     def test_oversized_payload_is_rejected_outright(self):
-        payload = blueprint((0, 1, 0), ambient_lines=["x" * 200] * 400)
-        parsed, errors = parse_blueprint(payload)
+        parsed, errors = parse_sector(sector((0, 1), title="x" * 40_000))
         self.assertIsNone(parsed)
         self.assertIn("too_large", codes(errors))
 
     def test_round_trip_through_as_dict_is_stable(self):
-        original = blueprint((2, -3, 1), directions=("north", "east"), items=[item()])
-        parsed, errors = parse_blueprint(original)
+        parsed, errors = parse_sector(sector((2, -3)))
         self.assertEqual(errors, [])
-        reparsed, errors = parse_blueprint(parsed.as_dict())
+        reparsed, errors = parse_sector(parsed.as_dict())
+        self.assertEqual((errors, reparsed), ([], parsed))
+
+
+class ObjectParsingTests(unittest.TestCase):
+    def test_a_minimal_object_parses_clean(self):
+        parsed, errors = parse_object(obj())
         self.assertEqual(errors, [])
-        self.assertEqual(parsed, reparsed)
+        self.assertIsNone(parsed.parent_id)
+
+    def test_a_parent_id_may_be_null_or_a_string(self):
+        parsed, errors = parse_object(obj(parent_id="obj_abc123"))
+        self.assertEqual((errors, parsed.parent_id), ([], "obj_abc123"))
+
+    def test_a_non_string_parent_is_rejected(self):
+        _, errors = parse_object(obj(parent_id=17))
+        self.assertIn("type_error", codes(errors))
+
+    def test_title_and_description_are_required(self):
+        for field in ("title", "description"):
+            with self.subTest(field=field):
+                _, errors = parse_object(obj(**{field: ""}))
+                self.assertIn("empty_text", codes(errors))
+
+    def test_unknown_fields_are_reported(self):
+        """The UOI tags are gone — a client still sending them should hear so."""
+        _, errors = parse_object(obj(weight_class="light", is_weapon=False))
+        self.assertIn("unknown_field", codes(errors))
 
 
 if __name__ == "__main__":
