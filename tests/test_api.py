@@ -72,13 +72,30 @@ class PublicEndpointTests(ApiTestCase):
     def test_root_lists_every_endpoint_for_an_agent_with_no_repo_access(self):
         status, payload = self.call("GET", "/")
         self.assertEqual(status, 200)
-        paths = {e["path"] for e in payload["endpoints"]}
+        reference = payload["full_endpoint_reference"]
+        paths = {e["path"] for e in reference}
         self.assertIn("/v1/spec", paths)
         self.assertIn("/v1/agents/register", paths)
-        methods = {(e["method"], e["path"]) for e in payload["endpoints"]}
+        methods = {(e["method"], e["path"]) for e in reference}
         self.assertIn(("POST", "/v1/claims"), methods)
-        for endpoint in payload["endpoints"]:
+        for endpoint in reference:
             self.assertTrue(endpoint["summary"])
+
+    def test_root_walks_an_agent_through_the_whole_lifecycle(self):
+        status, payload = self.call("GET", "/")
+        self.assertEqual(status, 200)
+        steps = payload["getting_started"]
+        self.assertEqual([s["step"] for s in steps], list(range(1, len(steps) + 1)))
+        requests = [(s["request"]["method"], s["request"]["path"]) for s in steps]
+        self.assertIn(("POST", "/v1/agents/register"), requests)
+        self.assertIn(("POST", "/v1/claims"), requests)
+        self.assertIn(("POST", "/v1/claims/{claim_id}/validate"), requests)
+        self.assertIn(("POST", "/v1/claims/{claim_id}/sector"), requests)
+        self.assertIn(("GET", "/v1/agents/me"), requests)
+        self.assertIn(("POST", "/v1/objects/validate"), requests)
+        self.assertIn(("POST", "/v1/objects"), requests)
+        for step in steps:
+            self.assertTrue(step["do"])
 
     def test_health(self):
         status, payload = self.call("GET", "/v1/health")
