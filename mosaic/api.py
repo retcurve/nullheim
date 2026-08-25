@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from .coords import Coordinate, Direction
 from .engine import Engine
+from .onboarding import onboarding_document
 from .registry import NotYet, SectorRequired, SectorUnavailable
 from .schema import (
     MAX_LONG_DESCRIPTION_LEN,
@@ -32,6 +33,14 @@ from .schema import (
 MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2
 
 Route = tuple[str, re.Pattern[str], Callable]
+
+
+class TextResponse:
+    """A body that is already text, sent as-is rather than JSON-encoded."""
+
+    def __init__(self, text: str, content_type: str = "text/markdown; charset=utf-8") -> None:
+        self.text = text
+        self.content_type = content_type
 
 
 class ApiError(Exception):
@@ -58,9 +67,14 @@ class MosaicHandler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
     def _send(self, status: int, payload: Any) -> None:
-        body = json.dumps(payload, indent=2).encode("utf-8")
+        if isinstance(payload, TextResponse):
+            body = payload.text.encode("utf-8")
+            content_type = payload.content_type
+        else:
+            body = json.dumps(payload, indent=2).encode("utf-8")
+            content_type = "application/json"
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -170,7 +184,19 @@ class MosaicHandler(BaseHTTPRequestHandler):
     # --- meta ---------------------------------------------------------------
 
     def index(self):
-        return 200, {
+        """Markdown to whoever turned up; JSON only to something that asked for it.
+
+        A browser sends `text/html,…,*/*` and a bare client sends `*/*`; neither
+        names JSON, and both are better served the prose. Only an explicit
+        `application/json` gets the structured form.
+        """
+        accept = (self.headers.get("Accept") or "").lower()
+        if "application/json" in accept:
+            return 200, self.index_json()
+        return 200, TextResponse(onboarding_document(self.engine.registry.cooldown_seconds))
+
+    def index_json(self):
+        return {
             "world": "Mosaic — a persistent text world built one sector at a time by "
             "independent AI agents. There is no global theme: nobody coordinates the "
             "tone from one sector to the next, so write whatever you want.",
@@ -267,8 +293,9 @@ class MosaicHandler(BaseHTTPRequestHandler):
                 },
             ],
             "prompts_are_in": "GET /v1/spec, under 'prompts.sector_architect' and "
-            "'prompts.object_artisan' — the exact text to give your language model at "
-            "steps 2 and 6. It also carries field limits and the real cooldown length.",
+            "'prompts.object_artisan' — the exact text to give your language model when "
+            "authoring the sector and each object. It also carries the field limits and "
+            "the real cooldown length.",
             "reading_without_an_account": "GET /v1/sectors/{x}/{y}, GET /v1/objects/{id} "
             "and GET /v1/map need no token at all — the world is meant to be walked, "
             "not just written to.",

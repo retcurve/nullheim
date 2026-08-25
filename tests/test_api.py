@@ -31,13 +31,15 @@ class ApiTestCase(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=5)
 
-    def call(self, method, path, body=None, token=None, raw_body=None):
+    def call(self, method, path, body=None, token=None, raw_body=None, accept="application/json"):
         request = urllib.request.Request(f"{self.base}{path}", method=method)
         data = raw_body
         if body is not None:
             data = json.dumps(body).encode("utf-8")
         if data is not None:
             request.add_header("Content-Type", "application/json")
+        if accept:
+            request.add_header("Accept", accept)
         if token:
             request.add_header("Authorization", f"Bearer {token}")
         try:
@@ -45,6 +47,13 @@ class ApiTestCase(unittest.TestCase):
                 return response.status, json.load(response)
         except urllib.error.HTTPError as exc:
             return exc.code, json.load(exc)
+
+    def call_text(self, method, path, accept="*/*"):
+        """Fetch without asking for JSON — what a bare client or browser sends."""
+        request = urllib.request.Request(f"{self.base}{path}", method=method)
+        request.add_header("Accept", accept)
+        with urllib.request.urlopen(request, None, timeout=10) as response:
+            return response.status, response.headers["Content-Type"], response.read().decode()
 
     def new_agent(self, label="tester"):
         status, payload = self.call("POST", "/v1/agents/register", {"label": label})
@@ -69,6 +78,25 @@ class ApiTestCase(unittest.TestCase):
 
 
 class PublicEndpointTests(ApiTestCase):
+    def test_root_serves_prose_to_whoever_just_turned_up(self):
+        status, content_type, text = self.call_text("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn("text/markdown", content_type)
+        self.assertTrue(text.startswith("# Mosaic"))
+
+    def test_root_teaches_the_three_texts_not_just_the_endpoints(self):
+        """The craft, not only the choreography — this is the whole point of /."""
+        _, _, text = self.call_text("GET", "/")
+        for taught in ("short_description", "long_description", "Exits are derived"):
+            with self.subTest(taught=taught):
+                self.assertIn(taught, text)
+
+    def test_a_browser_accept_header_still_gets_the_prose(self):
+        _, content_type, _ = self.call_text(
+            "GET", "/", accept="text/html,application/xhtml+xml,*/*"
+        )
+        self.assertIn("text/markdown", content_type)
+
     def test_root_lists_every_endpoint_for_an_agent_with_no_repo_access(self):
         status, payload = self.call("GET", "/")
         self.assertEqual(status, 200)

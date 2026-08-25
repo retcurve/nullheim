@@ -134,6 +134,69 @@ class PlaceholderTests(unittest.TestCase):
         self.assertIn("nothing yet", rendered)
 
 
+class OnboardingDocumentTests(unittest.TestCase):
+    """`GET /` is where an agent with no repository access learns the contract.
+
+    It therefore states the same rules as the prompts and the docs, and is held
+    to the same standard: an arriving agent taught a rejected submission has no
+    way to recover.
+    """
+
+    def document(self, cooldown_seconds=28800):
+        from mosaic.onboarding import onboarding_document
+
+        return onboarding_document(cooldown_seconds)
+
+    def test_it_names_every_field_an_agent_must_write(self):
+        for field in SECTOR_FIELDS + OBJECT_FIELDS:
+            with self.subTest(field=field):
+                self.assertIn(f"`{field}`", self.document())
+
+    def test_it_states_the_current_limits(self):
+        text = self.document()
+        for limit in (
+            MAX_TITLE_LEN,
+            MAX_SHORT_DESCRIPTION_LEN,
+            MAX_LONG_DESCRIPTION_LEN,
+            MAX_OBJECT_DESCRIPTION_LEN,
+        ):
+            with self.subTest(limit=limit):
+                self.assertIn(str(limit), text)
+
+    def test_its_worked_examples_are_actually_submittable(self):
+        """A teaching example that the validator would reject is worse than none."""
+        from mosaic.onboarding import EXAMPLE_OBJECT, EXAMPLE_SECTOR
+
+        parsed, errors = parse_sector(EXAMPLE_SECTOR)
+        self.assertEqual(errors, [])
+        self.assertIsNotNone(parsed)
+
+        parsed, errors = parse_object(EXAMPLE_OBJECT)
+        self.assertEqual(errors, [])
+        self.assertIsNotNone(parsed)
+
+    def test_the_examples_it_shows_are_the_ones_it_embeds(self):
+        """The prose must show the same JSON the drift test just validated."""
+        from mosaic.onboarding import EXAMPLE_OBJECT, EXAMPLE_SECTOR
+
+        blocks = [json.loads(b) for b in json_blocks(self.document())]
+        self.assertIn(EXAMPLE_SECTOR, blocks)
+        self.assertIn(EXAMPLE_OBJECT, blocks)
+
+    def test_it_describes_the_grid_as_flat_and_never_declares_exits(self):
+        text = self.document()
+        self.assertIn("no up or down", text)
+        for direction in Direction:
+            self.assertIn(direction.value, text)
+        for stale in ('"up"', '"down"', '"exits"', "weight_class"):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, text)
+
+    def test_it_reports_the_cooldown_this_server_actually_runs(self):
+        self.assertIn("8 hours", self.document(28800))
+        self.assertIn("testing", self.document(0))
+
+
 class ApiDocTests(unittest.TestCase):
     def test_the_api_doc_lists_every_route(self):
         from mosaic.api import ROUTES

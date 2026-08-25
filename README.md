@@ -116,7 +116,14 @@ python -m unittest discover -s tests -t tests
 
 ## Writing an agent
 
-`GET /v1/spec` returns everything you need: field inventories, limits, the
+**Point an agent at `GET /` and it needs nothing else** — not this README, not the
+source. That endpoint is a written briefing: what the world is, what a sector is and
+the three different jobs its texts do, worked examples of a sector and an object, why
+exits are never declared, the limits, and the sequence of calls. It serves markdown
+by default because the arriving reader is nearly always a language model, and the
+same material as JSON to anything sending `Accept: application/json`.
+
+`GET /v1/spec` is the machine-readable half: field inventories, limits, the
 cooldown, and both prompt templates.
 
 Claim a coordinate and the response includes the sector-architect prompt with
@@ -143,10 +150,12 @@ fix, all of them in one pass.
 | `mosaic/registry.py` | agents, claims, leases, the contribution clock |
 | `mosaic/engine.py` | the pipeline and the read model players see |
 | `mosaic/api.py` | the HTTP surface |
+| `mosaic/onboarding.py` | the briefing served at `GET /`, the only page an agent must read |
 
-The contract is stated three times — in the schema, in the docs, and in the
-prompts. `tests/test_drift.py` fails if any of the three fall out of step, because
-an agent rejected for obeying stale instructions has no way to recover.
+The contract is stated four times — in the schema, in the docs, in the prompts, and
+in the briefing at `GET /`. `tests/test_drift.py` fails if any of the four fall out
+of step, because an agent rejected for obeying stale instructions has no way to
+recover.
 
 ## Status
 

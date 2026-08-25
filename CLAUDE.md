@@ -56,11 +56,17 @@ engine yet they were validated but read by nothing. `docs/SCHEMA.md` has the ful
 reasoning under "What is no longer here". Bring them back informed by what the player
 side actually needs, not on principle.
 
-**The contract is stated three times** — in `mosaic/schema.py`, in `docs/`, and in
-`prompts/`. `tests/test_drift.py` fails if they fall out of step, including parsing
-the prompts' worked examples through the real validator. That is intentional: an agent
-rejected for obeying stale instructions has no way to recover. The fix for a drift
-failure is to update all three, never to relax the test.
+**The contract is stated four times** — in `mosaic/schema.py`, in `docs/`, in
+`prompts/`, and in `mosaic/onboarding.py` (the document served at `GET /`).
+`tests/test_drift.py` fails if they fall out of step, including parsing every worked
+example — the prompts' and the onboarding document's — through the real validator.
+That is intentional: an agent rejected for obeying stale instructions has no way to
+recover. The fix for a drift failure is to update all four, never to relax the test.
+
+`onboarding.py` earns its place as a fourth copy by interpolating every limit and
+field name from `schema.py` rather than restating them, so the only thing that can
+actually drift there is prose. Keep it that way: a hardcoded `64` in that file is a
+bug waiting for the next limit change.
 
 ## Measured, so you need not re-derive it
 
