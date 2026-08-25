@@ -352,6 +352,8 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(
                 reloaded.object_tree(claim.coordinate)[0]["contains"][0]["title"], "Key"
             )
+            first.store.close()
+            reloaded.store.close()
 
 
 if __name__ == "__main__":

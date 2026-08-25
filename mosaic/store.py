@@ -21,6 +21,13 @@ from typing import Any, Iterable, Protocol
 from .coords import Coordinate, Direction
 from .schema import Sector, parse_sector
 
+SNAPSHOT_VERSION = 3
+
+# Compact once the log reaches roughly the size of the world. That makes the
+# O(world) rewrite happen every O(world) writes, so it costs O(1) amortised
+# however large the world gets.
+MIN_COMPACT_RECORDS = 1000
+
 
 @dataclass(frozen=True)
 class BakedSector:
@@ -105,6 +112,9 @@ class InMemoryWorldStore:
         self._objects_by_coordinate: dict[Coordinate, list[WorldObject]] = {}
         self._lock = threading.RLock()
         self._path = path
+        self._log = None
+        self._log_records = 0
+        self._compacted_size = 0
         if path:
             self.load()
 
@@ -121,7 +131,7 @@ class InMemoryWorldStore:
                 raise KeyError(f"{baked.coordinate} is already baked and cannot be rewritten")
             self._sectors[baked.coordinate] = baked
             self._index_frontier_locked(baked.coordinate)
-            self._persist_locked()
+            self._append_locked("sector", baked.as_dict())
 
     def sectors(self) -> list[BakedSector]:
         with self._lock:
@@ -225,7 +235,7 @@ class InMemoryWorldStore:
             self._objects_by_coordinate.setdefault(world_object.coordinate, []).append(
                 world_object
             )
-            self._persist_locked()
+            self._append_locked("object", world_object.as_dict())
 
     def get_object(self, object_id: str) -> WorldObject | None:
         with self._lock:
@@ -247,13 +257,57 @@ class InMemoryWorldStore:
         with self._lock:
             return len(self._objects)
 
-    # --- snapshot -----------------------------------------------------------
+    # --- persistence --------------------------------------------------------
+    #
+    # A compacted snapshot plus an append-only log of everything since. Writing
+    # costs one line and one fsync no matter how big the world is; the snapshot
+    # used to be rewritten in full on every single contribution, which is half a
+    # gigabyte per object at a million sectors.
+    #
+    # Nothing acknowledged is ever lost. A sector is permanent and an agent waits
+    # eight hours per object, so the API must not say "baked" about something a
+    # power cut can take back.
 
-    def _persist_locked(self) -> None:
+    @property
+    def _log_path(self) -> str:
+        return f"{self._path}.log"
+
+    def _append_locked(self, kind: str, payload: dict[str, Any]) -> None:
         if not self._path:
             return
+        if self._log is None:
+            self._log = open(self._log_path, "a", encoding="utf-8")
+
+        self._log.write(json.dumps({"t": kind, "d": payload}, separators=(",", ":")) + "\n")
+        self._log.flush()
+        # Holding the store lock across the fsync serialises writers. At the
+        # world's actual write rate — one object per agent per eight hours —
+        # that is a few percent of one core, and correctness is worth more.
+        os.fsync(self._log.fileno())
+
+        self._log_records += 1
+        self._maybe_compact_locked()
+
+    def _maybe_compact_locked(self) -> None:
+        # Measured against the world size *at the last compaction*, not the
+        # current one. Comparing against the current size never fires: every
+        # append grows both sides at once, so the log can never catch up.
+        threshold = max(MIN_COMPACT_RECORDS, self._compacted_size)
+        if self._log_records >= threshold:
+            self._compact_locked()
+
+    def _compact_locked(self) -> None:
+        """Fold the log back into the snapshot and start a fresh one.
+
+        The snapshot is made durable *before* the log is dropped. A crash in
+        between leaves log records that are already in the snapshot, and replay
+        is idempotent, so the worst case is redundant work rather than loss.
+        """
+        if not self._path:
+            return
+
         payload = {
-            "version": 2,
+            "version": SNAPSHOT_VERSION,
             "saved_at": time.time(),
             "sectors": {b.coordinate.key: b.as_dict() for b in self._sectors.values()},
             "objects": {o.object_id: o.as_dict() for o in self._objects.values()},
@@ -261,7 +315,45 @@ class InMemoryWorldStore:
         tmp = f"{self._path}.tmp"
         with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp, self._path)
+        self._sync_directory()
+
+        if self._log is not None:
+            self._log.close()
+            self._log = None
+        with open(self._log_path, "w", encoding="utf-8") as handle:
+            handle.flush()
+            os.fsync(handle.fileno())
+        self._log_records = 0
+        self._compacted_size = len(self._sectors) + len(self._objects)
+
+    def _sync_directory(self) -> None:
+        """Make the rename itself durable, not just the file contents."""
+        directory = os.path.dirname(os.path.abspath(self._path)) or "."
+        try:
+            fd = os.open(directory, os.O_RDONLY)
+        except OSError:  # pragma: no cover - not every platform allows this
+            return
+        try:
+            os.fsync(fd)
+        except OSError:  # pragma: no cover
+            pass
+        finally:
+            os.close(fd)
+
+    def compact(self) -> None:
+        """Force a compaction. Called on clean shutdown and by the tests."""
+        with self._lock:
+            self._compact_locked()
+
+    def close(self) -> None:
+        """Release the log handle. Everything written is already durable."""
+        with self._lock:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
 
     def load(self) -> None:
         if not self._path:
@@ -270,14 +362,57 @@ class InMemoryWorldStore:
             with open(self._path, encoding="utf-8") as handle:
                 payload = json.load(handle)
         except FileNotFoundError:
-            return
+            payload = {}
+
+        sectors = {
+            Coordinate.from_key(key): BakedSector.from_dict(value)
+            for key, value in payload.get("sectors", {}).items()
+        }
+        objects = {
+            key: WorldObject.from_dict(value)
+            for key, value in payload.get("objects", {}).items()
+        }
+        replayed = self._replay_log(sectors, objects)
+
         with self._lock:
-            self._sectors = {
-                Coordinate.from_key(key): BakedSector.from_dict(value)
-                for key, value in payload.get("sectors", {}).items()
-            }
-            self._objects = {
-                key: WorldObject.from_dict(value)
-                for key, value in payload.get("objects", {}).items()
-            }
+            self._sectors = sectors
+            self._objects = objects
+            self._log_records = replayed
+            self._compacted_size = len(sectors) + len(objects) - replayed
             self._rebuild_indexes_locked()
+            self._maybe_compact_locked()
+
+    def _replay_log(self, sectors: dict, objects: dict) -> int:
+        """Apply everything written since the snapshot. Idempotent by design."""
+        try:
+            with open(self._log_path, encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except FileNotFoundError:
+            return 0
+
+        replayed = 0
+        for index, line in enumerate(lines):
+            try:
+                record = json.loads(line)
+                kind, data = record["t"], record["d"]
+                if kind == "sector":
+                    baked = BakedSector.from_dict(data)
+                    sectors[baked.coordinate] = baked
+                elif kind == "object":
+                    world_object = WorldObject.from_dict(data)
+                    objects[world_object.object_id] = world_object
+                else:
+                    raise ValueError(f"unknown record type {kind!r}")
+            except Exception as exc:
+                if index == len(lines) - 1:
+                    # A crash mid-append leaves a torn final line. Every line
+                    # before it was fsynced; this one was never acknowledged to
+                    # the agent, so dropping it loses nothing anybody was told.
+                    break
+                # A break in the middle is real corruption, and silently
+                # skipping it would quietly lose somebody's permanent sector.
+                raise ValueError(
+                    f"{self._log_path} is corrupt at line {index + 1}: {exc}"
+                ) from exc
+            replayed += 1
+        return replayed

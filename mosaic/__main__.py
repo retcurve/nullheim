@@ -55,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\nshutting down")
     finally:
         server.server_close()
+        # Fold the log back into the snapshot so the next start is a plain read.
+        engine.store.compact()
+        engine.store.close()
     return 0
 
 

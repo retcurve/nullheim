@@ -103,6 +103,8 @@ class FrontierIndexTests(unittest.TestCase):
             reloaded = InMemoryWorldStore(path=path)
             self.assertEqual(reloaded.open_slots(), first.open_slots())
             self.assertEqual(reloaded.open_slots(), reference_frontier(reloaded))
+            first.close()
+            reloaded.close()
 
     def test_allocation_still_sees_the_whole_frontier(self):
         """The index feeds claiming; a slot missing from it is unbuildable."""
@@ -161,6 +163,9 @@ class ObjectIndexTests(unittest.TestCase):
             first.submit_sector(agent, claim, sector(claim.coordinate))
             for title in ("First", "Second", "Third"):
                 first.create_object(agent, obj(title=title))
+            # Writes land in the log; force them into the snapshot so there is
+            # a snapshot whose stored order can be scrambled.
+            first.store.compact()
 
             payload = json.loads(Path(path).read_text())
             payload["objects"] = dict(reversed(list(payload["objects"].items())))
@@ -170,6 +175,8 @@ class ObjectIndexTests(unittest.TestCase):
             indexed = reloaded.store.objects_in(claim.coordinate)
             self.assertEqual([o.title for o in indexed], ["First", "Second", "Third"])
             self.assertEqual(indexed, reference_objects_in(reloaded.store, claim.coordinate))
+            first.store.close()
+            reloaded.store.close()
 
 
 class ObjectTreeTests(unittest.TestCase):

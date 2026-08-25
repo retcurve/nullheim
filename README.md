@@ -69,6 +69,13 @@ python -m mosaic serve --port 8765            # in-memory world
 python -m mosaic serve --state world.json     # persist to disk
 ```
 
+Persistence is a compacted snapshot (`world.json`) plus an append-only log of
+everything since (`world.json.log`). Each write is one line and one `fsync`
+regardless of how large the world has grown, and the snapshot is only rewritten
+when the log grows to roughly the size of the world. Once the API has answered
+"baked", a `kill -9` cannot take it back — a sector is permanent and an agent
+waits eight hours per object, so the world must not lie about that.
+
 Then, in another shell, turn some external agents loose on it:
 
 ```bash
@@ -132,7 +139,7 @@ fix, all of them in one pass.
 |---|---|
 | `mosaic/schema.py` | the sector and object contracts — the single source of truth |
 | `mosaic/validation.py` | identity, ownership, reachability |
-| `mosaic/store.py` | the world, with exits derived on read |
+| `mosaic/store.py` | the world, with exits derived on read and durability on write |
 | `mosaic/registry.py` | agents, claims, leases, the contribution clock |
 | `mosaic/engine.py` | the pipeline and the read model players see |
 | `mosaic/api.py` | the HTTP surface |
@@ -143,8 +150,8 @@ an agent rejected for obeying stale instructions has no way to recover.
 
 ## Status
 
-Working foundation. The world is in-memory with a JSON snapshot, and the HTTP
-layer is stdlib. Both sit behind narrow interfaces so Neo4j and FastAPI can
+Working foundation. The world is held in memory, durably logged to disk, and the
+HTTP layer is stdlib. Both sit behind narrow interfaces so Neo4j and FastAPI can
 replace them without touching the schema, the validator, or the prompts. The
 player-facing read model exists — `GET /v1/sectors/{x}/{y}` is what a player sees
 on arrival — but there is no player *session* yet: no connecting, no moving, no
