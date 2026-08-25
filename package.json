@@ -10,7 +10,9 @@
   "scripts": {
     "test": "node --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "serve": "node src/cli.ts serve"
+    "serve": "node src/cli.ts serve",
+    "differential": "node scripts/differential.ts",
+    "sabotage": "./scripts/sabotage.sh"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",

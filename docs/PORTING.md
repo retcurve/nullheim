@@ -18,6 +18,20 @@ with nothing sitting near it, so the compact form is used rather than
 reconstructing Python's spacing. A payload between the two thresholds would be
 accepted here and rejected there.
 
+**The JSON parser's own error prose differs.** A malformed body is answered
+`400` with code `malformed_json` in both, but the message quotes the parser, and
+CPython's `json` module and V8 word themselves differently ("Expecting property
+name enclosed in double quotes…" against "Expected property name or '}'…"). The
+status and the machine-readable code — the two things an agent is told to key on
+— match exactly. Reproducing CPython's wording inside V8 is not worth doing.
+
+**JSON renders `round(x, 1)` differently.** Python emits `3600.0` where
+JavaScript emits `3600` for the same value of `cooldown_remaining` or
+`expires_in`. Every JSON parser reads both as the same number, so this is a
+textual difference only. Note that the *string* form was a real bug and is
+fixed: the `NotYet` message interpolates a Python float, so it must read
+"3600.0s left", not "3600s left".
+
 **Random sequences differ, and are not meant to match.** Node has no seeded RNG,
 so `random.ts` uses mulberry32 in place of CPython's Mersenne Twister. A given
 seed produces a different sequence in each implementation. No test asserts a
@@ -94,3 +108,34 @@ and the fsync. At one object per agent per eight hours the blocking cost is nil.
   `http.server` instance. A manual smoke test also confirmed the CLI (`node
   src/cli.ts serve`) serves real traffic and shuts down cleanly on `SIGINT`,
   compacting the log before exit.
+- **`scripts/differential.ts` runs both servers side by side** and replays an
+  identical scripted sequence against each, comparing all 78 responses after
+  normalising ids, tokens and timestamps. Allocation cannot be driven
+  identically — the generators differ on purpose — so the script claims and
+  releases through the public API until it is handed the coordinate it wanted,
+  which builds both worlds in the same shape and makes every later read
+  comparable.
+- **`scripts/sabotage.sh` proves the harness can fail.** It applies twelve
+  deliberate breakages to the TypeScript implementation one at a time — an
+  off-by-one limit, reversed exits, a reworded rejection, a renamed error code,
+  UTF-16 lengths, scrambled object order, an unlabelled exit, a frontier that
+  includes itself, altered genesis text, and three cooldown changes — and
+  checks the harness notices each. All twelve are caught. Run it before trusting
+  a green differential run after any change to the harness itself.
+
+## What the differential harness cannot see
+
+Worth knowing before treating a green run as total coverage.
+
+- **`orphan_sector`.** Allocation only ever hands out coordinates touching the
+  world, so no sequence of public API calls can produce an orphan. It is
+  asserted in `validation.ts` as defence in depth and covered directly by
+  `validation.test.ts`. A sabotage run confirmed the harness does not notice it
+  changing, correctly.
+- **Anything read off the clock.** `expires_in` and `cooldown_remaining` are
+  normalised to a placeholder because they drift by milliseconds between the two
+  runs. Their *messages* are compared, but their numeric values are not.
+- **How many allocation retries each side needs.** That is a property of the
+  random generator, which the port never promised to reproduce; the harness
+  discounts its own releases from `stats.claims_released` rather than ignoring
+  the counter.

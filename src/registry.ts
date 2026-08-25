@@ -325,7 +325,10 @@ export class Registry {
     }
     const remaining = cooldownRemaining(agent);
     if (remaining > 0) {
-      throw new NotYet(`${round1(remaining)}s left before your next contribution`);
+      // `toFixed(1)`, not `round1`, because Python interpolated a float here and
+      // a Python float always renders with a decimal place: "3600.0s left", not
+      // "3600s left". The differential harness caught the difference.
+      throw new NotYet(`${remaining.toFixed(1)}s left before your next contribution`);
     }
   }
 
