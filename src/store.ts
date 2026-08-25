@@ -25,7 +25,7 @@ import * as coords from "./coords.ts";
 import type { CoordKey, Coordinate, Direction } from "./coords.ts";
 import { parseSector, sectorAsDict, type Sector } from "./schema.ts";
 
-export const SNAPSHOT_VERSION = 4;
+export const SNAPSHOT_VERSION = 5;
 
 // Compact once the log reaches roughly the size of the world. That makes the
 // O(world) rewrite happen every O(world) writes, so it costs O(1) amortised
@@ -98,6 +98,50 @@ export function objectFromDict(raw: Record<string, unknown>): WorldObject {
   };
 }
 
+/**
+ * The durable half of an `Agent` — everything the registry needs to rebuild one
+ * after a restart.
+ *
+ * A structural match for `registry.ts`'s `Agent`, deliberately not imported from
+ * there: `registry.ts` already imports `WorldStore` from this module, and a type
+ * imported back the other way would make the two files depend on each other.
+ * The registry hands over a plain object shaped like this and gets the same
+ * shape back at load time.
+ */
+export interface AgentRecord {
+  readonly agentId: string;
+  readonly tokenHash: string;
+  readonly label: string;
+  readonly createdAt: number;
+  readonly coordinates: readonly Coordinate[];
+  readonly nextContributionAt: number;
+  readonly objectsCreated: number;
+}
+
+export function agentRecordAsDict(record: AgentRecord): Record<string, unknown> {
+  return {
+    agent_id: record.agentId,
+    token_hash: record.tokenHash,
+    label: record.label,
+    created_at: record.createdAt,
+    coordinates: record.coordinates.map(coords.asList),
+    next_contribution_at: record.nextContributionAt,
+    objects_created: record.objectsCreated,
+  };
+}
+
+export function agentRecordFromDict(raw: Record<string, unknown>): AgentRecord {
+  return {
+    agentId: raw["agent_id"] as string,
+    tokenHash: raw["token_hash"] as string,
+    label: raw["label"] as string,
+    createdAt: raw["created_at"] as number,
+    coordinates: (raw["coordinates"] as unknown[]).map((c) => coords.parse(c)),
+    nextContributionAt: raw["next_contribution_at"] as number,
+    objectsCreated: raw["objects_created"] as number,
+  };
+}
+
 export interface Exit {
   readonly direction: Direction;
   readonly name: string;
@@ -116,6 +160,11 @@ export class WorldStore {
   #sectors = new Map<CoordKey, BakedSector>();
   #sectorsById = new Map<string, CoordKey>();
   #objects = new Map<string, WorldObject>();
+  // Keyed by agentId so a later save of the same agent overwrites the earlier
+  // one — an agent record is re-saved in full every time it changes, rather
+  // than once like a sector or object, so this map is what makes "the last
+  // write for this id wins" the entire replay rule.
+  #agents = new Map<string, AgentRecord>();
   // Two indexes maintained on write rather than recomputed on read. Both answer
   // questions the store already knows the answer to at bake time, and both sit
   // on paths hit constantly — claiming and room views.
@@ -333,6 +382,28 @@ export class WorldStore {
     return [...this.#objects.values()];
   }
 
+  // --- agents ---------------------------------------------------------------
+
+  /**
+   * Persist an agent's current state in full.
+   *
+   * Unlike a sector or an object, an agent changes — a new sector founded, a
+   * cooldown restarted, an object count incremented — so this is called again
+   * on every change rather than once at creation. Each call is a complete
+   * snapshot, not a diff, which is what makes replaying the log a matter of
+   * keeping the last record for a given `agentId` rather than reconstructing a
+   * sequence of edits.
+   */
+  saveAgent(record: AgentRecord): void {
+    this.#agents.set(record.agentId, record);
+    this.#appendRecord("agent", agentRecordAsDict(record));
+  }
+
+  /** Every agent, for the registry to rebuild its own indexes from at startup. */
+  agentRecords(): AgentRecord[] {
+    return [...this.#agents.values()];
+  }
+
   // --- persistence --------------------------------------------------------
   //
   // A compacted snapshot plus an append-only log of everything since. Writing
@@ -404,11 +475,16 @@ export class WorldStore {
     for (const [id, o] of this.#objects) {
       objectsOut[id] = objectAsDict(o);
     }
+    const agentsOut: Record<string, unknown> = {};
+    for (const [id, a] of this.#agents) {
+      agentsOut[id] = agentRecordAsDict(a);
+    }
     const payload = {
       version: SNAPSHOT_VERSION,
       saved_at: now(),
       sectors: sectorsOut,
       objects: objectsOut,
+      agents: agentsOut,
     };
 
     const tmp = `${this.#path}.tmp`;
@@ -433,7 +509,7 @@ export class WorldStore {
       closeSync(truncated);
     }
     this.#logRecords = 0;
-    this.#compactedSize = this.#sectors.size + this.#objects.size;
+    this.#compactedSize = this.#sectors.size + this.#objects.size + this.#agents.size;
   }
 
   /** Make the rename itself durable, not just the file contents. */
@@ -488,18 +564,29 @@ export class WorldStore {
     )) {
       objects.set(id, objectFromDict(value));
     }
-    const replayed = this.#replayLog(sectors, objects);
+    const agents = new Map<string, AgentRecord>();
+    for (const [id, value] of Object.entries(
+      (payload["agents"] as Record<string, Record<string, unknown>>) ?? {},
+    )) {
+      agents.set(id, agentRecordFromDict(value));
+    }
+    const replayed = this.#replayLog(sectors, objects, agents);
 
     this.#sectors = sectors;
     this.#objects = objects;
+    this.#agents = agents;
     this.#logRecords = replayed;
-    this.#compactedSize = sectors.size + objects.size - replayed;
+    this.#compactedSize = sectors.size + objects.size + agents.size - replayed;
     this.#rebuildIndexes();
     this.#maybeCompact();
   }
 
   /** Apply everything written since the snapshot. Idempotent by design. */
-  #replayLog(sectors: Map<CoordKey, BakedSector>, objects: Map<string, WorldObject>): number {
+  #replayLog(
+    sectors: Map<CoordKey, BakedSector>,
+    objects: Map<string, WorldObject>,
+    agents: Map<string, AgentRecord>,
+  ): number {
     let raw: string;
     try {
       raw = readFileSync(this.#logPath, "utf-8");
@@ -529,6 +616,12 @@ export class WorldStore {
         } else if (kind === "object") {
           const world_object = objectFromDict(data);
           objects.set(world_object.objectId, world_object);
+        } else if (kind === "agent") {
+          // Unlike a sector or object, an agent record can legitimately repeat
+          // — each save is a full snapshot, so the last one for a given id is
+          // the one that survives, exactly as it does in the compacted map.
+          const record = agentRecordFromDict(data);
+          agents.set(record.agentId, record);
         } else {
           throw new Error(`unknown record type ${JSON.stringify(kind)}`);
         }

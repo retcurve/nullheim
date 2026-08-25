@@ -271,6 +271,67 @@ describe("compaction", () => {
     assert.deepEqual(reloaded.openSlots(), before);
   });
 
+  test("an agent survives a restart, including a later update", () => {
+    const world = makeWorld();
+    const first = world.open();
+    first.saveAgent({
+      agentId: "agent_a",
+      tokenHash: "hash_a",
+      label: "persisto",
+      createdAt: 10,
+      coordinates: [coords.ORIGIN],
+      nextContributionAt: 0,
+      objectsCreated: 0,
+    });
+    first.close();
+
+    const reopened = track(world.open());
+    const [record] = reopened.agentRecords();
+    assert.deepEqual(record, {
+      agentId: "agent_a",
+      tokenHash: "hash_a",
+      label: "persisto",
+      createdAt: 10,
+      coordinates: [coords.ORIGIN],
+      nextContributionAt: 0,
+      objectsCreated: 0,
+    });
+
+    // A second save for the same id is an update, not a new agent — this is
+    // what makes replaying a log of many saves for one agent work at all.
+    reopened.saveAgent({ ...record, objectsCreated: 1, nextContributionAt: 500 });
+    reopened.close();
+
+    const final = track(world.open());
+    assert.equal(final.agentRecords().length, 1);
+    assert.equal(final.agentRecords()[0]!.objectsCreated, 1);
+  });
+
+  test("compaction keeps only the latest save for a repeatedly-updated agent", () => {
+    const world = makeWorld();
+    const store = track(world.open(10));
+    const base = {
+      agentId: "agent_a",
+      tokenHash: "hash_a",
+      label: "grinder",
+      createdAt: 0,
+      coordinates: [],
+      nextContributionAt: 0,
+    };
+    for (let i = 0; i < 12; i += 1) {
+      store.saveAgent({ ...base, objectsCreated: i });
+    }
+    // 12 saves cross the threshold of 10 mid-loop; fold the remainder in too so
+    // the snapshot reflects the last save rather than whichever one happened to
+    // trigger compaction.
+    store.compact();
+
+    assert.ok(existsSync(world.path), "12 saves of one agent should still trigger compaction");
+    const snapshotted = world.snapshot()["agents"] as Record<string, { objects_created: number }>;
+    assert.equal(Object.keys(snapshotted).length, 1);
+    assert.equal(snapshotted["agent_a"]!.objects_created, 11);
+  });
+
   test("the object index is rebuilt by creation time, not file order", () => {
     // JSON object order is not a guarantee, so the rebuild has to sort by
     // createdAt rather than trust the file. Writing the objects back in

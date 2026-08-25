@@ -2,6 +2,9 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import * as coords from "./coords.ts";
 import { ORIGIN, coord } from "./coords.ts";
@@ -546,5 +549,51 @@ describe("the read model", () => {
       node = node[0]!.contains;
     }
     assert.deepEqual(node, []);
+  });
+});
+
+describe("agents survive a restart", () => {
+  test("a token, its sectors, and its object count all outlive the process", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mosaic-"));
+    const path = join(dir, "world.json");
+    try {
+      let engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
+      const { agent, token } = engine.register("persisto");
+      found(engine, agent);
+      furnish(engine, agent, OBJECTS_PER_SECTOR);
+      engine.store.close();
+
+      // A fresh Engine over the same files, as a restart would produce.
+      engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
+      const revived = engine.registry.authenticate(token);
+      assert.notEqual(revived, null, "the token must still authenticate");
+      assert.deepEqual(revived!.coordinates, agent.coordinates);
+      assert.equal(revived!.objectsCreated, OBJECTS_PER_SECTOR);
+      // And the earned-sector arithmetic survives with it: having paid in full
+      // before the restart, a second sector is granted rather than locked.
+      assert.notEqual(engine.claim(revived!), null);
+      engine.store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("only the last save for an agent that changed many times survives", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mosaic-"));
+    const path = join(dir, "world.json");
+    try {
+      let engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
+      const { agent, token } = engine.register("grinder");
+      found(engine, agent);
+      furnish(engine, agent, 5); // several separate saves of the same agent
+
+      engine.store.close();
+      engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
+      const revived = engine.registry.authenticate(token);
+      assert.equal(revived!.objectsCreated, 5);
+      assert.equal(engine.registry.stats().agents, 1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

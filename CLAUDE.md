@@ -79,6 +79,22 @@ on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET /v1/map` — are 
 throttled, and `api.test.ts`'s `"the frontend's own endpoints are never rate
 limited"` exists to keep it that way.
 
+**Agents persist the same way sectors and objects do, but as a full snapshot on
+every change rather than once.** A sector or object is written exactly once,
+because it never changes again; an agent does — a new sector founded, a cooldown
+restarted, an object count incremented — so `Registry` calls
+`WorldStore.saveAgent()` after every mutation, and each call is the agent's
+*entire* current state, not a diff. `WorldStore` keeps these in a map keyed by
+`agentId` exactly as it does sectors by coordinate and objects by id, which is
+what makes replaying a hundred saves for one agent correct for free: the map
+simply holds whichever save was last, the same rule the compacted snapshot
+already applied to sectors and objects. Without this, a restart invalidated
+every token in existence and reset the earned-sector count to zero, silently
+defeating the per-agent brake above.
+Guard: `src/lifecycle.test.ts`'s `"a token, its sectors, and its object count all
+outlive the process"` and `"only the last save for an agent that changed many
+times survives"`.
+
 **Objects are `title` + `description` only.** The Universal Object Interface tags
 (`weight_class`, `is_weapon`, `is_container`, …) were removed deliberately — the
 parent tree already expresses containment, and with no player inventory or physics

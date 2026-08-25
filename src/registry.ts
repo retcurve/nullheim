@@ -23,7 +23,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as coords from "./coords.ts";
 import type { CoordKey, Coordinate } from "./coords.ts";
 import { systemRandom, type Rng } from "./random.ts";
-import { now, type WorldStore } from "./store.ts";
+import { now, type AgentRecord, type WorldStore } from "./store.ts";
 
 export const DEFAULT_LEASE_SECONDS = 15 * 60;
 export const DEFAULT_COOLDOWN_SECONDS = 8 * 60 * 60;
@@ -217,6 +217,52 @@ export class Registry {
     this.#cooldownSeconds = options.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS;
     this.#claimsPerHour = options.claimsPerHour ?? DEFAULT_CLAIMS_PER_HOUR;
     this.#rng = options.rng ?? systemRandom();
+    this.#rehydrateAgents();
+  }
+
+  /**
+   * Rebuild the in-memory agent and token indexes from whatever the store
+   * already had on disk. Claims and leases are not part of this: a lease is
+   * short-lived by design, so a claim that was live when the process stopped
+   * is simply gone, the same as one whose lease quietly expired.
+   */
+  #rehydrateAgents(): void {
+    for (const record of this.#store.agentRecords()) {
+      const agent: Agent = {
+        agentId: record.agentId,
+        tokenHash: record.tokenHash,
+        label: record.label,
+        createdAt: record.createdAt,
+        coordinates: [...record.coordinates],
+        nextContributionAt: record.nextContributionAt,
+        objectsCreated: record.objectsCreated,
+      };
+      this.#agents.set(agent.agentId, agent);
+      this.#byToken.set(agent.tokenHash, agent.agentId);
+    }
+  }
+
+  /**
+   * Write this agent's full current state to disk.
+   *
+   * Called after every mutation — registering, founding a sector, placing an
+   * object — so a token, once handed out, survives a restart exactly as a
+   * baked sector does. Nothing here is acknowledged to an agent before this
+   * call returns, for the same reason `WorldStore.bake` fsyncs before
+   * `submitSector` reports success: a token or a cooldown a crash could take
+   * back is a promise this system does not get to make.
+   */
+  #persist(agent: Agent): void {
+    const record: AgentRecord = {
+      agentId: agent.agentId,
+      tokenHash: agent.tokenHash,
+      label: agent.label,
+      createdAt: agent.createdAt,
+      coordinates: [...agent.coordinates],
+      nextContributionAt: agent.nextContributionAt,
+      objectsCreated: agent.objectsCreated,
+    };
+    this.#store.saveAgent(record);
   }
 
   get cooldownSeconds(): number {
@@ -247,6 +293,7 @@ export class Registry {
     };
     this.#agents.set(agent.agentId, agent);
     this.#byToken.set(agent.tokenHash, agent.agentId);
+    this.#persist(agent);
     return { agent, token };
   }
 
@@ -429,6 +476,7 @@ export class Registry {
     claim.status = ClaimStatus.BAKED;
     agent.coordinates.push(claim.coordinate);
     agent.nextContributionAt = now() + this.#cooldownSeconds;
+    this.#persist(agent);
   }
 
   /** Throws unless this agent may add an object right now. */
@@ -438,9 +486,6 @@ export class Registry {
     }
     const remaining = cooldownRemaining(agent);
     if (remaining > 0) {
-      // `toFixed(1)`, not `round1`, because Python interpolated a float here and
-      // a Python float always renders with a decimal place: "3600.0s left", not
-      // "3600s left". The differential harness caught the difference.
       throw new NotYet(`${remaining.toFixed(1)}s left before your next contribution`);
     }
   }
@@ -448,6 +493,7 @@ export class Registry {
   noteContribution(agent: Agent): void {
     agent.objectsCreated += 1;
     agent.nextContributionAt = now() + this.#cooldownSeconds;
+    this.#persist(agent);
   }
 
   stats(): Record<string, number> {
