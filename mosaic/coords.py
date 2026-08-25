@@ -9,8 +9,15 @@ from __future__ import annotations
 from enum import Enum
 from typing import Iterator, NamedTuple
 
-# The lattice is bounded so the frontier stays finite and coordinates stay
-# printable. Generous: roughly four million sectors.
+# An arbitrary sanity bound — nothing depends on this number. Agents never choose
+# their own coordinate, so a submission can only carry an out-of-bounds one by
+# driving the engine directly; its real effect is to stop the frontier growing
+# past the wall. At the measured growth rate (radius roughly 0.6·√N) that does
+# not bind until a few million sectors.
+#
+# The ceiling that would actually matter is 2**53 - 1: coordinates cross the wire
+# as JSON numbers, and an agent written in JavaScript parses them to a double, so
+# anything larger loses precision silently. Python itself has no limit.
 MAX_XY = 1024
 
 

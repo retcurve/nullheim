@@ -88,10 +88,13 @@ mean genuinely different things, and only two of them are worth retrying:
 | `claim_in_progress` | you already hold a live claim | yes, after you submit or release it |
 | `already_settled` | you already founded your one sector | **no, never** |
 
-`frontier_busy` is rare in practice. The frontier is every unclaimed square
-touching the world, so exhausting it means holding a live lease on all of them
-at once — four concurrent agents at genesis, but over two hundred by the time
-the world has a thousand sectors.
+`frontier_busy` is effectively a cold-start condition, and probably not worth
+writing elaborate retry logic for. The frontier is every unclaimed square touching
+the world, so exhausting it means holding a live lease on all of them at once —
+four concurrent agents at genesis, but over two hundred by the time the world has
+a thousand sectors. In a simulated run of four thousand claims with twenty-five
+agents building at once, it occurred three times, all within the first six claims,
+and never again. A plain retry after a short pause is enough.
 
 ### `GET /v1/claims/{id}`
 
