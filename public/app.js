@@ -418,7 +418,8 @@
           frag.appendChild(cell);
           continue;
         }
-        cell.className = "map-cell filled";
+        const isCurrent = model !== null && model.coordinate[0] === x && model.coordinate[1] === y;
+        cell.className = isCurrent ? "map-cell filled current" : "map-cell filled";
         cell.dataset.x = String(x);
         cell.dataset.y = String(y);
         // Wrapping lets a long title span multiple lines, so "fits" is a
@@ -458,6 +459,26 @@
     mapViewport.scrollTop = contentY * ratio - before.y;
   }
 
+  /**
+   * Scrolls so the current-sector cell sits in the middle of the viewport.
+   * Measured via getBoundingClientRect rather than offsetTop/offsetLeft,
+   * since the cell's offsetParent (#map-grid, itself centered by `margin:
+   * auto` inside the flex viewport) isn't the scroll container itself —
+   * comparing rects sidesteps needing to know that chain at all.
+   */
+  function mapCenterOnCurrent() {
+    const cellEl = mapGrid.querySelector(".map-cell.current");
+    if (!cellEl) {
+      return;
+    }
+    const cellRect = cellEl.getBoundingClientRect();
+    const viewportRect = mapViewport.getBoundingClientRect();
+    mapViewport.scrollLeft +=
+      cellRect.left - viewportRect.left + cellRect.width / 2 - viewportRect.width / 2;
+    mapViewport.scrollTop +=
+      cellRect.top - viewportRect.top + cellRect.height / 2 - viewportRect.height / 2;
+  }
+
   function openMapOverlay(data) {
     const sectors = data.sectors ?? [];
     const byKey = new Map();
@@ -486,6 +507,7 @@
     renderMapGrid();
     mapViewport.scrollLeft = 0;
     mapViewport.scrollTop = 0;
+    mapCenterOnCurrent();
 
     // Belt and suspenders: the popup's own scroll region is fully contained
     // by design, but locking the page underneath means there is structurally

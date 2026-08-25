@@ -292,6 +292,22 @@ body {
   border-color: var(--fg-bright);
 }
 
+/* The sector the player is actually standing in — inverted rather than just
+   highlighted, so it reads unmistakably even at a glance across a big map. */
+.map-cell.current {
+  background: var(--fg-bright);
+  border-color: var(--fg-bright);
+  color: var(--bg);
+}
+
+.map-cell.current:hover {
+  background: var(--fg-bright);
+}
+
+.map-cell.current .map-cell-label strong {
+  color: var(--bg);
+}
+
 .map-cell .map-cell-label {
   position: absolute;
   inset: 0;
