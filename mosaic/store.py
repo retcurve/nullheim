@@ -1,144 +1,214 @@
-"""Graph persistence.
+"""World persistence.
 
-Rooms are nodes, exits are directed edges. The interface below is deliberately
-narrow — it is the whole surface a Neo4j-backed implementation would need to
-provide, so swapping the in-memory store out later touches nothing else.
+Sectors are nodes on a flat lattice. Exits are *not* stored — they are derived
+from adjacency every time they are asked for, which is why no two neighbouring
+agents can ever disagree about a doorway. Objects hang off sectors and off each
+other in a tree.
+
+The interface is narrow enough that a Neo4j implementation would need to provide
+nothing more than what is here.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable, Protocol
 
 from .coords import Coordinate, Direction
-from .schema import Blueprint, Exit, parse_blueprint
+from .schema import Sector, parse_sector
 
 
 @dataclass(frozen=True)
-class BakedRoom:
-    """A room that has passed validation and been locked into the graph."""
+class BakedSector:
+    """A sector that has passed validation and been locked into the world."""
 
-    blueprint: Blueprint
+    sector: Sector
     agent_id: str
     baked_at: float
 
     @property
     def coordinate(self) -> Coordinate:
-        return self.blueprint.coordinate
+        return self.sector.coordinate
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "blueprint": self.blueprint.as_dict(),
+            "sector": self.sector.as_dict(),
             "agent_id": self.agent_id,
             "baked_at": self.baked_at,
         }
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "BakedRoom":
-        blueprint, errors = parse_blueprint(raw["blueprint"])
-        if blueprint is None or errors:
-            # Snapshots only ever contain blueprints that already passed the
-            # validator, so this means the file was hand-edited or corrupted.
-            raise ValueError(f"corrupt snapshot room: {errors}")
-        return cls(blueprint=blueprint, agent_id=raw["agent_id"], baked_at=raw["baked_at"])
+    def from_dict(cls, raw: dict[str, Any]) -> "BakedSector":
+        sector, errors = parse_sector(raw["sector"])
+        if sector is None or errors:
+            # Snapshots only hold sectors that already passed validation, so this
+            # means the file was hand-edited or corrupted.
+            raise ValueError(f"corrupt snapshot sector: {errors}")
+        return cls(sector=sector, agent_id=raw["agent_id"], baked_at=raw["baked_at"])
 
 
-class GraphStore(Protocol):
-    def get(self, coordinate: Coordinate) -> BakedRoom | None: ...
-    def bake(self, room: BakedRoom) -> None: ...
-    def rooms(self) -> Iterable[BakedRoom]: ...
+@dataclass(frozen=True)
+class WorldObject:
+    object_id: str
+    coordinate: Coordinate
+    parent_id: str | None
+    title: str
+    description: str
+    agent_id: str
+    created_at: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "object_id": self.object_id,
+            "coordinate": self.coordinate.as_list(),
+            "parent_id": self.parent_id,
+            "title": self.title,
+            "description": self.description,
+            "agent_id": self.agent_id,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "WorldObject":
+        return cls(
+            object_id=raw["object_id"],
+            coordinate=Coordinate.parse(raw["coordinate"]),
+            parent_id=raw["parent_id"],
+            title=raw["title"],
+            description=raw["description"],
+            agent_id=raw["agent_id"],
+            created_at=raw["created_at"],
+        )
+
+
+class WorldStore(Protocol):
+    def get(self, coordinate: Coordinate) -> BakedSector | None: ...
+    def bake(self, baked: BakedSector) -> None: ...
+    def sectors(self) -> Iterable[BakedSector]: ...
     def count(self) -> int: ...
 
 
-class InMemoryGraphStore:
-    """Dict-backed graph with an optional JSON snapshot on disk."""
+class InMemoryWorldStore:
+    """Dict-backed world with an optional JSON snapshot on disk."""
 
     def __init__(self, path: str | None = None) -> None:
-        self._rooms: dict[Coordinate, BakedRoom] = {}
+        self._sectors: dict[Coordinate, BakedSector] = {}
+        self._objects: dict[str, WorldObject] = {}
         self._lock = threading.RLock()
         self._path = path
         if path:
             self.load()
 
-    # --- node access --------------------------------------------------------
+    # --- sectors ------------------------------------------------------------
 
-    def get(self, coordinate: Coordinate) -> BakedRoom | None:
+    def get(self, coordinate: Coordinate) -> BakedSector | None:
         with self._lock:
-            return self._rooms.get(coordinate)
+            return self._sectors.get(coordinate)
 
-    def bake(self, room: BakedRoom) -> None:
-        """Write a room permanently. The static lock is enforced here."""
+    def bake(self, baked: BakedSector) -> None:
+        """Write a sector permanently. The static lock is enforced here."""
         with self._lock:
-            if room.coordinate in self._rooms:
-                raise KeyError(f"{room.coordinate} is already baked and cannot be rewritten")
-            self._rooms[room.coordinate] = room
+            if baked.coordinate in self._sectors:
+                raise KeyError(f"{baked.coordinate} is already baked and cannot be rewritten")
+            self._sectors[baked.coordinate] = baked
             self._persist_locked()
 
-    def rooms(self) -> list[BakedRoom]:
+    def sectors(self) -> list[BakedSector]:
         with self._lock:
-            return list(self._rooms.values())
+            return list(self._sectors.values())
 
     def count(self) -> int:
         with self._lock:
-            return len(self._rooms)
+            return len(self._sectors)
 
     def is_baked(self, coordinate: Coordinate) -> bool:
         with self._lock:
-            return coordinate in self._rooms
+            return coordinate in self._sectors
 
-    # --- edges and promises -------------------------------------------------
+    # --- derived exits ------------------------------------------------------
 
-    def promises_into(self, coordinate: Coordinate) -> dict[Direction, Exit]:
-        """Exits from baked neighbours that point at ``coordinate``.
+    def exits_from(self, coordinate: Coordinate) -> list[dict[str, Any]]:
+        """Every side with a neighbour is an exit. Nobody declares these.
 
-        The key is the direction the *new* room must exit toward in order to
-        reciprocate; the value is the neighbour's exit, whose description is the
-        anchor text the claiming agent gets to borrow.
+        The label a player reads on the door is the neighbour's own ``title``,
+        and examining the door without walking through shows the neighbour's
+        ``short_description``. So each sector writes the sign on the outside of
+        its own front door, and its neighbours never get a say — which is how
+        two rooms that agree on nothing still join up cleanly.
         """
-        found: dict[Direction, Exit] = {}
+        found: list[dict[str, Any]] = []
         with self._lock:
             for direction, neighbour_coord in coordinate.neighbours():
-                neighbour = self._rooms.get(neighbour_coord)
+                neighbour = self._sectors.get(neighbour_coord)
                 if neighbour is None:
                     continue
-                inbound = neighbour.blueprint.exit_for(direction.opposite)
-                if inbound is not None:
-                    found[direction] = inbound
+                found.append(
+                    {
+                        "direction": direction.value,
+                        "name": neighbour.sector.title,
+                        "description": neighbour.sector.short_description,
+                        "to": neighbour_coord.as_list(),
+                    }
+                )
         return found
 
     def open_slots(self) -> set[Coordinate]:
-        """Unbaked, in-bounds coordinates that a baked room already exits into.
+        """Unbaked, in-bounds coordinates touching at least one baked sector.
 
-        This is the frontier. Allocating only from it is what guarantees every
-        room is reachable from the genesis room without ever running a
-        connectivity check.
+        This is the frontier, and the only rule is adjacency — a slot beside a
+        sector with three neighbours already is worth exactly as much as a slot
+        beside a lonely one. The world is allowed to grow a corridor if that is
+        where the dice fall.
         """
         slots: set[Coordinate] = set()
         with self._lock:
-            for room in self._rooms.values():
-                for exit_ in room.blueprint.exits:
-                    target = room.coordinate.step(exit_.direction)
-                    if target in self._rooms or not target.in_bounds:
-                        continue
-                    slots.add(target)
+            for coordinate in self._sectors:
+                for _, neighbour in coordinate.neighbours():
+                    if neighbour not in self._sectors and neighbour.in_bounds:
+                        slots.add(neighbour)
         return slots
 
     def edges(self) -> list[dict[str, Any]]:
         with self._lock:
-            return [
-                {
-                    "from": room.coordinate.as_list(),
-                    "direction": exit_.direction.value,
-                    "to": room.coordinate.step(exit_.direction).as_list(),
-                    "is_locked": exit_.is_locked,
-                    "baked": room.coordinate.step(exit_.direction) in self._rooms,
-                }
-                for room in self._rooms.values()
-                for exit_ in room.blueprint.exits
-            ]
+            coordinates = set(self._sectors)
+        return [
+            {"from": coordinate.as_list(), "direction": direction.value,
+             "to": neighbour.as_list()}
+            for coordinate in sorted(coordinates)
+            for direction, neighbour in coordinate.neighbours()
+            if neighbour in coordinates
+        ]
+
+    # --- objects ------------------------------------------------------------
+
+    def add_object(self, world_object: WorldObject) -> None:
+        with self._lock:
+            if world_object.object_id in self._objects:
+                raise KeyError(f"{world_object.object_id} already exists")
+            self._objects[world_object.object_id] = world_object
+            self._persist_locked()
+
+    def get_object(self, object_id: str) -> WorldObject | None:
+        with self._lock:
+            return self._objects.get(object_id)
+
+    def objects_in(self, coordinate: Coordinate) -> list[WorldObject]:
+        with self._lock:
+            return sorted(
+                (o for o in self._objects.values() if o.coordinate == coordinate),
+                key=lambda o: o.created_at,
+            )
+
+    def children_of(self, parent_id: str | None, coordinate: Coordinate) -> list[WorldObject]:
+        return [o for o in self.objects_in(coordinate) if o.parent_id == parent_id]
+
+    def object_count(self) -> int:
+        with self._lock:
+            return len(self._objects)
 
     # --- snapshot -----------------------------------------------------------
 
@@ -146,15 +216,14 @@ class InMemoryGraphStore:
         if not self._path:
             return
         payload = {
-            "version": 1,
+            "version": 2,
             "saved_at": time.time(),
-            "rooms": {room.coordinate.key: room.as_dict() for room in self._rooms.values()},
+            "sectors": {b.coordinate.key: b.as_dict() for b in self._sectors.values()},
+            "objects": {o.object_id: o.as_dict() for o in self._objects.values()},
         }
         tmp = f"{self._path}.tmp"
         with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
-        import os
-
         os.replace(tmp, self._path)
 
     def load(self) -> None:
@@ -166,7 +235,11 @@ class InMemoryGraphStore:
         except FileNotFoundError:
             return
         with self._lock:
-            self._rooms = {
-                Coordinate.from_key(key): BakedRoom.from_dict(value)
-                for key, value in payload.get("rooms", {}).items()
+            self._sectors = {
+                Coordinate.from_key(key): BakedSector.from_dict(value)
+                for key, value in payload.get("sectors", {}).items()
+            }
+            self._objects = {
+                key: WorldObject.from_dict(value)
+                for key, value in payload.get("objects", {}).items()
             }

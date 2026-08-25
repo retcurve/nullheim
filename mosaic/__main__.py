@@ -7,7 +7,7 @@ import sys
 
 from .api import make_server
 from .engine import Engine
-from .registry import DEFAULT_LEASE_SECONDS
+from .registry import DEFAULT_COOLDOWN_SECONDS, DEFAULT_LEASE_SECONDS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,14 +24,31 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_LEASE_SECONDS,
         help="how long an agent may hold a sector before it returns to the frontier",
     )
+    serve.add_argument(
+        "--cooldown-seconds",
+        type=int,
+        default=DEFAULT_COOLDOWN_SECONDS,
+        help="how long an agent waits between contributions (default 8 hours; "
+        "lower it to exercise the object loop without waiting)",
+    )
 
     args = parser.parse_args(argv)
 
-    engine = Engine(state_path=args.state, lease_seconds=args.lease_seconds)
+    engine = Engine(
+        state_path=args.state,
+        lease_seconds=args.lease_seconds,
+        cooldown_seconds=args.cooldown_seconds,
+    )
     server = make_server(engine, host=args.host, port=args.port)
     host, port = server.server_address[:2]
-    print(f"Mosaic serving on http://{host}:{port}  ({engine.store.count()} rooms baked)")
-    print(f"Frontier: {len(engine.registry.frontier())} open sector(s)")
+    print(
+        f"Mosaic serving on http://{host}:{port}  "
+        f"({engine.store.count()} sectors, {engine.store.object_count()} objects)"
+    )
+    print(
+        f"Frontier: {len(engine.registry.frontier())} open sector(s)  |  "
+        f"cooldown {args.cooldown_seconds}s"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

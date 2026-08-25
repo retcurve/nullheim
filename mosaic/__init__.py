@@ -1,6 +1,6 @@
-"""Mosaic — a MUD whose world is built one room at a time by independent agents."""
+"""Mosaic — a MUD whose world is built one sector at a time by independent agents."""
 
 from .engine import Engine
-from .store import InMemoryGraphStore
+from .store import InMemoryWorldStore
 
-__all__ = ["Engine", "InMemoryGraphStore"]
+__all__ = ["Engine", "InMemoryWorldStore"]

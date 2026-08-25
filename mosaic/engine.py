@@ -1,69 +1,73 @@
-"""World engine — the claim → context → validate → bake pipeline.
+"""World engine — claiming, baking, furnishing, and the read model players see.
 
 This is the only module that mutates the world, and it is where the static lock
-lives: once ``submit`` succeeds, the room is permanent and its agent is spent.
+lives: once a sector bakes it is permanent, and once an object is placed it
+stays placed. What is no longer permanent is the agent — it keeps its token and
+comes back every eight hours to add one more thing.
 """
 
 from __future__ import annotations
 
+import secrets
 import time
 from pathlib import Path
 from typing import Any
 
-from .coords import ORIGIN, Coordinate, Direction
+from .coords import ORIGIN, Coordinate
 from .errors import ValidationError
-from .registry import Agent, Claim, ClaimStatus, Registry, SectorUnavailable
-from .schema import Blueprint, Exit, parse_blueprint
-from .store import BakedRoom, InMemoryGraphStore
-from .validation import validate
+from .registry import Agent, Claim, NoSector, NotYet, Registry, SectorUnavailable
+from .schema import ObjectDraft, Sector, parse_object, parse_sector
+from .store import BakedSector, InMemoryWorldStore, WorldObject
+from .validation import validate_object, validate_sector
 
-PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "room_architect.md"
+PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 GENESIS_AGENT_ID = "agent_genesis"
 
-# The one room the system authors. It exists purely to seed a non-empty frontier;
-# its own text is deliberately blank-canvas so it imposes no theme on anybody.
-GENESIS = Blueprint(
+# The one sector the system authors. It exists only to give the frontier
+# somewhere to start, and its text is deliberately blank-canvas so it imposes no
+# theme on the agents who build outward from it.
+GENESIS = Sector(
     coordinate=ORIGIN,
-    name="The Nullpoint",
-    description=(
+    title="The Nullpoint",
+    short_description="A doorway onto a square of unremarkable grey floor, lit by nothing in particular.",
+    long_description=(
         "A perfectly unremarkable square of grey floor under a grey ceiling, lit by no "
-        "visible source. It is the one room nobody dreamed. Four doorways lead away from "
-        "it, and each one is already a different weather."
+        "visible source. It is the one room nobody dreamed. Whatever leads away from it "
+        "was not here yesterday, and each way out is already a different weather."
     ),
-    exits=tuple(
-        Exit(direction=d, description=f"A plain grey opening in the {d.value} wall.")
-        for d in (Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST)
-    ),
-    ambient_lines=("Somewhere beyond the walls, something is being decided.",),
 )
 
 
 class Engine:
     def __init__(
         self,
-        store: InMemoryGraphStore | None = None,
+        store: InMemoryWorldStore | None = None,
         registry: Registry | None = None,
         *,
         state_path: str | None = None,
         lease_seconds: int | None = None,
+        cooldown_seconds: int | None = None,
     ) -> None:
-        self.store = store or InMemoryGraphStore(path=state_path)
+        self.store = store or InMemoryWorldStore(path=state_path)
         if registry is not None:
             self.registry = registry
-        elif lease_seconds is not None:
-            self.registry = Registry(self.store, lease_seconds=lease_seconds)
         else:
-            self.registry = Registry(self.store)
+            kwargs: dict[str, Any] = {}
+            if lease_seconds is not None:
+                kwargs["lease_seconds"] = lease_seconds
+            if cooldown_seconds is not None:
+                kwargs["cooldown_seconds"] = cooldown_seconds
+            self.registry = Registry(self.store, **kwargs)
         self._ensure_genesis()
 
     def _ensure_genesis(self) -> None:
         if self.store.count() == 0:
             self.store.bake(
-                BakedRoom(blueprint=GENESIS, agent_id=GENESIS_AGENT_ID, baked_at=time.time())
+                BakedSector(sector=GENESIS, agent_id=GENESIS_AGENT_ID, baked_at=time.time())
             )
 
-    # --- lifecycle ----------------------------------------------------------
+    # --- claiming -----------------------------------------------------------
 
     def register(self, label: str) -> tuple[Agent, str]:
         return self.registry.register(label)
@@ -71,143 +75,213 @@ class Engine:
     def claim(self, agent: Agent) -> Claim:
         return self.registry.allocate(agent)
 
-    def context(self, claim: Claim) -> dict[str, Any]:
-        """Everything an agent needs to author its sector, and nothing more.
+    def claim_context(self, claim: Claim) -> dict[str, Any]:
+        """Everything an agent is told about its sector before authoring it.
 
-        Neighbour *exit* text is shared so borders can be anchored; neighbour
-        room descriptions are deliberately withheld. Agents anchoring only the
-        doorway is what preserves the tonal whiplash between sectors.
+        Which is: where it is, and how long it has. Nothing about what stands on
+        any side of it — not a title, not a doorway, not even how many
+        neighbours exist. An agent that knows nothing cannot hedge toward its
+        neighbours, and the tonal collision between adjacent sectors is the
+        whole reason players walk around.
         """
-        coordinate = claim.coordinate
-        promises = self.store.promises_into(coordinate)
-
-        required = [
-            {
-                "direction": direction.value,
-                "neighbour": coordinate.step(direction).as_list(),
-                "neighbour_room_name": self._neighbour_name(coordinate, direction),
-                "their_doorway": exit_.description,
-                "is_locked": exit_.is_locked,
-                "lock_hint": exit_.lock_hint,
-            }
-            for direction, exit_ in sorted(promises.items(), key=lambda kv: kv[0].value)
-        ]
-
-        open_sides = [
-            direction.value
-            for direction, target in coordinate.neighbours()
-            if direction not in promises
-            and not self.store.is_baked(target)
-            and target.in_bounds
-        ]
-
-        sealed = [
-            direction.value
-            for direction, target in coordinate.neighbours()
-            if direction not in promises and self.store.is_baked(target)
-        ]
-
         return {
             "claim": claim.as_dict(),
-            "coordinate": coordinate.as_list(),
-            "required_exits": required,
-            "open_sides": open_sides,
-            "sealed_sides": sealed,
-            "world_rooms": self.store.count(),
+            "coordinate": claim.coordinate.as_list(),
+            "world_sectors": self.store.count(),
         }
 
-    # --- submission ---------------------------------------------------------
+    # --- sector submission --------------------------------------------------
 
-    def check(self, claim: Claim, raw: Any) -> tuple[Blueprint | None, list[ValidationError]]:
-        """Parse and validate without touching the graph — the dry-run path."""
-        blueprint, errors = parse_blueprint(raw)
-        if blueprint is None:
+    def check_sector(self, claim: Claim, raw: Any) -> tuple[Sector | None, list[ValidationError]]:
+        """Parse and validate without touching the world — the dry-run path."""
+        sector, errors = parse_sector(raw)
+        if sector is None:
             return None, errors
-        errors = list(errors) + validate(blueprint, claim.coordinate, self.store)
-        return blueprint, errors
+        return sector, list(errors) + validate_sector(sector, claim.coordinate, self.store)
 
-    def submit(self, claim: Claim, raw: Any) -> tuple[BakedRoom | None, list[ValidationError]]:
-        """Validate and, if clean, bake permanently and retire the agent."""
+    def submit_sector(
+        self, agent: Agent, claim: Claim, raw: Any
+    ) -> tuple[BakedSector | None, list[ValidationError]]:
+        """Validate and, if clean, bake permanently and start the agent's clock."""
         self.registry.note_attempt(claim)
-        blueprint, errors = self.check(claim, raw)
-        if blueprint is None or errors:
+        sector, errors = self.check_sector(claim, raw)
+        if sector is None or errors:
             return None, errors
 
-        room = BakedRoom(blueprint=blueprint, agent_id=claim.agent_id, baked_at=time.time())
+        baked = BakedSector(sector=sector, agent_id=agent.agent_id, baked_at=time.time())
         try:
-            self.store.bake(room)
+            self.store.bake(baked)
         except KeyError as exc:
             return None, [ValidationError("already_baked", "$.coordinate", str(exc))]
 
-        self.registry.mark_baked(claim)
-        return room, []
+        self.registry.settle(agent, claim)
+        return baked, []
 
     def release(self, claim: Claim) -> None:
         self.registry.release(claim)
 
-    # --- read-only world views ---------------------------------------------
+    # --- objects ------------------------------------------------------------
 
-    def room_view(self, coordinate: Coordinate) -> dict[str, Any] | None:
-        room = self.store.get(coordinate)
-        if room is None:
+    def check_object(
+        self, agent: Agent, raw: Any
+    ) -> tuple[ObjectDraft | None, list[ValidationError]]:
+        draft, errors = parse_object(raw)
+        if draft is None or agent.coordinate is None:
+            return draft, errors
+        return draft, list(errors) + validate_object(draft, agent.coordinate, self.store)
+
+    def create_object(
+        self, agent: Agent, raw: Any
+    ) -> tuple[WorldObject | None, list[ValidationError]]:
+        """Place one object.
+
+        Raises NoSector if the agent has not built one yet, NotYet if its
+        cooldown is still running.
+        """
+        self.registry.check_can_contribute(agent)
+
+        draft, errors = self.check_object(agent, raw)
+        if draft is None or errors:
+            return None, errors
+
+        assert agent.coordinate is not None  # guaranteed by check_can_contribute
+        world_object = WorldObject(
+            object_id=f"obj_{secrets.token_hex(8)}",
+            coordinate=agent.coordinate,
+            parent_id=draft.parent_id,
+            title=draft.title,
+            description=draft.description,
+            agent_id=agent.agent_id,
+            created_at=time.time(),
+        )
+        self.store.add_object(world_object)
+        self.registry.note_contribution(agent)
+        return world_object, []
+
+    # --- the read model players see ----------------------------------------
+
+    def sector_view(self, coordinate: Coordinate) -> dict[str, Any] | None:
+        """What a player sees standing in a sector.
+
+        Exits are computed here, not stored. Each one is labelled with the
+        neighbour's own title and, on closer examination, its short description.
+        """
+        baked = self.store.get(coordinate)
+        if baked is None:
             return None
-        payload = room.as_dict()
-        payload["frontier_exits"] = [
-            exit_.direction.value
-            for exit_ in room.blueprint.exits
-            if not self.store.is_baked(coordinate.step(exit_.direction))
-        ]
+        return {
+            "coordinate": coordinate.as_list(),
+            "title": baked.sector.title,
+            "description": baked.sector.long_description,
+            "exits": self.store.exits_from(coordinate),
+            "things_you_can_see": [
+                {"object_id": o.object_id, "title": o.title}
+                for o in self.store.children_of(None, coordinate)
+            ],
+        }
+
+    def object_view(self, object_id: str) -> dict[str, Any] | None:
+        """What a player sees on looking at an object, including what is on it."""
+        world_object = self.store.get_object(object_id)
+        if world_object is None:
+            return None
+        return {
+            "object_id": world_object.object_id,
+            "title": world_object.title,
+            "description": world_object.description,
+            "coordinate": world_object.coordinate.as_list(),
+            "things_you_can_see": [
+                {"object_id": child.object_id, "title": child.title}
+                for child in self.store.children_of(object_id, world_object.coordinate)
+            ],
+        }
+
+    def object_tree(self, coordinate: Coordinate) -> list[dict[str, Any]]:
+        """The full object tree in one sector — what its own author may see."""
+
+        def branch(parent_id: str | None) -> list[dict[str, Any]]:
+            return [
+                {
+                    "object_id": o.object_id,
+                    "title": o.title,
+                    "description": o.description,
+                    "contains": branch(o.object_id),
+                }
+                for o in self.store.children_of(parent_id, coordinate)
+            ]
+
+        return branch(None)
+
+    def agent_view(self, agent: Agent) -> dict[str, Any]:
+        """An agent's own standing: its sector, its objects, and its clock."""
+        payload: dict[str, Any] = {
+            "agent": agent.as_dict(),
+            "can_claim_sector": not agent.is_settled,
+            "can_create_object": agent.is_settled and agent.cooldown_remaining() <= 0,
+            "cooldown_seconds": self.registry.cooldown_seconds,
+            "sector": None,
+        }
+        if agent.coordinate is not None:
+            baked = self.store.get(agent.coordinate)
+            if baked is not None:
+                payload["sector"] = baked.sector.as_dict() | {
+                    "objects": self.object_tree(agent.coordinate)
+                }
         return payload
 
     def world_map(self) -> dict[str, Any]:
         return {
-            "rooms": [
+            "sectors": [
                 {
-                    "coordinate": room.coordinate.as_list(),
-                    "name": room.blueprint.name,
-                    "agent_id": room.agent_id,
-                    "exits": [e.direction.value for e in room.blueprint.exits],
+                    "coordinate": b.coordinate.as_list(),
+                    "title": b.sector.title,
+                    "agent_id": b.agent_id,
+                    "exits": [e["direction"] for e in self.store.exits_from(b.coordinate)],
+                    "objects": len(self.store.objects_in(b.coordinate)),
                 }
-                for room in sorted(self.store.rooms(), key=lambda r: r.coordinate)
+                for b in sorted(self.store.sectors(), key=lambda b: b.coordinate)
             ],
             "edges": self.store.edges(),
-            "frontier": [coord.as_list() for coord in self.registry.frontier()],
-            "stats": self.registry.stats() | {"rooms": self.store.count()},
+            "frontier": [c.as_list() for c in self.registry.frontier()],
+            "stats": self.registry.stats()
+            | {"sectors": self.store.count(), "objects": self.store.object_count()},
         }
 
-    # --- prompt -------------------------------------------------------------
+    # --- prompts ------------------------------------------------------------
 
-    def prompt_template(self) -> str:
+    def prompt_template(self, name: str) -> str:
         try:
-            return PROMPT_PATH.read_text(encoding="utf-8")
+            return (PROMPT_DIR / f"{name}.md").read_text(encoding="utf-8")
         except FileNotFoundError:  # pragma: no cover - packaging safety net
             return ""
 
-    def render_prompt(self, claim: Claim) -> str:
-        """Fill the room-architect template with this claim's border context."""
-        ctx = self.context(claim)
-        if ctx["required_exits"]:
-            anchors = "\n".join(
-                f"- **{r['direction']}** leads to the existing room {r['neighbour_room_name']!r} "
-                f"at {r['neighbour']}. From their side the doorway reads: "
-                f"\"{r['their_doorway']}\""
-                for r in ctx["required_exits"]
-            )
-            required = ", ".join(r["direction"] for r in ctx["required_exits"])
-        else:
-            anchors = "- (none — this sector has no finished neighbours yet)"
-            required = "(none)"
-
+    def render_sector_prompt(self, claim: Claim) -> str:
         return (
-            self.prompt_template()
+            self.prompt_template("sector_architect")
             .replace("{{coordinate}}", str(claim.coordinate))
             .replace("{{claim_id}}", claim.claim_id)
-            .replace("{{required_exits}}", required)
-            .replace("{{neighbour_anchors}}", anchors)
-            .replace("{{open_sides}}", ", ".join(ctx["open_sides"]) or "(none)")
-            .replace("{{sealed_sides}}", ", ".join(ctx["sealed_sides"]) or "(none)")
         )
 
-    def _neighbour_name(self, coordinate: Coordinate, direction: Direction) -> str:
-        room = self.store.get(coordinate.step(direction))
-        return room.blueprint.name if room else ""
+    def render_object_prompt(self, agent: Agent) -> str:
+        view = self.agent_view(agent)
+        sector = view["sector"] or {}
+
+        def lines(nodes: list[dict[str, Any]], depth: int = 0) -> list[str]:
+            out = []
+            for node in nodes:
+                pad = "  " * depth
+                out.append(f"{pad}- `{node['object_id']}` — **{node['title']}**")
+                out.extend(lines(node["contains"], depth + 1))
+            return out
+
+        tree = lines(sector.get("objects", []))
+        return (
+            self.prompt_template("object_artisan")
+            .replace("{{coordinate}}", str(agent.coordinate))
+            .replace("{{sector_title}}", sector.get("title", ""))
+            .replace("{{sector_description}}", sector.get("long_description", ""))
+            .replace(
+                "{{existing_objects}}",
+                "\n".join(tree) or "- (nothing yet — this sector is bare)",
+            )
+        )
