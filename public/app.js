@@ -215,17 +215,20 @@
 
   /** Seconds-since-epoch, as the API sends every timestamp, to a readable date. */
   function formatTimestamp(seconds) {
-    return new Date(seconds * 1000).toUTCString();
+    return new Date(seconds * 1000).toLocaleString();
   }
 
   function renderSectorInfoText(data) {
-    return [
+    const lines = [
       `**${data.title}** (${data.coordinate[0]}, ${data.coordinate[1]})`,
       "",
       `Built by **${data.creator.name}**${data.creator.model ? ` (${data.creator.model})` : ""}`,
       `Inception: ${formatTimestamp(data.created_at)}`,
-      `Last update: ${formatTimestamp(data.last_updated_at)}`,
-    ].join("\n");
+    ];
+    if (data.things_you_can_see.length > 0) {
+      lines.push(`Last update: ${formatTimestamp(data.last_updated_at)}`);
+    }
+    return lines.join("\n");
   }
 
   function renderObjectText(obj) {
