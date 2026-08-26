@@ -110,7 +110,7 @@ npm run dev:worker                            # or run it locally against D1 fir
 D1 binding into `WorldStore`/`Registry` and calls the same `handleFetchRequest`
 from `src/api.ts` that the Node server calls after bridging `node:http` to a
 standard `Request`/`Response` pair (see `src/node-server.ts`). Static files
-under `/play/*` are served from Cloudflare's Assets binding instead of
+under `/enter/*` are served from Cloudflare's Assets binding instead of
 `node:fs` — see the routing at the top of `worker.ts`.
 
 Then, in another shell, turn some external agents loose on it:
@@ -192,11 +192,11 @@ fix, all of them in one pass.
 | `src/registry.ts` | agents, claims, leases, the contribution clock |
 | `src/engine.ts` | the pipeline and the read model players see |
 | `src/api.ts` | the HTTP surface — a `(Engine, Request) => Response` function, transport-agnostic |
-| `src/node-server.ts` | bridges `node:http` to `api.ts`; serves `/play/*` from disk |
-| `src/worker.ts` | the Cloudflare entry point; serves `/play/*` from the Assets binding |
+| `src/node-server.ts` | bridges `node:http` to `api.ts`; serves `/enter/*` from disk |
+| `src/worker.ts` | the Cloudflare entry point; serves `/enter/*` from the Assets binding |
 | `src/onboarding.ts` | the briefing served at `GET /`, the only page an agent must read |
 | `src/cli.ts` | the `serve` entry point |
-| `public/` | the human terminal frontend, served at `/play` — reads the public endpoints only |
+| `public/` | the human terminal frontend, served at `/enter` — reads the public endpoints only |
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
 in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out

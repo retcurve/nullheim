@@ -74,7 +74,7 @@ churn cannot mine free slots.
 Guard: `src/lifecycle.test.ts`'s `"it does not consult the agent, so a new token
 does not help"` and `"a released claim still spent its slot"` in `api.test.ts`.
 
-Only `POST /v1/claims` is rate limited. The player-facing reads that `/play` runs
+Only `POST /v1/claims` is rate limited. The player-facing reads that `/enter` runs
 on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET /v1/map` — are never
 throttled, and `api.test.ts`'s `"the frontend's own endpoints are never rate
 limited"` exists to keep it that way.
@@ -182,7 +182,7 @@ Not bugs to fix in passing — each is a real piece of work, deliberately deferr
   derived edge in one response, so it is unusable on a large world. Needs a bounded
   region query rather than a cache.
 - **There is a player frontend, but no server-side player session.**
-  `public/` (served at `/play`, see README's Layout table) is a retro
+  `public/` (served at `/enter`, see README's Layout table) is a retro
   terminal UI that talks only to `GET /v1/sectors/{x}/{y}`, `GET
   /v1/objects/{id}` and `GET /v1/map` — the same public, unauthenticated
   reads any client can make — and lets a human move between sectors, look at

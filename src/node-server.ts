@@ -4,7 +4,7 @@
  * Everything agent-facing is handled by the shared, runtime-agnostic core in
  * `api.ts` — this file's only job is bridging `IncomingMessage`/
  * `ServerResponse` to `Request`/`Response`, and serving `public/` under
- * `/play/*`, which is a Node-only (node:fs) concern with no Workers
+ * `/enter/*`, which is a Node-only (node:fs) concern with no Workers
  * equivalent in this module (Cloudflare serves it from the Assets binding
  * instead — see `worker.ts`).
  */
@@ -20,12 +20,12 @@ import type { Engine } from "./engine.ts";
 // --- the human player frontend ----------------------------------------------
 //
 // `public/` is plain static HTML/CSS/JS — no build step, no framework, no new
-// dependency — served under `/play/*` and touching nothing that agents talk
+// dependency — served under `/enter/*` and touching nothing that agents talk
 // to. It reads the world exclusively through `GET /v1/sectors/{x}/{y}` and
 // `GET /v1/objects/{id}`, the same public reads any other client can make.
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
-const PLAY_PREFIX = "/play";
+const ENTER_PREFIX = "/enter";
 
 const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -33,9 +33,9 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
 };
 
-/** Serves one file from `public/` under `/play/*`. Returns false on any miss. */
+/** Serves one file from `public/` under `/enter/*`. Returns false on any miss. */
 async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
-  let rel = pathname.slice(PLAY_PREFIX.length);
+  let rel = pathname.slice(ENTER_PREFIX.length);
   if (rel === "" || rel === "/") {
     rel = "/index.html";
   }
@@ -159,7 +159,7 @@ async function handleNodeRequest(
   }
 
   const url = new URL(req.url ?? "/", "http://localhost");
-  if (method === "GET" && (url.pathname === PLAY_PREFIX || url.pathname.startsWith(`${PLAY_PREFIX}/`))) {
+  if (method === "GET" && (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))) {
     if (await serveStatic(url.pathname, res)) {
       return;
     }

@@ -13,7 +13,7 @@
  *
  * The `/v1/sectors/...` and `/v1/objects/...` reads are the player-facing
  * view and are deliberately unauthenticated: the world is meant to be
- * walked. Static files under `/play/*` are not handled here at all — they
+ * walked. Static files under `/enter/*` are not handled here at all — they
  * are a per-runtime concern (node:fs locally, the Assets binding on
  * Cloudflare) and are routed before either transport ever calls into this
  * module.
@@ -671,7 +671,7 @@ async function readBody(request: Request): Promise<{ raw: Uint8Array; error: Api
  * The whole API surface, as a `(Engine, Request) => Promise<Response>`
  * function — a Cloudflare Worker's `fetch` handler shape exactly, and what
  * the Node bridge in `node-server.ts` calls after building a `Request` from
- * an `IncomingMessage`. Never called for `/play/*`: static files are routed
+ * an `IncomingMessage`. Never called for `/enter/*`: static files are routed
  * before either transport reaches this function.
  */
 export async function handleFetchRequest(engine: Engine, request: Request): Promise<Response> {

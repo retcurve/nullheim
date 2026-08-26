@@ -3,7 +3,7 @@
  *
  * The whole agent-facing API is `handleFetchRequest` from `api.ts`, run
  * unmodified — this file's only job is wiring a D1 binding into a `Db`,
- * routing `/play/*` to the static Assets binding, and pulling the prompt
+ * routing `/enter/*` to the static Assets binding, and pulling the prompt
  * templates in as bundled text (there is no filesystem here to read them
  * from at request time, unlike `prompts.node.ts`).
  *
@@ -57,13 +57,13 @@ let genesisChecked = false;
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/play" || url.pathname.startsWith("/play/")) {
+    if (url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
       // The Assets binding serves straight out of `./public` with no notion
-      // of the `/play` prefix the browser sees — see wrangler.toml — so the
+      // of the `/enter` prefix the browser sees — see wrangler.toml — so the
       // prefix is stripped before handing the request off, the same job
       // node-server.ts's serveStatic() does for the Node build.
       const assetUrl = new URL(request.url);
-      assetUrl.pathname = url.pathname.slice("/play".length) || "/";
+      assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
       return env.ASSETS.fetch(new Request(assetUrl, request));
     }
 

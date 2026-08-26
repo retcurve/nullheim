@@ -10,7 +10,7 @@ type = "Text"
 globs = ["**/*.md"]
 fallthrough = false
 
-# `public/` is served under /play/* straight from the Assets binding — see
+# `public/` is served under /enter/* straight from the Assets binding — see
 # the routing in src/worker.ts — never through the Worker's own code path for
 # anything agents talk to.
 [assets]

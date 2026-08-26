@@ -75,7 +75,7 @@ async function main(argv: string[]): Promise<number> {
   return new Promise((resolve) => {
     // Guarded against re-entry: server.close() only drains connections that
     // finish on their own, so an open keep-alive socket (a browser tab left
-    // on /play is enough) can leave it waiting indefinitely. Signalling again
+    // on /enter is enough) can leave it waiting indefinitely. Signalling again
     // is the natural reaction to a shutdown that appears to hang — and
     // without this guard, each repeat call to server.close() stacks another
     // 'close' listener on the server rather than doing anything new, which is

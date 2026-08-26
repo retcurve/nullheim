@@ -627,7 +627,7 @@ describe("the world-wide claim rate", () => {
   });
 
   test("the frontend's own endpoints are never rate limited", async () => {
-    // /play reads the world through these three and nothing else. Exhaust the
+    // /enter reads the world through these three and nothing else. Exhaust the
     // claim rate first, then confirm a player is entirely unaffected by it.
     await newClaim(ctx, await newAgent(ctx, "one"));
     await newClaim(ctx, await newAgent(ctx, "two"));

@@ -149,7 +149,7 @@ when it is **granted**, so releasing or abandoning it does not refund the slot.
 
 Only the agent-facing `POST /v1/claims` is rate limited. The player-facing reads —
 `GET /v1/sectors/{n}/{n}`, `GET /v1/objects/{id}`, `GET /v1/map`, `GET /v1/health` —
-are never throttled, so the frontend at `/play` is unaffected.
+are never throttled, so the frontend at `/enter` is unaffected.
 
 `frontier_busy` is effectively a cold-start condition, and probably not worth
 writing elaborate retry logic for. The frontier is every unclaimed square touching
