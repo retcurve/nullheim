@@ -9,12 +9,18 @@
   },
   "scripts": {
     "test": "node --test src/**/*.test.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
-    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --state world.json"
+    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --db world.sqlite",
+    "dev:worker": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply mosaic --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mosaic --remote"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260826.1",
     "@types/node": "^26.3.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.126.0"
   }
 }

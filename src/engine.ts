@@ -2,14 +2,17 @@
  * World engine — claiming, baking, furnishing, and the read model players see.
  *
  * This is the only module that mutates the world, and it is where the static
- * lock lives: once a sector bakes it is permanent, and once an object is placed
- * it stays placed. What is no longer permanent is the agent — it keeps its token
- * and comes back every eight hours to add one more thing.
+ * lock lives: once a sector bakes it is permanent, and once an object is
+ * placed it stays placed. What is no longer permanent is the agent — it keeps
+ * its token and comes back every eight hours to add one more thing.
+ *
+ * Every method that touches the store or the registry is async, since both
+ * are backed by SQL that may be a real network round trip (D1) rather than an
+ * in-process call. `validation.ts` stays synchronous on purpose — it is pure
+ * logic with no business making a database call — so the two "check" methods
+ * below prefetch exactly what a validation needs and hand it a small
+ * in-memory facade rather than the live, async store.
  */
-
-import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import * as coords from "./coords.ts";
 import { ORIGIN, type Coordinate } from "./coords.ts";
@@ -23,7 +26,6 @@ import {
   objectsUntilNextSector,
   type Agent,
   type Claim,
-  type RegistryOptions,
 } from "./registry.ts";
 import {
   parseObject,
@@ -41,16 +43,15 @@ import {
   type BakedSector,
   type WorldObject,
 } from "./store.ts";
-import { validateObject, validateSector } from "./validation.ts";
-
-const PROMPT_DIR = join(import.meta.dirname, "..", "prompts");
+import { randomHex } from "./tokens.ts";
+import { validateObject, validateSector, type ValidationStore } from "./validation.ts";
 
 export const GENESIS_AGENT_ID = "agent_genesis";
 
 /**
  * The one sector the system authors. It exists only to give the frontier
- * somewhere to start, and its text is deliberately blank-canvas so it imposes no
- * theme on the agents who build outward from it.
+ * somewhere to start, and its text is deliberately blank-canvas so it imposes
+ * no theme on the agents who build outward from it.
  */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
@@ -63,6 +64,30 @@ export const GENESIS: Sector = {
     "was not here yesterday, and each way out is already a different weather.",
 };
 
+/**
+ * Bake the genesis sector if the world is empty. Idempotent and safe to call
+ * on every cold start: a second caller racing this one collides on the same
+ * primary key and simply gets `AlreadyBaked` back, which is exactly the
+ * outcome that means nothing needs to happen.
+ */
+export async function ensureGenesis(store: WorldStore): Promise<void> {
+  if ((await store.count()) > 0) {
+    return;
+  }
+  try {
+    await store.bake({
+      sector: GENESIS,
+      sectorId: "sec_genesis",
+      agentId: GENESIS_AGENT_ID,
+      bakedAt: now(),
+    });
+  } catch (exc) {
+    if (!(exc instanceof AlreadyBaked)) {
+      throw exc;
+    }
+  }
+}
+
 export interface ObjectNode {
   object_id: string;
   title: string;
@@ -70,111 +95,93 @@ export interface ObjectNode {
   contains: ObjectNode[];
 }
 
-export interface EngineOptions extends RegistryOptions {
-  store?: WorldStore;
-  registry?: Registry;
-  statePath?: string | null;
+export interface PromptTemplates {
+  sector_architect: string;
+  object_artisan: string;
+}
+
+export interface EngineOptions {
+  store: WorldStore;
+  registry: Registry;
+  prompts: PromptTemplates;
 }
 
 export class Engine {
   readonly store: WorldStore;
   readonly registry: Registry;
+  readonly #prompts: PromptTemplates;
 
-  constructor(options: EngineOptions = {}) {
-    this.store = options.store ?? new WorldStore(options.statePath ?? null);
-    if (options.registry !== undefined) {
-      this.registry = options.registry;
-    } else {
-      const registryOptions: RegistryOptions = {};
-      if (options.leaseSeconds !== undefined) {
-        registryOptions.leaseSeconds = options.leaseSeconds;
-      }
-      if (options.cooldownSeconds !== undefined) {
-        registryOptions.cooldownSeconds = options.cooldownSeconds;
-      }
-      if (options.claimsPerHour !== undefined) {
-        registryOptions.claimsPerHour = options.claimsPerHour;
-      }
-      if (options.rng !== undefined) {
-        registryOptions.rng = options.rng;
-      }
-      this.registry = new Registry(this.store, registryOptions);
-    }
-    this.#ensureGenesis();
-  }
-
-  #ensureGenesis(): void {
-    if (this.store.count() === 0) {
-      this.store.bake({
-        sector: GENESIS,
-        sectorId: "sec_genesis",
-        agentId: GENESIS_AGENT_ID,
-        bakedAt: now(),
-      });
-    }
+  constructor(options: EngineOptions) {
+    this.store = options.store;
+    this.registry = options.registry;
+    this.#prompts = options.prompts;
   }
 
   // --- claiming -----------------------------------------------------------
 
-  register(label: string): { agent: Agent; token: string } {
+  register(label: string): Promise<{ agent: Agent; token: string }> {
     return this.registry.register(label);
   }
 
-  claim(agent: Agent): Claim {
+  claim(agent: Agent): Promise<Claim> {
     return this.registry.allocate(agent);
   }
 
   /**
    * Everything an agent is told about its sector before authoring it.
    *
-   * Which is: where it is, and how long it has. Nothing about what stands on any
-   * side of it — not a title, not a doorway, not even how many neighbours exist.
-   * An agent that knows nothing cannot hedge toward its neighbours, and the
-   * tonal collision between adjacent sectors is the whole reason players walk
-   * around.
+   * Which is: where it is, and how long it has. Nothing about what stands on
+   * any side of it — not a title, not a doorway, not even how many
+   * neighbours exist. An agent that knows nothing cannot hedge toward its
+   * neighbours, and the tonal collision between adjacent sectors is the whole
+   * reason players walk around.
    */
-  claimContext(claim: Claim): Record<string, unknown> {
+  async claimContext(claim: Claim): Promise<Record<string, unknown>> {
     return {
       claim: claimAsDict(claim),
       coordinate: coords.asList(claim.coordinate),
-      world_sectors: this.store.count(),
+      world_sectors: await this.store.count(),
     };
   }
 
   // --- sector submission --------------------------------------------------
 
   /** Parse and validate without touching the world — the dry-run path. */
-  checkSector(claim: Claim, raw: unknown): { sector: Sector | null; errors: ValidationError[] } {
+  async checkSector(
+    claim: Claim,
+    raw: unknown,
+  ): Promise<{ sector: Sector | null; errors: ValidationError[] }> {
     const { parsed, errors } = parseSector(raw);
     if (parsed === null) {
       return { sector: null, errors };
     }
+    const store = await this.#sectorValidationStore(parsed.coordinate);
     return {
       sector: parsed,
-      errors: [...errors, ...validateSector(parsed, claim.coordinate, this.#validationStore())],
+      errors: [...errors, ...validateSector(parsed, claim.coordinate, store)],
     };
   }
 
   /** Validate and, if clean, bake permanently and start the agent's clock. */
-  submitSector(
+  async submitSector(
     agent: Agent,
     claim: Claim,
     raw: unknown,
-  ): { baked: BakedSector | null; errors: ValidationError[] } {
-    this.registry.noteAttempt(claim);
-    const { sector, errors } = this.checkSector(claim, raw);
+  ): Promise<{ baked: BakedSector | null; errors: ValidationError[] }> {
+    await this.registry.noteAttempt(claim);
+    const { sector, errors } = await this.checkSector(claim, raw);
     if (sector === null || errors.length) {
       return { baked: null, errors };
     }
 
     const baked: BakedSector = {
       sector,
-      sectorId: `sec_${randomBytes(8).toString("hex")}`,
+      sectorId: `sec_${randomHex(8)}`,
       agentId: agent.agentId,
       bakedAt: now(),
     };
     try {
-      this.store.bake(baked);
+      await this.store.bake(baked);
     } catch (exc) {
       if (exc instanceof AlreadyBaked) {
         return {
@@ -185,30 +192,28 @@ export class Engine {
       throw exc;
     }
 
-    this.registry.settle(agent, claim);
+    await this.registry.settle(agent, claim);
     return { baked, errors: [] };
   }
 
-  release(claim: Claim): void {
-    this.registry.release(claim);
+  release(claim: Claim): Promise<void> {
+    return this.registry.release(claim);
   }
 
   // --- objects ------------------------------------------------------------
 
-  checkObject(
+  async checkObject(
     agent: Agent,
     raw: unknown,
-  ): { draft: ObjectDraft | null; errors: ValidationError[] } {
+  ): Promise<{ draft: ObjectDraft | null; errors: ValidationError[] }> {
     const { parsed, errors } = parseObject(raw);
     if (parsed === null || agent.coordinates.length === 0) {
       return { draft: parsed, errors };
     }
+    const store = await this.#objectValidationStore(agent, parsed.parentId);
     return {
       draft: parsed,
-      errors: [
-        ...errors,
-        ...validateObject(parsed, agent.coordinates, this.#validationStore()),
-      ],
+      errors: [...errors, ...validateObject(parsed, agent.coordinates, store)],
     };
   }
 
@@ -219,14 +224,15 @@ export class Engine {
    * branches always matches — an agent holding several sectors picks between
    * them by naming a parent, never by naming a coordinate.
    */
-  #sectorFor(agent: Agent, parentId: string): BakedSector {
+  async #sectorFor(agent: Agent, parentId: string): Promise<BakedSector> {
     for (const coordinate of agent.coordinates) {
-      const baked = this.store.get(coordinate);
+      const baked = await this.store.get(coordinate);
       if (baked !== null && baked.sectorId === parentId) {
         return baked;
       }
     }
-    return this.store.get(this.store.getObject(parentId)!.coordinate)!;
+    const parentObject = await this.store.getObject(parentId);
+    return (await this.store.get(parentObject!.coordinate))!;
   }
 
   /**
@@ -234,26 +240,26 @@ export class Engine {
    *
    * Throws SectorRequired if the agent has not built one yet, NotYet if its
    * cooldown is still running. The cooldown is per agent, not per sector, so
-   * holding more sectors buys somewhere else to put the object — never a second
-   * object in the same window.
+   * holding more sectors buys somewhere else to put the object — never a
+   * second object in the same window.
    */
-  createObject(
+  async createObject(
     agent: Agent,
     raw: unknown,
-  ): { object: WorldObject | null; errors: ValidationError[] } {
+  ): Promise<{ object: WorldObject | null; errors: ValidationError[] }> {
     this.registry.checkCanContribute(agent);
 
-    const { draft, errors } = this.checkObject(agent, raw);
+    const { draft, errors } = await this.checkObject(agent, raw);
     if (draft === null || errors.length) {
       return { object: null, errors };
     }
 
-    const baked = this.#sectorFor(agent, draft.parentId);
-    // Internally the sector itself is still represented as parentId=null — the
-    // sector's own id is only the agent-facing spelling of "the root".
+    const baked = await this.#sectorFor(agent, draft.parentId);
+    // Internally the sector itself is still represented as parentId=null —
+    // the sector's own id is only the agent-facing spelling of "the root".
     const parentId = draft.parentId === baked.sectorId ? null : draft.parentId;
     const world_object: WorldObject = {
-      objectId: `obj_${randomBytes(8).toString("hex")}`,
+      objectId: `obj_${randomHex(8)}`,
       coordinate: baked.sector.coordinate,
       parentId,
       title: draft.title,
@@ -261,18 +267,49 @@ export class Engine {
       agentId: agent.agentId,
       createdAt: now(),
     };
-    this.store.addObject(world_object);
-    this.registry.noteContribution(agent);
+    await this.store.addObject(world_object);
+    await this.registry.noteContribution(agent);
     return { object: world_object, errors: [] };
   }
 
-  /** The narrow view validation is allowed to ask questions through. */
-  #validationStore() {
+  /**
+   * Everything `validateSector` might need to ask, prefetched into a
+   * synchronous facade: whether the claimed coordinate (and each of its four
+   * neighbours) is already baked, and the world's sector count.
+   */
+  async #sectorValidationStore(coordinate: Coordinate): Promise<ValidationStore> {
+    const checked = [coordinate, ...coords.neighbours(coordinate).map(([, n]) => n)];
+    const [flags, count] = await Promise.all([
+      Promise.all(checked.map((c) => this.store.isBaked(c))),
+      this.store.count(),
+    ]);
+    const baked = new Map(checked.map((c, i) => [coords.key(c), flags[i]!]));
     return {
-      get: (coordinate: Coordinate) => this.store.get(coordinate),
-      getObject: (objectId: string) => this.store.getObject(objectId),
-      isBaked: (coordinate: Coordinate) => this.store.isBaked(coordinate),
-      count: () => this.store.count(),
+      isBaked: (c) => baked.get(coords.key(c)) ?? false,
+      get: () => null, // unused by validateSector
+      getObject: () => null, // unused by validateSector
+      count: () => count,
+    };
+  }
+
+  /**
+   * Everything `validateObject` might need to ask, prefetched into a
+   * synchronous facade: the agent's own sectors (to recognise a `parentId`
+   * naming one of them directly) and whatever `parentId` itself names, if
+   * anything. `validateObject` only ever looks up that one id, so this is
+   * the whole of what it can ask for.
+   */
+  async #objectValidationStore(agent: Agent, parentId: string): Promise<ValidationStore> {
+    const [sectors, parent] = await Promise.all([
+      Promise.all(agent.coordinates.map((c) => this.store.get(c))),
+      this.store.getObject(parentId),
+    ]);
+    const byCoordinate = new Map(agent.coordinates.map((c, i) => [coords.key(c), sectors[i]!]));
+    return {
+      isBaked: () => false, // unused by validateObject
+      get: (c) => byCoordinate.get(coords.key(c)) ?? null,
+      getObject: (id) => (id === parentId ? parent : null),
+      count: () => 0, // unused by validateObject
     };
   }
 
@@ -284,37 +321,40 @@ export class Engine {
    * Exits are computed here, not stored. Each one is labelled with the
    * neighbour's own title and, on closer examination, its short description.
    */
-  sectorView(coordinate: Coordinate): Record<string, unknown> | null {
-    const baked = this.store.get(coordinate);
+  async sectorView(coordinate: Coordinate): Promise<Record<string, unknown> | null> {
+    const baked = await this.store.get(coordinate);
     if (baked === null) {
       return null;
     }
+    const [exits, children] = await Promise.all([
+      this.store.exitsFrom(coordinate),
+      this.store.childrenOf(null, coordinate),
+    ]);
     return {
       coordinate: coords.asList(coordinate),
       title: baked.sector.title,
       description: baked.sector.longDescription,
-      exits: this.store.exitsFrom(coordinate),
-      things_you_can_see: this.store.childrenOf(null, coordinate).map((o) => ({
-        object_id: o.objectId,
-        title: o.title,
-      })),
+      exits,
+      things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),
     };
   }
 
   /** What a player sees on looking at an object, including what is on it. */
-  objectView(objectId: string): Record<string, unknown> | null {
-    const world_object = this.store.getObject(objectId);
+  async objectView(objectId: string): Promise<Record<string, unknown> | null> {
+    const world_object = await this.store.getObject(objectId);
     if (world_object === null) {
       return null;
     }
+    const children = await this.store.childrenOf(objectId, world_object.coordinate);
     return {
       object_id: world_object.objectId,
       title: world_object.title,
       description: world_object.description,
       coordinate: coords.asList(world_object.coordinate),
-      things_you_can_see: this.store
-        .childrenOf(objectId, world_object.coordinate)
-        .map((child) => ({ object_id: child.objectId, title: child.title })),
+      things_you_can_see: children.map((child) => ({
+        object_id: child.objectId,
+        title: child.title,
+      })),
     };
   }
 
@@ -322,13 +362,13 @@ export class Engine {
    * The full object tree in one sector — what its own author may see.
    *
    * The sector's objects are fetched once and bucketed by parent, rather than
-   * re-querying per node. An agent contributing every eight hours for a year has
-   * around a thousand objects here, and the old shape made walking them
-   * quadratic.
+   * re-querying per node. An agent contributing every eight hours for a year
+   * has around a thousand objects here, and re-querying per node would make
+   * walking them quadratic.
    */
-  objectTree(coordinate: Coordinate): ObjectNode[] {
+  async objectTree(coordinate: Coordinate): Promise<ObjectNode[]> {
     const byParent = new Map<string | null, WorldObject[]>();
-    for (const world_object of this.store.objectsIn(coordinate)) {
+    for (const world_object of await this.store.objectsIn(coordinate)) {
       const bucket = byParent.get(world_object.parentId);
       if (bucket === undefined) {
         byParent.set(world_object.parentId, [world_object]);
@@ -349,22 +389,22 @@ export class Engine {
   }
 
   /** An agent's own standing: every sector it holds, their objects, its clock. */
-  agentView(agent: Agent): Record<string, unknown> {
+  async agentView(agent: Agent): Promise<Record<string, unknown>> {
     const sectors: Record<string, unknown>[] = [];
     for (const coordinate of agent.coordinates) {
-      const baked = this.store.get(coordinate);
+      const baked = await this.store.get(coordinate);
       if (baked !== null) {
         sectors.push({
           ...sectorAsDict(baked.sector),
           sector_id: baked.sectorId,
-          objects: this.objectTree(coordinate),
+          objects: await this.objectTree(coordinate),
         });
       }
     }
     return {
       agent: agentAsDict(agent),
-      // A fresh agent owes nothing, so its first sector is free. After that the
-      // same arithmetic is what gates the second and every one after it.
+      // A fresh agent owes nothing, so its first sector is free. After that
+      // the same arithmetic is what gates the second and every one after it.
       can_claim_sector: objectsUntilNextSector(agent) === 0,
       can_create_object: isSettled(agent) && cooldownRemaining(agent) <= 0,
       cooldown_seconds: this.registry.cooldownSeconds,
@@ -372,35 +412,40 @@ export class Engine {
     };
   }
 
-  worldMap(): Record<string, unknown> {
-    const sectors = this.store.sectors();
+  async worldMap(): Promise<Record<string, unknown>> {
+    const sectors = await this.store.sectors();
     sectors.sort((a, b) => coords.compare(a.sector.coordinate, b.sector.coordinate));
+    const [edges, frontier, stats, objectCount, sectorViews] = await Promise.all([
+      this.store.edges(),
+      this.registry.frontier(),
+      this.registry.stats(),
+      this.store.objectCount(),
+      Promise.all(
+        sectors.map(async (b) => ({
+          coordinate: coords.asList(b.sector.coordinate),
+          title: b.sector.title,
+          agent_id: b.agentId,
+          exits: (await this.store.exitsFrom(b.sector.coordinate)).map((e) => e.direction),
+          objects: (await this.store.objectsIn(b.sector.coordinate)).length,
+        })),
+      ),
+    ]);
     return {
-      sectors: sectors.map((b) => ({
-        coordinate: coords.asList(b.sector.coordinate),
-        title: b.sector.title,
-        agent_id: b.agentId,
-        exits: this.store.exitsFrom(b.sector.coordinate).map((e) => e.direction),
-        objects: this.store.objectsIn(b.sector.coordinate).length,
-      })),
-      edges: this.store.edges(),
-      frontier: this.registry.frontier().map(coords.asList),
+      sectors: sectorViews,
+      edges,
+      frontier: frontier.map(coords.asList),
       stats: {
-        ...this.registry.stats(),
-        sectors: this.store.count(),
-        objects: this.store.objectCount(),
+        ...stats,
+        sectors: sectors.length,
+        objects: objectCount,
       },
     };
   }
 
   // --- prompts ------------------------------------------------------------
 
-  promptTemplate(name: string): string {
-    try {
-      return readFileSync(join(PROMPT_DIR, `${name}.md`), "utf-8");
-    } catch {
-      return ""; // packaging safety net
-    }
+  promptTemplate(name: keyof PromptTemplates): string {
+    return this.#prompts[name] ?? "";
   }
 
   renderSectorPrompt(claim: Claim): string {
@@ -416,7 +461,7 @@ export class Engine {
    * deeper. An agent with several is shown all of them and picks between them
    * the same way it picks a shelf inside one: by naming a `parent_id`.
    */
-  renderObjectPrompt(agent: Agent): string {
+  async renderObjectPrompt(agent: Agent): Promise<string> {
     const lines = (nodes: ObjectNode[], depth: number): string[] => {
       const out: string[] = [];
       for (const node of nodes) {
@@ -427,7 +472,7 @@ export class Engine {
       return out;
     };
 
-    const view = this.agentView(agent);
+    const view = await this.agentView(agent);
     const blocks = ((view["sectors"] as Record<string, unknown>[]) ?? []).map((sector) => {
       const tree = lines((sector["objects"] as ObjectNode[]) ?? [], 1);
       const coordinate = sector["coordinate"] as [number, number];

@@ -79,18 +79,17 @@ on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET /v1/map` — are 
 throttled, and `api.test.ts`'s `"the frontend's own endpoints are never rate
 limited"` exists to keep it that way.
 
-**Agents persist the same way sectors and objects do, but as a full snapshot on
-every change rather than once.** A sector or object is written exactly once,
-because it never changes again; an agent does — a new sector founded, a cooldown
-restarted, an object count incremented — so `Registry` calls
-`WorldStore.saveAgent()` after every mutation, and each call is the agent's
-*entire* current state, not a diff. `WorldStore` keeps these in a map keyed by
-`agentId` exactly as it does sectors by coordinate and objects by id, which is
-what makes replaying a hundred saves for one agent correct for free: the map
-simply holds whichever save was last, the same rule the compacted snapshot
-already applied to sectors and objects. Without this, a restart invalidated
-every token in existence and reset the earned-sector count to zero, silently
-defeating the per-agent brake above.
+**Agents persist the same way sectors and objects do, but as a full row
+`UPSERT` on every change rather than a single `INSERT`.** A sector or object is
+written exactly once, because it never changes again; an agent does — a new
+sector founded, a cooldown restarted, an object count incremented — so
+`Registry`'s private `#persist()` runs `INSERT … ON CONFLICT (agent_id) DO
+UPDATE …` after every mutation, and each call carries the agent's *entire*
+current state, not a diff. That upsert is what makes a hundred saves for one
+agent correct for free: the row simply holds whichever save was last, the same
+rule a compacted log-and-snapshot store would have to work harder to get.
+Without this, a restart invalidated every token in existence and reset the
+earned-sector count to zero, silently defeating the per-agent brake above.
 Guard: `src/lifecycle.test.ts`'s `"a token, its sectors, and its object count all
 outlive the process"` and `"only the last save for an agent that changed many
 times survives"`.
@@ -114,6 +113,37 @@ field name from `schema.ts` rather than restating them, so the only thing that c
 actually drift there is prose. Keep it that way: a hardcoded `64` in that file is a
 bug waiting for the next limit change.
 
+**The storage interface (`src/db.ts`) is modelled on Cloudflare D1's own
+binding shape, not on node:sqlite's.** D1's is the one that cannot be adapted
+away — it is imposed by the platform — so `src/db/d1.ts` is close to a
+pass-through and `src/db/sqlite.ts` is the adapter doing real work, wrapping
+node:sqlite's synchronous calls in resolved promises. Every method on `Db` is
+async for the same reason: the same `WorldStore`/`Registry` code runs against
+a network round trip in production and against an effectively-synchronous
+local file in dev, and nothing above the adapter may assume which.
+
+**Every write that has to be atomic is one SQL statement, never a read
+followed by a separate write.** `WorldStore.bake()` folds the static lock and
+the frontier update into one `batch()`; `Registry.allocate()` guards both the
+coordinate race and the world-wide rate limit with conditional `INSERT …
+SELECT … WHERE` statements, and detects a lost race by `changes === 0` rather
+than assuming single-process exclusivity. This is what changed hardest in the
+move off an in-memory `Map`: the old code could get away with a read then a
+write because nothing else was running on the same thread. A Cloudflare
+Worker offers no such guarantee — two requests can be two different isolates
+racing the same coordinate — so the invariant had to move into the database
+itself. `registry.ts`'s module comment has the detail.
+
+**`validation.ts` stays synchronous even though the store it reads from is
+now async.** Rather than let validation grow a dependency on the storage
+layer's shape, `engine.ts`'s `checkSector`/`checkObject` prefetch exactly what
+`validateSector`/`validateObject` can ask for into a small in-memory facade
+first, and hand that to otherwise-unchanged, pure validation logic. Validation
+is a pure function of the world's *current* answers to a few fixed questions;
+it has no business making its own database calls, and keeping it synchronous
+is what keeps it testable without a database at all — see the facades built
+inline in `validation.test.ts`.
+
 ## Measured, so you need not re-derive it
 
 - **Frontier size ≈ 7.6·√N** — 1,087 open slots at 20k sectors, 7,581 at 1M.
@@ -129,17 +159,25 @@ bug waiting for the next limit change.
   `objectsIn()` scanned every object in the world before the per-coordinate index.
   Both sat on paths hit constantly — claiming, and every player room view. If you add
   a third such query, index it the same way rather than scanning.
-- **Persistence costs the same at any world size** — one appended line and one
-  `fsync`. Measured flat as the world grew 60×: 0.185 ms per write at 1k sectors,
-  0.109 ms at 60k.
+- **Every write is a small, fixed number of statements, regardless of world
+  size** — `bake()` is one `batch()` of at most six statements (the sector,
+  the frontier deletion, up to four conditional frontier inserts) whether the
+  world holds ten sectors or ten million; nothing scans. Not re-measured in
+  wall-clock terms since the move off the JSON log — D1's latency is a network
+  round trip and dominates whatever the query planner does, so the old
+  per-write timings would be meaningless here anyway.
 
 ## Known limitations
 
 Not bugs to fix in passing — each is a real piece of work, deliberately deferred.
 
-- **The snapshot is single-process.** Two servers pointed at the same `--state` file
-  will corrupt each other's log. There is no locking. This is the thing that breaks
-  first if the deployment ever grows a second process.
+- **The local SQLite file is still single-process.** Two `node src/cli.ts
+  serve` processes pointed at the same `--db` path will contend for the same
+  file lock; node:sqlite does not arbitrate that for you. This does not apply
+  to the deployed (D1) path — D1 is the reason the storage layer was
+  abstracted behind `Db` at all — but it is still the shape of local dev, and
+  the thing that breaks first if a local deployment ever grows a second
+  process.
 - **`/v1/map` is O(sectors) and unpaginated.** It returns every sector and every
   derived edge in one response, so it is unusable on a large world. Needs a bounded
   region query rather than a cache.
@@ -150,10 +188,11 @@ Not bugs to fix in passing — each is a real piece of work, deliberately deferr
 ## Working here
 
 ```bash
-npm test                                                # 181 tests, ~2s
-npm run typecheck
+npm test                                                # ~6s
+npm run typecheck                                       # Node build, then the Workers build
 node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
+npm run dev:worker                                      # the same server, on Cloudflare's local simulator
 ```
 
 The demo needs both brakes off. `--cooldown-seconds 0` because at the real

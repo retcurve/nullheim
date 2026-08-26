@@ -150,7 +150,7 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
  * encoding doesn't matter.
  */
 function oversized(raw: unknown, errors: Collector): boolean {
-  const encoded = Buffer.byteLength(JSON.stringify(raw) ?? "", "utf8");
+  const encoded = new TextEncoder().encode(JSON.stringify(raw) ?? "").length;
   if (encoded > MAX_SUBMISSION_BYTES) {
     errors.add(
       "too_large",

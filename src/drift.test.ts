@@ -116,50 +116,50 @@ describe("the worked examples must be submittable, not just plausible", () => {
 });
 
 describe("placeholders", () => {
-  test("the sector prompt is fully filled", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
+  test("the sector prompt is fully filled", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
     const rendered = engine.renderSectorPrompt(claim);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes(`[${claim.coordinate.x}, ${claim.coordinate.y}]`));
     assert.ok(rendered.includes(claim.claimId));
   });
 
-  test("the object prompt is fully filled and lists what is there", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent, token: _t } = engine.register("architect");
-    const claim = engine.claim(agent);
-    engine.submitSector(agent, claim, {
+  test("the object prompt is fully filled and lists what is there", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent, token: _t } = await engine.register("architect");
+    const claim = await engine.claim(agent);
+    await engine.submitSector(agent, claim, {
       coordinate: [claim.coordinate.x, claim.coordinate.y],
       title: "A Place",
       short_description: "d",
       long_description: "d",
     });
-    const { object: placed } = engine.createObject(agent, {
-      parent_id: engine.store.get(claim.coordinate)!.sectorId,
+    const { object: placed } = await engine.createObject(agent, {
+      parent_id: (await engine.store.get(claim.coordinate))!.sectorId,
       title: "Brass Can",
       description: "d",
     });
 
-    const rendered = engine.renderObjectPrompt(agent);
+    const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes(placed!.objectId));
     assert.ok(rendered.includes("Brass Can"));
   });
 
-  test("the object prompt copes with a bare sector", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
-    engine.submitSector(agent, claim, {
+  test("the object prompt copes with a bare sector", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
+    await engine.submitSector(agent, claim, {
       coordinate: [claim.coordinate.x, claim.coordinate.y],
       title: "A Place",
       short_description: "d",
       long_description: "d",
     });
 
-    const rendered = engine.renderObjectPrompt(agent);
+    const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes("nothing yet"));
   });

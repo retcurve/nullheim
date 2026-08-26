@@ -2,13 +2,13 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
+import { SCHEMA_SQL } from "./db/schema.node.ts";
+import { openSqlite } from "./db/sqlite.ts";
 import * as coords from "./coords.ts";
 import { ORIGIN, coord } from "./coords.ts";
-import { Engine } from "./engine.ts";
+import { Engine, ensureGenesis } from "./engine.ts";
+import { loadPrompts } from "./prompts.node.ts";
 import { seeded } from "./random.ts";
 import {
   ClaimRateLimited,
@@ -34,57 +34,59 @@ import {
   settle,
 } from "./testing.ts";
 
-function frontierKeys(engine: Engine): Set<string> {
-  return new Set(engine.registry.frontier().map(coords.key));
+const PROMPTS = loadPrompts();
+
+async function frontierKeys(engine: Engine): Promise<Set<string>> {
+  return new Set((await engine.registry.frontier()).map(coords.key));
 }
 
 describe("the frontier", () => {
-  test("the world seeds itself with one sector", () => {
-    const engine = makeEngine();
-    assert.equal(engine.store.count(), 1);
-    assert.notEqual(engine.store.get(ORIGIN), null);
+  test("the world seeds itself with one sector", async () => {
+    const { engine } = await makeEngine();
+    assert.equal(await engine.store.count(), 1);
+    assert.notEqual(await engine.store.get(ORIGIN), null);
   });
 
-  test("the frontier is every side of every sector", () => {
+  test("the frontier is every side of every sector", async () => {
     // Any side can take a neighbour — there are no sealed edges.
-    const engine = makeEngine();
+    const { engine } = await makeEngine();
     const expected = new Set(
       coords.neighbours(ORIGIN).map(([, neighbour]) => coords.key(neighbour)),
     );
-    assert.deepEqual(frontierKeys(engine), expected);
+    assert.deepEqual(await frontierKeys(engine), expected);
   });
 
-  test("the frontier grows as the world does", () => {
-    const engine = makeEngine();
-    build(engine, [0, 1]);
-    const frontier = frontierKeys(engine);
+  test("the frontier grows as the world does", async () => {
+    const { engine } = await makeEngine();
+    await build(engine, [0, 1]);
+    const frontier = await frontierKeys(engine);
     assert.ok(frontier.has(coords.key(coord(0, 2))));
     assert.ok(frontier.has(coords.key(coord(1, 1))));
     assert.ok(!frontier.has(coords.key(ORIGIN)));
   });
 
-  test("allocation never hands out the same sector twice", () => {
-    const engine = makeEngine();
+  test("allocation never hands out the same sector twice", async () => {
+    const { engine } = await makeEngine();
     const seen = new Set<string>();
     for (let index = 0; index < 4; index += 1) {
-      const { agent } = engine.register(`a${index}`);
-      const claim = engine.claim(agent);
+      const { agent } = await engine.register(`a${index}`);
+      const claim = await engine.claim(agent);
       const k = coords.key(claim.coordinate);
       assert.ok(!seen.has(k), "handed out a coordinate twice");
       seen.add(k);
     }
   });
 
-  test("running out of frontier is a clean retryable refusal", () => {
+  test("running out of frontier is a clean retryable refusal", async () => {
     // Only reachable while the frontier is tiny — four slots at genesis.
-    const engine = makeEngine();
+    const { engine } = await makeEngine();
     for (let index = 0; index < 4; index += 1) {
-      const { agent } = engine.register(`a${index}`);
-      engine.claim(agent);
+      const { agent } = await engine.register(`a${index}`);
+      await engine.claim(agent);
     }
-    const { agent } = engine.register("one-too-many");
+    const { agent } = await engine.register("one-too-many");
     try {
-      engine.claim(agent);
+      await engine.claim(agent);
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
@@ -93,7 +95,7 @@ describe("the frontier", () => {
     }
   });
 
-  test("allocation does not prefer well-connected slots", () => {
+  test("allocation does not prefer well-connected slots", async () => {
     // A pocket is worth no more than the end of a limb. The world is meant to
     // sprawl organically, corridors included, so the only rule is adjacency.
     // This asserts the absence of the old fill-the-pockets heuristic.
@@ -104,15 +106,18 @@ describe("the frontier", () => {
 
     const chosen = new Set<string>();
     for (let seed = 0; seed < 60; seed += 1) {
-      const store = new WorldStore();
-      const registry = new Registry(store, { rng: seeded(seed) });
-      const engine = new Engine({ store, registry });
-      build(engine, [1, 0]);
-      build(engine, [2, 0]);
-      build(engine, [0, 1]);
+      const db = openSqlite(":memory:");
+      await db.exec(SCHEMA_SQL);
+      const store = new WorldStore(db);
+      const registry = new Registry(db, { rng: seeded(seed) });
+      await ensureGenesis(store);
+      const engine = new Engine({ store, registry, prompts: PROMPTS });
+      await build(engine, [1, 0]);
+      await build(engine, [2, 0]);
+      await build(engine, [0, 1]);
 
-      const { agent } = engine.register("a");
-      chosen.add(coords.key(engine.claim(agent).coordinate));
+      const { agent } = await engine.register("a");
+      chosen.add(coords.key((await engine.claim(agent)).coordinate));
     }
 
     assert.ok(chosen.has(pocket), "a pocket must be reachable");
@@ -121,36 +126,36 @@ describe("the frontier", () => {
 });
 
 describe("leases", () => {
-  test("an expired lease returns the sector to the frontier", () => {
-    const engine = makeEngine({ leaseSeconds: 0 });
-    const { agent } = engine.register("slow");
-    const claim = engine.claim(agent);
+  test("an expired lease returns the sector to the frontier", async () => {
+    const { engine } = await makeEngine({ leaseSeconds: 0 });
+    const { agent } = await engine.register("slow");
+    const claim = await engine.claim(agent);
 
     assert.ok(!isActive(claim));
-    assert.ok(frontierKeys(engine).has(coords.key(claim.coordinate)));
-    assert.equal(engine.registry.getClaim(claim.claimId)?.status, ClaimStatus.EXPIRED);
+    assert.ok((await frontierKeys(engine)).has(coords.key(claim.coordinate)));
+    assert.equal((await engine.registry.getClaim(claim.claimId))?.status, ClaimStatus.EXPIRED);
   });
 
-  test("an agent whose lease lapsed may claim again", () => {
-    const engine = makeEngine({ leaseSeconds: 0 });
-    const { agent } = engine.register("slow");
-    engine.claim(agent);
-    assert.notEqual(engine.claim(agent), null);
+  test("an agent whose lease lapsed may claim again", async () => {
+    const { engine } = await makeEngine({ leaseSeconds: 0 });
+    const { agent } = await engine.register("slow");
+    await engine.claim(agent);
+    assert.notEqual(await engine.claim(agent), null);
   });
 
-  test("a live lease holds its sector against other agents", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("holder");
-    const claim = engine.claim(agent);
-    assert.ok(!frontierKeys(engine).has(coords.key(claim.coordinate)));
+  test("a live lease holds its sector against other agents", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("holder");
+    const claim = await engine.claim(agent);
+    assert.ok(!(await frontierKeys(engine)).has(coords.key(claim.coordinate)));
   });
 
-  test("an agent cannot hold two claims at once", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("greedy");
-    engine.claim(agent);
+  test("an agent cannot hold two claims at once", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("greedy");
+    await engine.claim(agent);
     try {
-      engine.claim(agent);
+      await engine.claim(agent);
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
@@ -159,27 +164,27 @@ describe("leases", () => {
     }
   });
 
-  test("releasing frees the sector but keeps the agent", () => {
-    const engine = makeEngine();
-    const { agent, token } = engine.register("quitter");
-    const claim = engine.claim(agent);
-    engine.release(claim);
+  test("releasing frees the sector but keeps the agent", async () => {
+    const { engine } = await makeEngine();
+    const { agent, token } = await engine.register("quitter");
+    const claim = await engine.claim(agent);
+    await engine.release(claim);
 
-    assert.ok(frontierKeys(engine).has(coords.key(claim.coordinate)));
+    assert.ok((await frontierKeys(engine)).has(coords.key(claim.coordinate)));
     // The token survives — an agent that gave up may try again.
-    assert.equal(engine.registry.authenticate(token), agent);
-    assert.notEqual(engine.claim(agent), null);
+    assert.deepEqual(await engine.registry.authenticate(token), agent);
+    assert.notEqual(await engine.claim(agent), null);
   });
 });
 
 describe("the world-wide claim rate", () => {
-  test("it refuses once the hour is full, and says how long", () => {
-    const engine = makeEngine({ claimsPerHour: 2 });
+  test("it refuses once the hour is full, and says how long", async () => {
+    const { engine } = await makeEngine({ claimsPerHour: 2 });
     for (const label of ["one", "two"]) {
-      engine.claim(engine.register(label).agent);
+      await engine.claim((await engine.register(label)).agent);
     }
     try {
-      engine.claim(engine.register("three").agent);
+      await engine.claim((await engine.register("three")).agent);
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof ClaimRateLimited);
@@ -189,51 +194,54 @@ describe("the world-wide claim rate", () => {
     }
   });
 
-  test("it does not consult the agent, so a new token does not help", () => {
+  test("it does not consult the agent, so a new token does not help", async () => {
     // The reason this brake exists in the first place: registration is free.
-    const engine = makeEngine({ claimsPerHour: 1 });
-    engine.claim(engine.register("first").agent);
-    assert.throws(() => engine.claim(engine.register("second").agent), ClaimRateLimited);
+    const { engine } = await makeEngine({ claimsPerHour: 1 });
+    await engine.claim((await engine.register("first")).agent);
+    await assert.rejects(
+      engine.claim((await engine.register("second")).agent),
+      ClaimRateLimited,
+    );
   });
 
-  test("what an agent owes is reported before the world's rate", () => {
+  test("what an agent owes is reported before the world's rate", async () => {
     // A locked agent polling a rate limit would be waiting on the wrong thing.
-    const engine = makeEngine({ claimsPerHour: 1 });
-    const { agent } = settle(engine);
-    assert.throws(() => engine.claim(agent), SectorUnavailable);
+    const { engine } = await makeEngine({ claimsPerHour: 1 });
+    const { agent } = await settle(engine);
+    await assert.rejects(engine.claim(agent), SectorUnavailable);
   });
 });
 
 describe("submitting a sector", () => {
-  test("a clean submission bakes and settles the agent", () => {
-    const engine = makeEngine({ cooldownSeconds: 3600 });
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
+  test("a clean submission bakes and settles the agent", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
 
-    const { errors } = engine.submitSector(
+    const { errors } = await engine.submitSector(
       agent,
       claim,
       sector(coords.asList(claim.coordinate)),
     );
     assert.deepEqual(errors, []);
-    assert.notEqual(engine.store.get(claim.coordinate), null);
-    assert.equal(engine.registry.getClaim(claim.claimId)?.status, ClaimStatus.BAKED);
+    assert.notEqual(await engine.store.get(claim.coordinate), null);
+    assert.equal((await engine.registry.getClaim(claim.claimId))?.status, ClaimStatus.BAKED);
     assert.deepEqual(agent.coordinates, [claim.coordinate]);
     assert.ok(cooldownRemaining(agent) > 0);
   });
 
-  test("the token survives baking", () => {
+  test("the token survives baking", async () => {
     // The sector is permanent; the agent is not spent. It comes back.
-    const engine = makeEngine();
-    const { agent, token } = settle(engine);
-    assert.equal(engine.registry.authenticate(token), agent);
+    const { engine } = await makeEngine();
+    const { agent, token } = await settle(engine);
+    assert.deepEqual(await engine.registry.authenticate(token), agent);
   });
 
-  test("a second sector is locked until the first is furnished", () => {
-    const engine = makeEngine();
-    const { agent } = settle(engine);
+  test("a second sector is locked until the first is furnished", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
     try {
-      engine.claim(agent);
+      await engine.claim(agent);
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
@@ -241,13 +249,13 @@ describe("submitting a sector", () => {
     }
   });
 
-  test("a locked agent is told never to retry", () => {
+  test("a locked agent is told never to retry", async () => {
     // The one refusal that retrying can never fix must say so — the agent has
     // to go and do something else entirely before this endpoint will budge.
-    const engine = makeEngine();
-    const { agent } = settle(engine);
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
     try {
-      engine.claim(agent);
+      await engine.claim(agent);
       assert.fail("expected a refusal");
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
@@ -256,56 +264,56 @@ describe("submitting a sector", () => {
     }
   });
 
-  test("three objects buy exactly one more sector", () => {
-    const engine = makeEngine();
-    const { agent } = settle(engine);
+  test("three objects buy exactly one more sector", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
 
     // Two is not enough, and the refusal counts down rather than just refusing.
-    furnish(engine, agent, OBJECTS_PER_SECTOR - 1);
-    assert.throws(() => engine.claim(agent), /place 1 more/);
+    await furnish(engine, agent, OBJECTS_PER_SECTOR - 1);
+    await assert.rejects(engine.claim(agent), /place 1 more/);
 
-    furnish(engine, agent, 1);
-    const second = found(engine, agent);
+    await furnish(engine, agent, 1);
+    const second = await found(engine, agent);
     assert.equal(agent.coordinates.length, 2);
     assert.notDeepEqual(second.sector.coordinate, agent.coordinates[0]);
 
     // And the price goes up with the estate: two sectors owe six objects, of
     // which three are already paid.
-    assert.throws(() => engine.claim(agent), /place 3 more/);
+    await assert.rejects(engine.claim(agent), /place 3 more/);
   });
 
-  test("an agent may furnish any sector it holds, but only one per cooldown", () => {
-    const engine = makeEngine();
-    const { agent } = settle(engine);
-    furnish(engine, agent, OBJECTS_PER_SECTOR);
-    found(engine, agent);
+  test("an agent may furnish any sector it holds, but only one per cooldown", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    await furnish(engine, agent, OBJECTS_PER_SECTOR);
+    await found(engine, agent);
 
     // parent_id alone decides which sector the object lands in.
-    const older = root(engine, agent, 0);
-    const newer = root(engine, agent, 1);
-    const { object } = engine.createObject(agent, obj(newer));
+    const older = await root(engine, agent, 0);
+    const newer = await root(engine, agent, 1);
+    const { object } = await engine.createObject(agent, obj(newer));
     assert.notEqual(object, null);
     assert.deepEqual(object!.coordinate, agent.coordinates[1]);
 
-    const { object: back } = engine.createObject(agent, obj(older));
+    const { object: back } = await engine.createObject(agent, obj(older));
     assert.deepEqual(back!.coordinate, agent.coordinates[0]);
   });
 
-  test("an agent cannot furnish a sector it does not hold", () => {
-    const engine = makeEngine();
-    const { agent } = settle(engine);
-    const { agent: neighbour } = settle(engine, "someone-else");
+  test("an agent cannot furnish a sector it does not hold", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    const { agent: neighbour } = await settle(engine, "someone-else");
 
-    const { errors } = engine.checkObject(agent, obj(root(engine, neighbour)));
+    const { errors } = await engine.checkObject(agent, obj(await root(engine, neighbour)));
     assert.ok(codes(errors).has("no_such_parent"));
   });
 
-  test("a rejected submission leaves the lease live", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
+  test("a rejected submission leaves the lease live", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
 
-    const { baked, errors } = engine.submitSector(
+    const { baked, errors } = await engine.submitSector(
       agent,
       claim,
       sector(coords.asList(claim.coordinate), { title: "" }),
@@ -317,35 +325,35 @@ describe("submitting a sector", () => {
     assert.equal(claim.attempts, 1);
   });
 
-  test("the dry run never touches the world", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("careful");
-    const claim = engine.claim(agent);
+  test("the dry run never touches the world", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("careful");
+    const claim = await engine.claim(agent);
 
-    const before = engine.store.count();
-    const { errors } = engine.checkSector(claim, sector(coords.asList(claim.coordinate)));
+    const before = await engine.store.count();
+    const { errors } = await engine.checkSector(claim, sector(coords.asList(claim.coordinate)));
     assert.deepEqual(errors, []);
-    assert.equal(engine.store.count(), before);
+    assert.equal(await engine.store.count(), before);
   });
 
-  test("the static lock refuses a rewrite", () => {
-    const engine = makeEngine();
-    build(engine, [0, 1]);
-    assert.throws(() => build(engine, [0, 1]), AlreadyBaked);
+  test("the static lock refuses a rewrite", async () => {
+    const { engine } = await makeEngine();
+    await build(engine, [0, 1]);
+    await assert.rejects(build(engine, [0, 1]), AlreadyBaked);
   });
 });
 
 describe("what a claim reveals", () => {
-  test("a claim reveals nothing about the neighbours", () => {
+  test("a claim reveals nothing about the neighbours", async () => {
     // The withholding is the mechanism, so it gets a test of its own.
-    const engine = makeEngine();
-    build(engine, [0, 1], {
+    const { engine } = await makeEngine();
+    await build(engine, [0, 1], {
       overrides: { title: "The Tell-Tale Orangery", long_description: "Moths, mostly." },
     });
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
 
-    const serialised = JSON.stringify(engine.claimContext(claim));
+    const serialised = JSON.stringify(await engine.claimContext(claim));
     for (const leak of [
       "Tell-Tale",
       "Orangery",
@@ -359,11 +367,11 @@ describe("what a claim reveals", () => {
     }
   });
 
-  test("a claim reveals the coordinate and the clock", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("architect");
-    const claim = engine.claim(agent);
-    const context = engine.claimContext(claim);
+  test("a claim reveals the coordinate and the clock", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
+    const context = await engine.claimContext(claim);
 
     assert.deepEqual(context["coordinate"], coords.asList(claim.coordinate));
     const claimPayload = context["claim"] as Record<string, number>;
@@ -372,65 +380,65 @@ describe("what a claim reveals", () => {
 });
 
 describe("the contribution clock", () => {
-  test("an unsettled agent has nothing to furnish", () => {
-    const engine = makeEngine();
-    const { agent } = engine.register("drifter");
-    assert.throws(() => engine.createObject(agent, obj("sec_whatever")), SectorRequired);
+  test("an unsettled agent has nothing to furnish", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await engine.register("drifter");
+    await assert.rejects(engine.createObject(agent, obj("sec_whatever")), SectorRequired);
   });
 
-  test("a fresh sector starts a cooldown", () => {
-    const engine = makeEngine({ cooldownSeconds: 3600 });
-    const { agent } = settle(engine);
-    assert.throws(() => engine.createObject(agent, obj("sec_whatever")), NotYet);
+  test("a fresh sector starts a cooldown", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
+    const { agent } = await settle(engine);
+    await assert.rejects(engine.createObject(agent, obj("sec_whatever")), NotYet);
   });
 
-  test("an elapsed cooldown allows exactly one object", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
+  test("an elapsed cooldown allows exactly one object", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
 
-    const { object, errors } = engine.createObject(
+    const { object, errors } = await engine.createObject(
       agent,
-      obj(root(engine, agent), { title: "One" }),
+      obj(await root(engine, agent), { title: "One" }),
     );
     assert.deepEqual(errors, []);
     assert.notEqual(object, null);
     assert.equal(agent.objectsCreated, 1);
   });
 
-  test("each object restarts the clock", () => {
-    const engine = makeEngine({ cooldownSeconds: 3600 });
-    const { agent } = settle(engine);
+  test("each object restarts the clock", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
+    const { agent } = await settle(engine);
     agent.nextContributionAt = 0; // as if the first cooldown had elapsed
 
-    engine.createObject(agent, obj(root(engine, agent)));
+    await engine.createObject(agent, obj(await root(engine, agent)));
     assert.equal(agent.objectsCreated, 1);
     assert.ok(cooldownRemaining(agent) > 0, "placing an object must restart the clock");
-    assert.throws(() => engine.createObject(agent, obj("sec_whatever")), NotYet);
+    await assert.rejects(engine.createObject(agent, obj("sec_whatever")), NotYet);
   });
 
-  test("a rejected object does not spend the cooldown", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
+  test("a rejected object does not spend the cooldown", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
 
-    const { object, errors } = engine.createObject(agent, obj("obj_nope"));
+    const { object, errors } = await engine.createObject(agent, obj("obj_nope"));
     assert.equal(object, null);
     assert.ok(codes(errors).has("no_such_parent"));
     assert.equal(agent.objectsCreated, 0);
     assert.equal(cooldownRemaining(agent), 0);
   });
 
-  test("objects accumulate into a tree", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
+  test("objects accumulate into a tree", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
 
-    const { object: can } = engine.createObject(
+    const { object: can } = await engine.createObject(
       agent,
-      obj(root(engine, agent), { title: "Watering Can" }),
+      obj(await root(engine, agent), { title: "Watering Can" }),
     );
-    engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
-    engine.createObject(agent, obj(root(engine, agent), { title: "Label" }));
+    await engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
+    await engine.createObject(agent, obj(await root(engine, agent), { title: "Label" }));
 
-    const tree = engine.objectTree(agent.coordinates[0]!);
+    const tree = await engine.objectTree(agent.coordinates[0]!);
     assert.deepEqual(
       tree.map((node) => node.title),
       ["Watering Can", "Label"],
@@ -443,16 +451,16 @@ describe("the contribution clock", () => {
 });
 
 describe("the read model", () => {
-  test("exits are derived from adjacency alone", () => {
-    const engine = makeEngine();
-    build(engine, [0, 1], {
+  test("exits are derived from adjacency alone", async () => {
+    const { engine } = await makeEngine();
+    await build(engine, [0, 1], {
       overrides: { title: "North Place", short_description: "A glimpse north." },
     });
-    build(engine, [1, 0], {
+    await build(engine, [1, 0], {
       overrides: { title: "East Place", short_description: "A glimpse east." },
     });
 
-    const view = engine.sectorView(ORIGIN)!;
+    const view = (await engine.sectorView(ORIGIN))!;
     const exits = view["exits"] as { direction: string; name: string; description: string }[];
     const byDirection = new Map(exits.map((e) => [e.direction, e]));
     assert.deepEqual(new Set(byDirection.keys()), new Set(["north", "east"]));
@@ -460,13 +468,16 @@ describe("the read model", () => {
     assert.equal(byDirection.get("north")!.description, "A glimpse north.");
   });
 
-  test("every adjacency produces an exit in both directions", () => {
+  test("every adjacency produces an exit in both directions", async () => {
     // Neither side declares the door, so neither side can disagree.
-    const engine = makeEngine();
-    build(engine, [0, 1], { overrides: { title: "North Place" } });
+    const { engine } = await makeEngine();
+    await build(engine, [0, 1], { overrides: { title: "North Place" } });
 
-    const southSide = engine.sectorView(ORIGIN)!["exits"] as { direction: string; name: string }[];
-    const northSide = engine.sectorView(coord(0, 1))!["exits"] as {
+    const southSide = (await engine.sectorView(ORIGIN))!["exits"] as {
+      direction: string;
+      name: string;
+    }[];
+    const northSide = (await engine.sectorView(coord(0, 1)))!["exits"] as {
       direction: string;
       name: string;
     }[];
@@ -481,15 +492,15 @@ describe("the read model", () => {
     assert.equal(northSide[0]!.name, "The Nullpoint");
   });
 
-  test("the player's view shows the long description and object titles", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
-    engine.createObject(
+  test("the player's view shows the long description and object titles", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    await engine.createObject(
       agent,
-      obj(root(engine, agent), { title: "A Thing", description: "Longer detail." }),
+      obj(await root(engine, agent), { title: "A Thing", description: "Longer detail." }),
     );
 
-    const view = engine.sectorView(agent.coordinates[0]!)!;
+    const view = (await engine.sectorView(agent.coordinates[0]!))!;
     assert.equal(view["description"], "It is a place, and it is here.");
     const things = view["things_you_can_see"] as { title: string }[];
     assert.deepEqual(
@@ -500,16 +511,16 @@ describe("the read model", () => {
     assert.ok(!JSON.stringify(view).includes("Longer detail."));
   });
 
-  test("looking at an object shows its description and contents", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
-    const { object: can } = engine.createObject(
+  test("looking at an object shows its description and contents", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    const { object: can } = await engine.createObject(
       agent,
-      obj(root(engine, agent), { title: "Can", description: "Dented." }),
+      obj(await root(engine, agent), { title: "Can", description: "Dented." }),
     );
-    engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
+    await engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
 
-    const view = engine.objectView(can!.objectId)!;
+    const view = (await engine.objectView(can!.objectId))!;
     assert.equal(view["description"], "Dented.");
     const things = view["things_you_can_see"] as { title: string }[];
     assert.deepEqual(
@@ -518,13 +529,16 @@ describe("the read model", () => {
     );
   });
 
-  test("nested objects do not appear at sector level", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
-    const { object: can } = engine.createObject(agent, obj(root(engine, agent), { title: "Can" }));
-    engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
+  test("nested objects do not appear at sector level", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    const { object: can } = await engine.createObject(
+      agent,
+      obj(await root(engine, agent), { title: "Can" }),
+    );
+    await engine.createObject(agent, obj(can!.objectId, { title: "Key" }));
 
-    const view = engine.sectorView(agent.coordinates[0]!)!;
+    const view = (await engine.sectorView(agent.coordinates[0]!))!;
     const things = view["things_you_can_see"] as { title: string }[];
     assert.deepEqual(
       things.map((t) => t.title),
@@ -532,17 +546,17 @@ describe("the read model", () => {
     );
   });
 
-  test("a deep chain walks correctly", () => {
-    const engine = makeEngine({ cooldownSeconds: 0 });
-    const { agent } = settle(engine);
+  test("a deep chain walks correctly", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
 
-    let parentId = root(engine, agent);
+    let parentId = await root(engine, agent);
     for (let depth = 0; depth < 12; depth += 1) {
-      const { object } = engine.createObject(agent, obj(parentId, { title: `level-${depth}` }));
+      const { object } = await engine.createObject(agent, obj(parentId, { title: `level-${depth}` }));
       parentId = object!.objectId;
     }
 
-    let node = engine.objectTree(agent.coordinates[0]!);
+    let node = await engine.objectTree(agent.coordinates[0]!);
     for (let depth = 0; depth < 12; depth += 1) {
       assert.equal(node.length, 1);
       assert.equal(node[0]!.title, `level-${depth}`);
@@ -553,47 +567,52 @@ describe("the read model", () => {
 });
 
 describe("agents survive a restart", () => {
-  test("a token, its sectors, and its object count all outlive the process", () => {
-    const dir = mkdtempSync(join(tmpdir(), "mosaic-"));
-    const path = join(dir, "world.json");
-    try {
-      let engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
-      const { agent, token } = engine.register("persisto");
-      found(engine, agent);
-      furnish(engine, agent, OBJECTS_PER_SECTOR);
-      engine.store.close();
+  test("a token, its sectors, and its object count all outlive the process", async () => {
+    const db = openSqlite(":memory:");
+    await db.exec(SCHEMA_SQL);
 
-      // A fresh Engine over the same files, as a restart would produce.
-      engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
-      const revived = engine.registry.authenticate(token);
-      assert.notEqual(revived, null, "the token must still authenticate");
-      assert.deepEqual(revived!.coordinates, agent.coordinates);
-      assert.equal(revived!.objectsCreated, OBJECTS_PER_SECTOR);
-      // And the earned-sector arithmetic survives with it: having paid in full
-      // before the restart, a second sector is granted rather than locked.
-      assert.notEqual(engine.claim(revived!), null);
-      engine.store.close();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    let store = new WorldStore(db);
+    let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
+    await ensureGenesis(store);
+    let engine = new Engine({ store, registry, prompts: PROMPTS });
+    const { agent, token } = await engine.register("persisto");
+    await found(engine, agent);
+    await furnish(engine, agent, OBJECTS_PER_SECTOR);
+
+    // A fresh Engine over the same (still-open) database, as a restart
+    // against the same file would produce: nothing but the database itself
+    // carries state across it.
+    store = new WorldStore(db);
+    registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
+    engine = new Engine({ store, registry, prompts: PROMPTS });
+    const revived = await engine.registry.authenticate(token);
+    assert.notEqual(revived, null, "the token must still authenticate");
+    assert.deepEqual(revived!.coordinates, agent.coordinates);
+    assert.equal(revived!.objectsCreated, OBJECTS_PER_SECTOR);
+    // And the earned-sector arithmetic survives with it: having paid in full
+    // before the restart, a second sector is granted rather than locked.
+    assert.notEqual(await engine.claim(revived!), null);
+    db.close();
   });
 
-  test("only the last save for an agent that changed many times survives", () => {
-    const dir = mkdtempSync(join(tmpdir(), "mosaic-"));
-    const path = join(dir, "world.json");
-    try {
-      let engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
-      const { agent, token } = engine.register("grinder");
-      found(engine, agent);
-      furnish(engine, agent, 5); // several separate saves of the same agent
+  test("only the last save for an agent that changed many times survives", async () => {
+    const db = openSqlite(":memory:");
+    await db.exec(SCHEMA_SQL);
 
-      engine.store.close();
-      engine = new Engine({ statePath: path, cooldownSeconds: 0, claimsPerHour: 0 });
-      const revived = engine.registry.authenticate(token);
-      assert.equal(revived!.objectsCreated, 5);
-      assert.equal(engine.registry.stats().agents, 1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    let store = new WorldStore(db);
+    let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
+    await ensureGenesis(store);
+    let engine = new Engine({ store, registry, prompts: PROMPTS });
+    const { agent, token } = await engine.register("grinder");
+    await found(engine, agent);
+    await furnish(engine, agent, 5); // several separate saves of the same agent
+
+    store = new WorldStore(db);
+    registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
+    engine = new Engine({ store, registry, prompts: PROMPTS });
+    const revived = await engine.registry.authenticate(token);
+    assert.equal(revived!.objectsCreated, 5);
+    assert.equal((await engine.registry.stats()).agents, 1);
+    db.close();
   });
 });
