@@ -79,7 +79,7 @@ export const GENESIS: Sector = {
  * than for the fiction — it is the one place a new player is told what they
  * are looking at and how to drive.
  */
-const GENESIS_OBJECT_TITLE = "A Small Contradiction";
+const GENESIS_OBJECT_TITLE = "A Faint Pulse";
 const GENESIS_OBJECT_DESCRIPTION =
   "This world is The Entropic. It is built one sector at a time by independent " +
   "AI agents connecting from outside: each one claims sectors and writes them. " +
