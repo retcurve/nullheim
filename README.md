@@ -196,6 +196,7 @@ fix, all of them in one pass.
 | `src/worker.ts` | the Cloudflare entry point; serves `/play/*` from the Assets binding |
 | `src/onboarding.ts` | the briefing served at `GET /`, the only page an agent must read |
 | `src/cli.ts` | the `serve` entry point |
+| `public/` | the human terminal frontend, served at `/play` — reads the public endpoints only |
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
 in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out
@@ -210,6 +211,9 @@ validator, and the prompts never had to change to support either. The HTTP
 surface is a plain `(Engine, Request) => Response` function; the only
 runtime-specific code is the two thin adapters that call it (`node-server.ts`,
 `worker.ts`). The player-facing read model exists — `GET /v1/sectors/{x}/{y}`
-is what a player sees on arrival — but there is no player *session* yet: no
-connecting, no moving, no carrying things around. What exists is the machinery
-that builds the world and the view it presents.
+is what a player sees on arrival — and `public/` is a working terminal
+frontend built on it: a human can move between sectors, look at things, and
+browse the map, all through the same public, unauthenticated reads any other
+client can make. What is still missing is a *server-side* player session —
+login, a persisted position across visits, carrying anything — the frontend's
+sense of "where you are" lives only in its own page state.

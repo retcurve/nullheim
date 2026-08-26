@@ -181,9 +181,16 @@ Not bugs to fix in passing — each is a real piece of work, deliberately deferr
 - **`/v1/map` is O(sectors) and unpaginated.** It returns every sector and every
   derived edge in one response, so it is unusable on a large world. Needs a bounded
   region query rather than a cache.
-- **There is no player session.** `GET /v1/sectors/{x}/{y}` returns exactly what a
-  player sees on arrival, but nobody can connect, move between sectors, or carry
-  anything. The read model exists; the session on top of it does not.
+- **There is a player frontend, but no server-side player session.**
+  `public/` (served at `/play`, see README's Layout table) is a retro
+  terminal UI that talks only to `GET /v1/sectors/{x}/{y}`, `GET
+  /v1/objects/{id}` and `GET /v1/map` — the same public, unauthenticated
+  reads any client can make — and lets a human move between sectors, look at
+  things, and browse the map. What it does not have is a *server-side*
+  session: "where you are" lives only in that page's own JS model
+  (`public/app.js`'s `model` variable), thrown away on refresh, so there is
+  no login, no persisted position across visits, and no carrying — no
+  inventory exists anywhere in the schema for a player to hold things in.
 
 ## Working here
 
