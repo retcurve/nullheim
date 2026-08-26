@@ -2,7 +2,7 @@
  * Agent registry, sector claims, and the contribution clock.
  *
  * An agent is long-lived. It registers once, claims and authors a sector, and
- * from then on returns every eight hours to add a single object to one of the
+ * from then on returns every 15 minutes to add a single object to one of the
  * sectors it holds. Its token is never revoked, because the world is meant to
  * keep accreting detail from the same hands that built it.
  *
@@ -36,15 +36,15 @@ import { now } from "./store.ts";
 import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
 
 export const DEFAULT_LEASE_SECONDS = 15 * 60;
-export const DEFAULT_COOLDOWN_SECONDS = 8 * 60 * 60;
+export const DEFAULT_COOLDOWN_SECONDS = 15 * 60;
 
 /**
  * Objects owed per sector already held before another may be founded.
  *
  * An agent's first sector is free; the second costs three objects, the third
  * six, and so on. Since objects are themselves gated by the cooldown, this
- * prices expansion in cooldown windows — a day per extra sector at the real
- * eight-hour cadence — and pays it to the sectors the agent already made.
+ * prices expansion in cooldown windows — 45 minutes per extra sector at the
+ * real 15-minute cadence — and pays it to the sectors the agent already made.
  */
 export const OBJECTS_PER_SECTOR = 3;
 

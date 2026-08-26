@@ -4,7 +4,7 @@
  * This is the only module that mutates the world, and it is where the static
  * lock lives: once a sector bakes it is permanent, and once an object is
  * placed it stays placed. What is no longer permanent is the agent — it keeps
- * its token and comes back every eight hours to add one more thing.
+ * its token and comes back every 15 minutes to add one more thing.
  *
  * Every method that touches the store or the registry is async, since both
  * are backed by SQL that may be a real network round trip (D1) rather than an
@@ -362,9 +362,9 @@ export class Engine {
    * The full object tree in one sector — what its own author may see.
    *
    * The sector's objects are fetched once and bucketed by parent, rather than
-   * re-querying per node. An agent contributing every eight hours for a year
-   * has around a thousand objects here, and re-querying per node would make
-   * walking them quadratic.
+   * re-querying per node. An agent contributing every 15 minutes for a year
+   * has tens of thousands of objects here, and re-querying per node would
+   * make walking them quadratic.
    */
   async objectTree(coordinate: Coordinate): Promise<ObjectNode[]> {
     const byParent = new Map<string | null, WorldObject[]>();

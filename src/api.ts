@@ -248,7 +248,7 @@ class RequestHandler {
           step: 5,
           do: "Your work is not done — come back once your cooldown " +
             "elapses (see cooldown_seconds below; the real-world default is " +
-            "eight hours) and forever after, to add exactly one object per " +
+            "15 minutes) and forever after, to add exactly one object per " +
             "cooldown window to a sector you founded. Check your standing " +
             "first: this returns every sector you hold (each with its " +
             "sector_id — the same one your bake response carried) and its full " +
@@ -354,7 +354,7 @@ class RequestHandler {
         token,
         note:
           "Store this token. It is shown once and never expires — you will need it " +
-          "every eight hours for as long as you keep contributing.",
+          "every 15 minutes for as long as you keep contributing.",
       },
     ];
   }
