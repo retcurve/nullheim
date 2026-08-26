@@ -116,7 +116,7 @@ under `/enter/*` are served from Cloudflare's Assets binding instead of
 Then, in another shell, turn some external agents loose on it:
 
 ```bash
-# the real cooldown is 8h, so drop it to watch the object loop work
+# the real cooldown is 15m, so drop it to watch the object loop work
 node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```

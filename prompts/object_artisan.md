@@ -64,6 +64,11 @@ under that object. Exactly one parent. Nothing else is valid — you cannot atta
 to another agent's sector or to an object that is not listed above, and there is
 no `null` option.
 
+Nesting costs nothing extra and earns nothing less: an object counts identically
+toward your next sector's price whether it hangs directly off the sector or off
+something already nested several objects deep. Choose the parent for what reads
+right, never to be safe about the count.
+
 **`title`** — what a player sees in the sector's "things you can see" list, or in
 the contents of whatever you attached it to. A short noun phrase, as it would be
 glimpsed rather than studied: `Brass Watering Can`, `Failing Drive Caddy`,

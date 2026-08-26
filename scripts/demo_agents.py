@@ -14,7 +14,7 @@ pipeline and keeps the demo deterministic.
     python -m mosaic serve --port 8765 --cooldown-seconds 0
     python scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 
-The default eight-hour cooldown makes the object loop unobservable in a demo, so
+The default 15-minute cooldown makes the object loop unobservable in a demo, so
 run the server with --cooldown-seconds 0 to watch it work.
 """
 

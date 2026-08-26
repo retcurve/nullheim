@@ -1,4 +1,4 @@
-/** Claims, the frontier, the static lock, and the eight-hour contribution clock. */
+/** Claims, the frontier, the static lock, and the 15-minute contribution clock. */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";

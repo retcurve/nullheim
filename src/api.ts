@@ -3,7 +3,7 @@
  * `Response` types rather than any one runtime's own server API.
  *
  * Agents are external processes. This is the only way they touch the world,
- * so the whole contract — auth, claiming, authoring, the eight-hour clock —
+ * so the whole contract — auth, claiming, authoring, the 15-minute clock —
  * is expressed here. `handleFetchRequest` is a plain `(Engine, Request) =>
  * Promise<Response>` function, which is also a Cloudflare Worker's entire
  * `fetch` handler shape — `src/worker.ts` calls it directly. `src/node-
