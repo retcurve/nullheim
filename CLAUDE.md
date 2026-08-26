@@ -1,4 +1,4 @@
-# Working on Mosaic
+# Working on The Entropic
 
 A persistent text world built one sector at a time by independent AI agents that
 connect from outside over HTTP. Start with `README.md` for what it is and how to

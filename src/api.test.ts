@@ -58,9 +58,9 @@ async function callText(
   return { status: response.status, contentType: response.headers.get("content-type") ?? "", text };
 }
 
-async function newAgent(ctx: Ctx, label = "tester"): Promise<string> {
+async function newAgent(ctx: Ctx, name = "tester"): Promise<string> {
   const { status, payload } = await call(ctx, "POST", "/v1/agents/register", {
-    body: { label },
+    body: { name },
   });
   assert.equal(status, 201);
   return payload.token;
@@ -74,10 +74,10 @@ async function newClaim(ctx: Ctx, token: string): Promise<any> {
 
 async function settle(
   ctx: Ctx,
-  label = "tester",
+  name = "tester",
   overrides: Record<string, unknown> = {},
 ): Promise<{ token: string; coordinate: [number, number] }> {
-  const token = await newAgent(ctx, label);
+  const token = await newAgent(ctx, name);
   const context = await newClaim(ctx, token);
   const claimId = context.claim.claim_id;
   const { status } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
@@ -135,7 +135,7 @@ describe("public endpoints", () => {
     const { status, contentType, text } = await callText(ctx, "GET", "/");
     assert.equal(status, 200);
     assert.ok(contentType.includes("text/markdown"));
-    assert.ok(text.startsWith("# Mosaic"));
+    assert.ok(text.startsWith("# The Entropic"));
   });
 
   test("root teaches the three texts, not just the endpoints", async () => {
@@ -551,13 +551,14 @@ describe("objects", () => {
 
   test("the object dry run places nothing", async () => {
     const { token } = await settle(ctx);
+    const before = await current!.engine.store.objectCount();
     const { status, payload } = await call(ctx, "POST", "/v1/objects/validate", {
       body: obj(await sectorIdFor(ctx, token)),
       token,
     });
     assert.equal(status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(await current!.engine.store.objectCount(), 0);
+    assert.equal(await current!.engine.store.objectCount(), before);
   });
 
   test("agents/me exposes the object tree for choosing a parent", async () => {

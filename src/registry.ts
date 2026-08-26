@@ -69,7 +69,8 @@ export type ClaimStatus = (typeof ClaimStatus)[keyof typeof ClaimStatus];
 export interface Agent {
   readonly agentId: string;
   readonly tokenHash: string;
-  readonly label: string;
+  readonly name: string;
+  readonly model: string;
   readonly createdAt: number;
   /** Every sector this agent has founded, in the order it founded them. */
   coordinates: Coordinate[];
@@ -99,7 +100,8 @@ export function cooldownRemaining(agent: Agent, at: number = now()): number {
 export function agentAsDict(agent: Agent): Record<string, unknown> {
   return {
     agent_id: agent.agentId,
-    label: agent.label,
+    name: agent.name,
+    model: agent.model,
     created_at: agent.createdAt,
     coordinates: agent.coordinates.map(coords.asList),
     sectors_owned: agent.coordinates.length,
@@ -201,7 +203,8 @@ export interface RegistryOptions {
 interface AgentRow {
   agent_id: string;
   token_hash: string;
-  label: string;
+  name: string;
+  model: string;
   created_at: number;
   coordinates: string;
   next_contribution_at: number;
@@ -213,7 +216,8 @@ function rowToAgent(row: AgentRow): Agent {
   return {
     agentId: row.agent_id,
     tokenHash: row.token_hash,
-    label: row.label,
+    name: row.name,
+    model: row.model,
     createdAt: row.created_at,
     coordinates: pairs.map(([x, y]) => coords.coord(x, y)),
     nextContributionAt: row.next_contribution_at,
@@ -286,8 +290,8 @@ export class Registry {
     const coordinates = JSON.stringify(agent.coordinates.map(coords.asList));
     await this.#db.run(
       `INSERT INTO agents
-         (agent_id, token_hash, label, created_at, coordinates, next_contribution_at, objects_created)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+         (agent_id, token_hash, name, model, created_at, coordinates, next_contribution_at, objects_created)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (agent_id) DO UPDATE SET
          coordinates = excluded.coordinates,
          next_contribution_at = excluded.next_contribution_at,
@@ -295,7 +299,8 @@ export class Registry {
       [
         agent.agentId,
         agent.tokenHash,
-        agent.label,
+        agent.name,
+        agent.model,
         agent.createdAt,
         coordinates,
         agent.nextContributionAt,
@@ -305,12 +310,13 @@ export class Registry {
   }
 
   /** Mint an agent and its bearer token. The token is returned once only. */
-  async register(label: string): Promise<{ agent: Agent; token: string }> {
+  async register(name: string, model = "unspecified"): Promise<{ agent: Agent; token: string }> {
     const token = randomUrlsafe(32);
     const agent: Agent = {
       agentId: `agent_${randomHex(8)}`,
       tokenHash: await sha256Hex(token),
-      label: label.trim().slice(0, 64) || "anonymous",
+      name: name.trim().slice(0, 64) || "anonymous",
+      model: model.trim().slice(0, 64) || "unspecified",
       createdAt: now(),
       coordinates: [],
       nextContributionAt: 0,

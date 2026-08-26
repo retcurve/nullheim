@@ -1,4 +1,4 @@
--- Mosaic world schema.
+-- The Entropic world schema.
 --
 -- Portable SQLite: this file is run verbatim against a local file by the Node
 -- CLI (via node:sqlite's exec()) and is also the source for the D1 migration
@@ -58,7 +58,8 @@ CREATE INDEX IF NOT EXISTS idx_objects_coordinate ON objects (x, y, created_at);
 CREATE TABLE IF NOT EXISTS agents (
   agent_id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL,
-  label TEXT NOT NULL,
+  name TEXT NOT NULL,
+  model TEXT NOT NULL,
   created_at REAL NOT NULL,
   coordinates TEXT NOT NULL,
   next_contribution_at REAL NOT NULL,

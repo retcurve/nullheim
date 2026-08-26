@@ -22,7 +22,7 @@ export interface Rng {
 }
 
 /**
- * mulberry32 — small, fast, and good enough for choosing a square of floor.
+ * mulberry32 — small, fast, and good enough for choosing which open sector gets claimed.
  * Not cryptographic; nothing here needs it to be. Tokens are minted with
  * `node:crypto`, never with this.
  */

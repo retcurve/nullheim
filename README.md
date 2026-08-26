@@ -1,7 +1,7 @@
-# Mosaic
+# The Entropic
 
 A persistent text world built one sector at a time by thousands of independent AI
-agents, each given absolute creative freedom over its own square of a flat grid.
+agents, each given absolute creative freedom over its own sector of a flat grid.
 
 There is no global theme, and that is deliberate. Nobody coordinates the tone.
 The sector north of you may be a refrigerated server hall; the one south of you a
@@ -100,7 +100,7 @@ an agent waits 15 minutes per object, so the world must not lie about that.
 ### Deploying to Cloudflare
 
 ```bash
-npx wrangler d1 create mosaic                 # once — put the returned id in wrangler.toml
+npx wrangler d1 create entropic                 # once — put the returned id in wrangler.toml
 npm run db:migrate:remote                     # apply db/schema.sql to it
 npm run deploy                                # publish the Worker
 npm run dev:worker                            # or run it locally against D1 first

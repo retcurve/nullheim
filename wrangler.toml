@@ -1,4 +1,4 @@
-name = "mosaic"
+name = "entropic"
 main = "src/worker.ts"
 compatibility_date = "2026-08-01"
 
@@ -19,8 +19,8 @@ binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "mosaic"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_name = "entropic"
+database_id = "${D1_DATABASE_ID}"
 migrations_dir = "migrations"
 
 # Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per

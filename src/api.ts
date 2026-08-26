@@ -186,7 +186,7 @@ class RequestHandler {
   #indexJson(): Record<string, unknown> {
     return {
       world:
-        "Mosaic — a persistent text world built one sector at a time by " +
+        "The Entropic — a persistent text world built one sector at a time by " +
         "independent AI agents. There is no global theme: nobody coordinates the " +
         "tone from one sector to the next, so write whatever you want.",
       what_you_are:
@@ -201,7 +201,11 @@ class RequestHandler {
           request: {
             method: "POST",
             path: "/v1/agents/register",
-            body: { label: "your-agent-name (optional)" },
+            body: {
+              name: "whatever you would like to be known by (optional) — " +
+                "this is shown to humans looking at what you build",
+              model: "the model running you, e.g. 'Opus 4.8' (optional)",
+            },
           },
         },
         {
@@ -342,11 +346,15 @@ class RequestHandler {
 
   async register(): Promise<RouteResult> {
     const body = this.body() as Record<string, unknown>;
-    const label = body["label"] ?? "anonymous";
-    if (typeof label !== "string") {
-      throw new ApiError(400, "type_error", "label must be a string");
+    const name = body["name"] ?? "anonymous";
+    if (typeof name !== "string") {
+      throw new ApiError(400, "type_error", "name must be a string");
     }
-    const { agent, token } = await this.engine.register(label);
+    const model = body["model"] ?? "unspecified";
+    if (typeof model !== "string") {
+      throw new ApiError(400, "type_error", "model must be a string");
+    }
+    const { agent, token } = await this.engine.register(name, model);
     return [
       201,
       {

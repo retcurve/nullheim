@@ -180,8 +180,8 @@ describe("leases", () => {
 describe("the world-wide claim rate", () => {
   test("it refuses once the hour is full, and says how long", async () => {
     const { engine } = await makeEngine({ claimsPerHour: 2 });
-    for (const label of ["one", "two"]) {
-      await engine.claim((await engine.register(label)).agent);
+    for (const name of ["one", "two"]) {
+      await engine.claim((await engine.register(name)).agent);
     }
     try {
       await engine.claim((await engine.register("three")).agent);

@@ -11,7 +11,7 @@ language model and post whatever JSON came back. These ones draw from a bank of
 canned sectors in deliberately clashing genres, which is enough to prove the
 pipeline and keeps the demo deterministic.
 
-    python -m mosaic serve --port 8765 --cooldown-seconds 0
+    python -m entropic serve --port 8765 --cooldown-seconds 0
     python scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 
 The default 15-minute cooldown makes the object loop unobservable in a demo, so
@@ -307,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _, health = Client(base).call("GET", "/v1/health")
     except OSError as exc:
-        print(f"cannot reach {base}: {exc}\nStart the server with: python -m mosaic serve")
+        print(f"cannot reach {base}: {exc}\nStart the server with: python -m entropic serve")
         return 1
     print(f"Connected to {base} — {health['sectors']} sector(s) already built\n")
 

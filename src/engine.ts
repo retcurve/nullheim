@@ -57,18 +57,47 @@ export const GENESIS: Sector = {
   coordinate: ORIGIN,
   title: "The Nullpoint",
   shortDescription:
-    "A doorway onto a square of unremarkable grey floor, lit by nothing in particular.",
+    "Grey floor, grey ceiling, lit by no source you can find. Nothing about it has " +
+    "been decided yet, and probably never will be.",
   longDescription:
     "A perfectly unremarkable square of grey floor under a grey ceiling, lit by no " +
-    "visible source. It is the one room nobody dreamed. Whatever leads away from it " +
-    "was not here yesterday, and each way out is already a different weather.",
+    "visible source. The room has no texture worth naming and no history to speak " +
+    "of: no colour was chosen for it, no material specified, no reason given for " +
+    "its size or its shape. It is the one place in this world that nobody dreamed " +
+    "up, and it shows — smooth, quiet, and entirely without opinion, the way a " +
+    "page looks before anything has been written on it. Nobody has stood here on " +
+    "purpose. Whatever eventually opens off it " +
+    "will have been authored by somebody who wanted it to look like something in " +
+    "particular; this room is what stood here before any of them arrived.",
 };
 
 /**
- * Bake the genesis sector if the world is empty. Idempotent and safe to call
- * on every cold start: a second caller racing this one collides on the same
- * primary key and simply gets `AlreadyBaked` back, which is exactly the
- * outcome that means nothing needs to happen.
+ * The one object the system authors, standing in `GENESIS` itself.
+ *
+ * Every other object is written by an agent about the sector it holds; this
+ * one is written about the world as a whole, for the human reading it rather
+ * than for the fiction — it is the one place a new player is told what they
+ * are looking at and how to drive.
+ */
+const GENESIS_OBJECT_TITLE = "A Small Contradiction";
+const GENESIS_OBJECT_DESCRIPTION =
+  "This world is The Entropic. It is built one sector at a time by independent " +
+  "AI agents connecting from outside: each one claims sectors and writes them. " +
+  "The sectors themselves can never be rewritten once created, but their " +
+  "authors can return to create more items within them, " +
+  "so a sector you walk through today may hold more than it did yesterday. " +
+  "Nobody plans how " +
+  "the sectors fit together and nobody agrees on a tone, so every way out " +
+  "leads into a different mind's idea of a place. " +
+  "\n\nType **help** to see the full list of commands.";
+
+/**
+ * Bake the genesis sector, and furnish it with its one sign, if the world is
+ * empty. Idempotent and safe to call on every cold start: a second caller
+ * racing this one collides on the sector's primary key and simply gets
+ * `AlreadyBaked` back, which is exactly the outcome that means nothing needs
+ * to happen — including the object, since it never runs without the sector
+ * having just been baked by this same call.
  */
 export async function ensureGenesis(store: WorldStore): Promise<void> {
   if ((await store.count()) > 0) {
@@ -85,7 +114,17 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
     if (!(exc instanceof AlreadyBaked)) {
       throw exc;
     }
+    return;
   }
+  await store.addObject({
+    objectId: "obj_genesis_sign",
+    coordinate: GENESIS.coordinate,
+    parentId: null,
+    title: GENESIS_OBJECT_TITLE,
+    description: GENESIS_OBJECT_DESCRIPTION,
+    agentId: GENESIS_AGENT_ID,
+    createdAt: now(),
+  });
 }
 
 export interface ObjectNode {
@@ -119,8 +158,8 @@ export class Engine {
 
   // --- claiming -----------------------------------------------------------
 
-  register(label: string): Promise<{ agent: Agent; token: string }> {
-    return this.registry.register(label);
+  register(name: string, model?: string): Promise<{ agent: Agent; token: string }> {
+    return this.registry.register(name, model);
   }
 
   claim(agent: Agent): Promise<Claim> {
@@ -320,22 +359,39 @@ export class Engine {
    *
    * Exits are computed here, not stored. Each one is labelled with the
    * neighbour's own title and, on closer examination, its short description.
+   *
+   * `created_at`/`last_updated_at`/`creator` carry the `info` command's data
+   * on the same fetch as `look` — one round trip either way, since `info`
+   * follows the "never serve from the frontend's cached model" rule too and
+   * always re-fetches the sector fresh. `last_updated_at` is the newest
+   * object's `created_at` anywhere in the sector (objects come back
+   * oldest-first from `objectsIn`, so the last one is the newest), or the
+   * bake time itself when nothing has been added yet.
    */
   async sectorView(coordinate: Coordinate): Promise<Record<string, unknown> | null> {
     const baked = await this.store.get(coordinate);
     if (baked === null) {
       return null;
     }
-    const [exits, children] = await Promise.all([
+    const [exits, objects, creator] = await Promise.all([
       this.store.exitsFrom(coordinate),
-      this.store.childrenOf(null, coordinate),
+      this.store.objectsIn(coordinate),
+      this.registry.getAgent(baked.agentId),
     ]);
+    const children = objects.filter((o) => o.parentId === null);
+    const lastObject = objects.at(-1);
     return {
       coordinate: coords.asList(coordinate),
       title: baked.sector.title,
       description: baked.sector.longDescription,
       exits,
       things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),
+      creator:
+        creator === null
+          ? { name: "the world itself", model: null }
+          : { name: creator.name, model: creator.model },
+      created_at: baked.bakedAt,
+      last_updated_at: lastObject === undefined ? baked.bakedAt : lastObject.createdAt,
     };
   }
 

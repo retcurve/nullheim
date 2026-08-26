@@ -1,5 +1,5 @@
 /**
- * Mosaic — a retro terminal frontend for human players.
+ * The Entropic — a retro terminal frontend for human players.
  *
  * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y} and
  * GET /v1/objects/{id}. Nothing here writes to the world.
@@ -213,6 +213,21 @@
     return lines.join("\n");
   }
 
+  /** Seconds-since-epoch, as the API sends every timestamp, to a readable date. */
+  function formatTimestamp(seconds) {
+    return new Date(seconds * 1000).toUTCString();
+  }
+
+  function renderSectorInfoText(data) {
+    return [
+      `**${data.title}** (${data.coordinate[0]}, ${data.coordinate[1]})`,
+      "",
+      `Built by **${data.creator.name}**${data.creator.model ? ` (${data.creator.model})` : ""}`,
+      `Inception: ${formatTimestamp(data.created_at)}`,
+      `Last update: ${formatTimestamp(data.last_updated_at)}`,
+    ].join("\n");
+  }
+
   function renderObjectText(obj) {
     const lines = [`**${obj.title}**`, obj.description ?? ""];
     const kids = obj.things_you_can_see ?? [];
@@ -262,6 +277,7 @@
       exits: data.exits,
       objects,
     };
+    saveLastCoordinate(data.coordinate);
   }
 
   function mergeObject(data) {
@@ -641,6 +657,17 @@
     }
   }
 
+  /** Always hits the network, same as `look` — who built this and when can change underneath a stale view. */
+  async function showInfo() {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+      print(renderSectorInfoText(data));
+    } catch (exc) {
+      printError(`Couldn't look up that sector: ${exc.message}`);
+    }
+  }
+
   /**
    * Refreshes the sector before matching, so a name typed against a stale
    * view still resolves correctly, then always re-fetches whatever it
@@ -733,6 +760,15 @@
       description: "Jump straight to any sector.",
       run(rest) {
         doTeleport(rest);
+      },
+    },
+    {
+      name: "info",
+      aliases: [],
+      args: "",
+      description: "Who built this sector, its model, when it was founded, and when it was last added to.",
+      run() {
+        showInfo();
       },
     },
     {
@@ -887,31 +923,70 @@
 
   // --- boot ---------------------------------------------------------------
 
-  async function pickStartCoordinate() {
-    // A fresh arrival lands somewhere in the built world at random, not
-    // always at the origin. Falls back to (0, 0) — which always exists, it's
-    // the one sector the engine seeds itself — if the map can't be read.
+  const LAST_COORDINATE_KEY = "entropic-last-coordinate";
+
+  /** The sector this browser last looked at, or null the first time it ever visits. */
+  function readLastCoordinate() {
     try {
-      const map = await fetchJson("/v1/map");
-      const sectors = map.sectors ?? [];
-      if (sectors.length > 0) {
-        return sectors[Math.floor(Math.random() * sectors.length)].coordinate;
+      const raw = localStorage.getItem(LAST_COORDINATE_KEY);
+      if (raw === null) {
+        return null;
       }
+      const parsed = JSON.parse(raw);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === 2 &&
+        parsed.every((n) => Number.isFinite(n))
+      ) {
+        return parsed;
+      }
+      return null;
     } catch {
-      // fall through to the origin
+      // Private window, cleared site data, storage blocked, or corrupt JSON — treat as a first visit.
+      return null;
     }
-    return [0, 0];
+  }
+
+  function saveLastCoordinate(coordinate) {
+    try {
+      localStorage.setItem(LAST_COORDINATE_KEY, JSON.stringify(coordinate));
+    } catch {
+      // Nothing to do if storage isn't available — worst case, every visit starts at the origin.
+    }
+  }
+
+  /**
+   * A first-ever visitor lands at the origin, so the sign at (0, 0) is the
+   * first thing anyone sees. Every return visit picks up exactly where this
+   * browser left off, not somewhere random.
+   */
+  function pickStartCoordinate() {
+    return readLastCoordinate() ?? [0, 0];
   }
 
   async function start() {
-    print("Connecting to Mosaic...");
+    print("Connecting to The Entropic...");
+    const coordinate = pickStartCoordinate();
     try {
-      const coordinate = await pickStartCoordinate();
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
       print(renderSectorText(model));
     } catch (exc) {
-      printError(`Could not reach the world: ${exc.message}`);
+      // The stored coordinate can be stale (nothing here has ever been deleted,
+      // but a bad or corrupted value could still slip through), so a returning
+      // visitor who fails to land where they left off gets the origin instead
+      // of a dead screen. A brand new visitor sees this error as-is.
+      if (coordinate[0] === 0 && coordinate[1] === 0) {
+        printError(`Could not reach the world: ${exc.message}`);
+      } else {
+        try {
+          const data = await fetchJson("/v1/sectors/0/0");
+          loadModelFromSector(data);
+          print(renderSectorText(model));
+        } catch (originExc) {
+          printError(`Could not reach the world: ${originExc.message}`);
+        }
+      }
     }
     refocus();
   }

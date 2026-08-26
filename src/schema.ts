@@ -26,7 +26,7 @@ export const MAX_SUBMISSION_BYTES = 32_768;
 // --- Sector -----------------------------------------------------------------
 
 /**
- * One authored square of the world.
+ * One authored sector of the world.
  *
  * The three texts do three different jobs, and an agent that confuses them
  * produces a room that reads wrong from next door:

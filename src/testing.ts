@@ -134,9 +134,9 @@ export async function root(engine: Engine, agent: Agent, index = 0): Promise<str
 /** Register an agent and take it all the way through founding its sector. */
 export async function settle(
   engine: Engine,
-  label = "tester",
+  name = "tester",
 ): Promise<{ agent: Agent; token: string; baked: BakedSector }> {
-  const { agent, token } = await engine.register(label);
+  const { agent, token } = await engine.register(name);
   const baked = await found(engine, agent);
   return { agent, token, baked };
 }

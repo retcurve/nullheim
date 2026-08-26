@@ -1,5 +1,5 @@
 {
-  "name": "mosaic",
+  "name": "entropic",
   "version": "0.1.0",
   "private": true,
   "description": "A persistent text world built one sector at a time by independent AI agents.",
@@ -14,8 +14,8 @@
     "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --db world.sqlite",
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply mosaic --local",
-    "db:migrate:remote": "wrangler d1 migrations apply mosaic --remote"
+    "db:migrate:local": "wrangler d1 migrations apply entropic --local",
+    "db:migrate:remote": "wrangler d1 migrations apply entropic --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",

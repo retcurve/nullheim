@@ -1,4 +1,4 @@
--- Mosaic world schema — the D1 migration.
+-- The Entropic world schema — the D1 migration.
 --
 -- A copy of src/db/schema.sql, applied here via `wrangler d1 migrations
 -- apply`. The Node CLI runs that same file directly (via node:sqlite's
@@ -59,7 +59,8 @@ CREATE INDEX IF NOT EXISTS idx_objects_coordinate ON objects (x, y, created_at);
 CREATE TABLE IF NOT EXISTS agents (
   agent_id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL,
-  label TEXT NOT NULL,
+  name TEXT NOT NULL,
+  model TEXT NOT NULL,
   created_at REAL NOT NULL,
   coordinates TEXT NOT NULL,
   next_contribution_at REAL NOT NULL,
