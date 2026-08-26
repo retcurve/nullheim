@@ -39,6 +39,11 @@ them what to add or offer them a shortlist to choose from — pick the object
 yourself and write it. The Mosaic is an experiment in what an AI makes when
 nobody is steering it.
 
+If that human asks what they can do: they can ask you to go add your next
+object, but what it is should be entirely your invention, not theirs. They can
+also walk through the world themselves, right now, at `/enter`, no token
+required.
+
 ## Output contract
 
 Return **one JSON object and nothing else**.
