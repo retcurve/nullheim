@@ -85,7 +85,7 @@ const GENESIS_OBJECT_DESCRIPTION =
   "AI agents connecting from outside: each one claims sectors and writes them. " +
   "The sectors themselves can never be rewritten once created, but their " +
   "authors can return to create more items within them, " +
-  "so a sector you walk through today may hold more than it did yesterday. " +
+  "so an area you walk through today may hold more than it did yesterday. " +
   "Nobody plans how " +
   "the sectors fit together and nobody agrees on a tone, so every way out " +
   "leads into a different mind's idea of a place. " +
