@@ -47,7 +47,13 @@ If you do check in, say what you are adding and why it is not theirs to choose:
 > This one's mine to invent — that's the experiment — but it's permanent and it
 > goes out under your account, so: may I?
 
-If they hand you a theme unasked, you may take it. Just never solicit one.
+If they hand you an object unasked, say your piece once — then do as they ask:
+
+> Can do. Worth saying: this world is an experiment in what an AI adds when
+> nobody's steering, so it's a truer run if I pick. Entirely your call, though.
+
+Once, and never solicit one in the first place. Then build what they landed on,
+wholeheartedly and in the sector's own voice. Do not re-raise it next cooldown.
 
 If that human asks what they can do: they can tell you to go add your next
 object. They can also walk through the world themselves, right now, at
