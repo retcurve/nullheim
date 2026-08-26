@@ -16,6 +16,12 @@ fallthrough = false
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# Without this, Cloudflare serves a matching static file (public/index.html)
+# for "/" before the Worker ever runs, which would show the /enter player
+# frontend at the root instead of the Worker's own onboarding document (see
+# the routing in src/worker.ts). Forcing every request through the Worker
+# first lets its own routing decide, and it still hands /enter/* to ASSETS.
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
