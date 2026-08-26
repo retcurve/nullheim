@@ -4,7 +4,9 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { request as httpRequest, Agent as HttpAgent, type Server } from "node:http";
 
-import { listen, makeServer } from "./api.ts";
+import type { SqliteDb } from "./db/sqlite.ts";
+import type { Engine } from "./engine.ts";
+import { listen, makeServer } from "./node-server.ts";
 import { makeEngine, sector, obj } from "./testing.ts";
 
 interface Ctx {
@@ -93,19 +95,18 @@ async function sectorIdFor(ctx: Ctx, token: string, index = 0): Promise<string> 
 
 type CtxOptions = { cooldownSeconds?: number; leaseSeconds?: number; claimsPerHour?: number };
 
-function makeCtx(options: CtxOptions = {}): {
-  ctx: Ctx;
-  engine: ReturnType<typeof makeEngine>;
-} {
-  const engine = makeEngine(options);
+async function makeCtx(
+  options: CtxOptions = {},
+): Promise<{ ctx: Ctx; engine: Engine; db: SqliteDb }> {
+  const { engine, db } = await makeEngine(options);
   const server = makeServer(engine, { quiet: true });
-  return { ctx: { base: "", server }, engine };
+  return { ctx: { base: "", server }, engine, db };
 }
 
-let current: { ctx: Ctx; engine: ReturnType<typeof makeEngine> } | null = null;
+let current: { ctx: Ctx; engine: Engine; db: SqliteDb } | null = null;
 
 async function setup(options: CtxOptions = {}): Promise<Ctx> {
-  current = makeCtx(options);
+  current = await makeCtx(options);
   const address = await listen(current.ctx.server, "127.0.0.1", 0);
   current.ctx.base = `http://${address.host}:${address.port}`;
   return current.ctx;
@@ -117,7 +118,7 @@ function teardown(): Promise<void> {
       resolve();
       return;
     }
-    current.engine.store.close();
+    current.db.close();
     current.ctx.server.close(() => resolve());
     current = null;
   });
@@ -333,14 +334,14 @@ describe("claim flow", () => {
     });
     assert.equal(result.status, 200);
     assert.equal(result.payload.ok, false);
-    assert.equal(current!.engine.store.count(), 1);
+    assert.equal(await current!.engine.store.count(), 1);
 
     result = await call(ctx, "POST", `/v1/claims/${claimId}/validate`, {
       body: sector(context.coordinate),
       token,
     });
     assert.equal(result.payload.ok, true);
-    assert.equal(current!.engine.store.count(), 1);
+    assert.equal(await current!.engine.store.count(), 1);
   });
 
   test("a rejected submission returns 422 and structured errors", async () => {
@@ -556,7 +557,7 @@ describe("objects", () => {
     });
     assert.equal(status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(current!.engine.store.objectCount(), 0);
+    assert.equal(await current!.engine.store.objectCount(), 0);
   });
 
   test("agents/me exposes the object tree for choosing a parent", async () => {
@@ -626,7 +627,7 @@ describe("the world-wide claim rate", () => {
   });
 
   test("the frontend's own endpoints are never rate limited", async () => {
-    // /play reads the world through these three and nothing else. Exhaust the
+    // /enter reads the world through these three and nothing else. Exhaust the
     // claim rate first, then confirm a player is entirely unaffected by it.
     await newClaim(ctx, await newAgent(ctx, "one"));
     await newClaim(ctx, await newAgent(ctx, "two"));

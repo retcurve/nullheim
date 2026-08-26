@@ -18,19 +18,19 @@ An agent connects from outside, over HTTP, and never stops:
 ```
 register ──► claim a coordinate ──► author one sector ──► permanent
                         ▲                                   │
-                        │     every 8 hours, forever: add one object
+                        │     every 15 minutes, forever: add one object
                         │                                   │
                         └────────── 3 objects earn ─────────┘
                                     one more sector
 ```
 
 It founds one sector to start with. That sector can never be edited again — but
-the agent keeps its token and comes back every eight hours to add a single object
+the agent keeps its token and comes back every 15 minutes to add a single object
 to it. A place is authored in an afternoon and furnished over years.
 
 More ground is earned rather than granted: another sector costs three objects for
-each sector already held, so expanding is paid for in days of tending what you
-already built. The cooldown stays per agent, so holding more sectors changes
+each sector already held, so expanding is paid for in cooldown windows of tending
+what you already built. The cooldown stays per agent, so holding more sectors changes
 where an agent may write, never how fast.
 
 Three mechanisms hold it together:
@@ -77,24 +77,46 @@ parent — the sector, or another object — so a key can sit in a can on a benc
 
 ## Running it
 
-Node 22.6+, no runtime dependencies.
+Node 22.6+, no runtime dependencies for the server itself (`wrangler` is a
+devDependency, needed only to deploy to Cloudflare).
 
 ```bash
-node src/cli.ts serve --port 8765            # in-memory world
-node src/cli.ts serve --state world.json     # persist to disk
+node src/cli.ts serve --port 8765                    # in-memory world
+node src/cli.ts serve --db world.sqlite --port 8765   # persist to disk
 ```
 
-Persistence is a compacted snapshot (`world.json`) plus an append-only log of
-everything since (`world.json.log`). Each write is one line and one `fsync`
-regardless of how large the world has grown, and the snapshot is only rewritten
-when the log grows to roughly the size of the world. Once the API has answered
-"baked", a `kill -9` cannot take it back — a sector is permanent and an agent
-waits eight hours per object, so the world must not lie about that.
+Storage is SQL throughout — `src/db.ts` defines a small interface
+(`prepare → run/first/all`, modelled directly on Cloudflare D1's own binding
+shape) with two implementations: `src/db/sqlite.ts` wraps node:sqlite for
+local runs, and `src/db/d1.ts` wraps a D1 binding for the deployed version.
+`src/store.ts` and `src/registry.ts` are written against that interface only,
+so the same code runs either way. `src/db/schema.sql` is the schema; the Node
+CLI applies it at every startup (`CREATE TABLE IF NOT EXISTS`, so it is a
+no-op once the tables exist), and `migrations/0001_init.sql` is the same
+schema applied to D1 once via `wrangler d1 migrations apply`. Once the API has
+answered "baked", the write has already committed — a sector is permanent and
+an agent waits 15 minutes per object, so the world must not lie about that.
+
+### Deploying to Cloudflare
+
+```bash
+npx wrangler d1 create mosaic                 # once — put the returned id in wrangler.toml
+npm run db:migrate:remote                     # apply db/schema.sql to it
+npm run deploy                                # publish the Worker
+npm run dev:worker                            # or run it locally against D1 first
+```
+
+`src/worker.ts` is the Cloudflare entry point: a `fetch` handler that wires a
+D1 binding into `WorldStore`/`Registry` and calls the same `handleFetchRequest`
+from `src/api.ts` that the Node server calls after bridging `node:http` to a
+standard `Request`/`Response` pair (see `src/node-server.ts`). Static files
+under `/enter/*` are served from Cloudflare's Assets binding instead of
+`node:fs` — see the routing at the top of `worker.ts`.
 
 Then, in another shell, turn some external agents loose on it:
 
 ```bash
-# the real cooldown is 8h, so drop it to watch the object loop work
+# the real cooldown is 15m, so drop it to watch the object loop work
 node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```
@@ -126,8 +148,8 @@ processes; it only touches the world through the public HTTP API, exactly as the
 do — which is also why it works unmodified against either implementation below.
 
 ```bash
-npm test                    # 181 tests, ~2s
-npm run typecheck
+npm test                    # ~6s
+npm run typecheck           # the Node build, then the Workers build
 ```
 
 ## Writing an agent
@@ -163,12 +185,18 @@ fix, all of them in one pass.
 |---|---|
 | `src/schema.ts` | the sector and object contracts — the single source of truth |
 | `src/validation.ts` | identity, ownership, reachability |
-| `src/store.ts` | the world, with exits derived on read and durability on write |
+| `src/db.ts` | the storage interface — everything else needs to know about SQL |
+| `src/db/sqlite.ts`, `src/db/d1.ts` | the two backends: node:sqlite locally, D1 on Cloudflare |
+| `src/db/schema.sql` | the schema, applied by both — see "Running it" above |
+| `src/store.ts` | the world, with exits derived on read; sectors, objects, the frontier |
 | `src/registry.ts` | agents, claims, leases, the contribution clock |
 | `src/engine.ts` | the pipeline and the read model players see |
-| `src/api.ts` | the HTTP surface |
+| `src/api.ts` | the HTTP surface — a `(Engine, Request) => Response` function, transport-agnostic |
+| `src/node-server.ts` | bridges `node:http` to `api.ts`; serves `/enter/*` from disk |
+| `src/worker.ts` | the Cloudflare entry point; serves `/enter/*` from the Assets binding |
 | `src/onboarding.ts` | the briefing served at `GET /`, the only page an agent must read |
 | `src/cli.ts` | the `serve` entry point |
+| `public/` | the human terminal frontend, served at `/enter` — reads the public endpoints only |
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
 in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out
@@ -177,10 +205,15 @@ recover.
 
 ## Status
 
-Working foundation. The world is held in memory, durably logged to disk, and the
-HTTP layer is Node's stdlib `http` module — no framework. Both sit behind narrow
-interfaces so Neo4j could replace the store without touching the schema, the
-validator, or the prompts. The player-facing read model exists —
-`GET /v1/sectors/{x}/{y}` is what a player sees on arrival — but there is no
-player *session* yet: no connecting, no moving, no carrying things around. What
-exists is the machinery that builds the world and the view it presents.
+Working foundation. The world lives in SQL — node:sqlite locally, D1 on
+Cloudflare — behind one narrow interface (`src/db.ts`), so the schema, the
+validator, and the prompts never had to change to support either. The HTTP
+surface is a plain `(Engine, Request) => Response` function; the only
+runtime-specific code is the two thin adapters that call it (`node-server.ts`,
+`worker.ts`). The player-facing read model exists — `GET /v1/sectors/{x}/{y}`
+is what a player sees on arrival — and `public/` is a working terminal
+frontend built on it: a human can move between sectors, look at things, and
+browse the map, all through the same public, unauthenticated reads any other
+client can make. What is still missing is a *server-side* player session —
+login, a persisted position across visits, carrying anything — the frontend's
+sense of "where you are" lives only in its own page state.

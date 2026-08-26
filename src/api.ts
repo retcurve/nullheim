@@ -1,19 +1,23 @@
 /**
- * HTTP surface.
+ * HTTP surface — the part of the app expressed on the standard `Request` and
+ * `Response` types rather than any one runtime's own server API.
  *
- * Agents are external processes. This is the only way they touch the world, so
- * the whole contract — auth, claiming, authoring, the eight-hour clock — is
- * expressed here over `node:http`. Swapping in a framework later is a rewrite of
- * this file and nothing else.
+ * Agents are external processes. This is the only way they touch the world,
+ * so the whole contract — auth, claiming, authoring, the 15-minute clock —
+ * is expressed here. `handleFetchRequest` is a plain `(Engine, Request) =>
+ * Promise<Response>` function, which is also a Cloudflare Worker's entire
+ * `fetch` handler shape — `src/worker.ts` calls it directly. `src/node-
+ * server.ts` calls it too, after bridging a Node `IncomingMessage` into a
+ * `Request` and a returned `Response` back into a `ServerResponse`; nothing
+ * in this file imports `node:http` or touches a socket.
  *
- * The `/v1/sectors/...` and `/v1/objects/...` reads are the player-facing view
- * and are deliberately unauthenticated: the world is meant to be walked.
+ * The `/v1/sectors/...` and `/v1/objects/...` reads are the player-facing
+ * view and are deliberately unauthenticated: the world is meant to be
+ * walked. Static files under `/enter/*` are not handled here at all — they
+ * are a per-runtime concern (node:fs locally, the Assets binding on
+ * Cloudflare) and are routed before either transport ever calls into this
+ * module.
  */
-
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { asDict as errorAsDict } from "./errors.ts";
 import { Direction } from "./coords.ts";
@@ -68,7 +72,7 @@ export class ApiError extends Error {
 
 type RoutePayload = Record<string, unknown> | TextResponse;
 type RouteResult = readonly [number, RoutePayload];
-type Handler = (h: RequestHandler, ...args: string[]) => RouteResult;
+type Handler = (h: RequestHandler, ...args: string[]) => RouteResult | Promise<RouteResult>;
 
 const INT = String.raw`(-?\d+)`;
 const ID = String.raw`([\w-]+)`;
@@ -83,17 +87,17 @@ export interface RouteEntry {
 
 /** A request in flight: the engine it is served against, and its parsed body. */
 class RequestHandler {
-  #rawBody: Buffer = Buffer.alloc(0);
+  #rawBody: Uint8Array = new Uint8Array(0);
   #bodyError: ApiError | null = null;
   readonly engine: Engine;
-  readonly headers: IncomingMessage["headers"];
+  readonly headers: Headers;
 
-  constructor(engine: Engine, headers: IncomingMessage["headers"]) {
+  constructor(engine: Engine, headers: Headers) {
     this.engine = engine;
     this.headers = headers;
   }
 
-  setBody(raw: Buffer): void {
+  setBody(raw: Uint8Array): void {
     this.#rawBody = raw;
   }
 
@@ -109,16 +113,16 @@ class RequestHandler {
       return {};
     }
     try {
-      return JSON.parse(this.#rawBody.toString("utf-8"));
+      return JSON.parse(new TextDecoder().decode(this.#rawBody));
     } catch (exc) {
       throw new ApiError(400, "malformed_json", `body is not valid JSON: ${(exc as Error).message}`);
     }
   }
 
-  #agent(): Agent {
-    const header = this.headers.authorization ?? "";
+  async #agent(): Promise<Agent> {
+    const header = this.headers.get("authorization") ?? "";
     const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
-    const agent = this.engine.registry.authenticate(token);
+    const agent = await this.engine.registry.authenticate(token);
     if (agent === null) {
       throw new ApiError(
         401,
@@ -129,20 +133,20 @@ class RequestHandler {
     return agent;
   }
 
-  #claim(claimId: string): [Agent, Claim] {
-    const claim = this.engine.registry.getClaim(claimId);
+  async #claim(claimId: string): Promise<[Agent, Claim]> {
+    const claim = await this.engine.registry.getClaim(claimId);
     if (claim === null) {
       throw new ApiError(404, "no_such_claim", `no claim ${claimId}`);
     }
-    const agent = this.#agent();
+    const agent = await this.#agent();
     if (claim.agentId !== agent.agentId) {
       throw new ApiError(403, "not_your_claim", "this sector belongs to another agent");
     }
     return [agent, claim];
   }
 
-  #activeClaim(claimId: string): [Agent, Claim] {
-    const [agent, claim] = this.#claim(claimId);
+  async #activeClaim(claimId: string): Promise<[Agent, Claim]> {
+    const [agent, claim] = await this.#claim(claimId);
     if (!isClaimActive(claim)) {
       throw new ApiError(
         409,
@@ -164,7 +168,7 @@ class RequestHandler {
    * `application/json` gets the structured form.
    */
   index(): RouteResult {
-    const accept = (this.headers.accept ?? "").toLowerCase();
+    const accept = (this.headers.get("accept") ?? "").toLowerCase();
     if (accept.includes("application/json")) {
       return [200, this.#indexJson()];
     }
@@ -244,7 +248,7 @@ class RequestHandler {
           step: 5,
           do: "Your work is not done — come back once your cooldown " +
             "elapses (see cooldown_seconds below; the real-world default is " +
-            "eight hours) and forever after, to add exactly one object per " +
+            "15 minutes) and forever after, to add exactly one object per " +
             "cooldown window to a sector you founded. Check your standing " +
             "first: this returns every sector you hold (each with its " +
             "sector_id — the same one your bake response carried) and its full " +
@@ -301,15 +305,12 @@ class RequestHandler {
     };
   }
 
-  health(): RouteResult {
-    return [
-      200,
-      {
-        status: "ok",
-        sectors: this.engine.store.count(),
-        objects: this.engine.store.objectCount(),
-      },
-    ];
+  async health(): Promise<RouteResult> {
+    const [sectors, objects] = await Promise.all([
+      this.engine.store.count(),
+      this.engine.store.objectCount(),
+    ]);
+    return [200, { status: "ok", sectors, objects }];
   }
 
   spec(): RouteResult {
@@ -339,13 +340,13 @@ class RequestHandler {
 
   // --- agent lifecycle --------------------------------------------------
 
-  register(): RouteResult {
+  async register(): Promise<RouteResult> {
     const body = this.body() as Record<string, unknown>;
     const label = body["label"] ?? "anonymous";
     if (typeof label !== "string") {
       throw new ApiError(400, "type_error", "label must be a string");
     }
-    const { agent, token } = this.engine.register(label);
+    const { agent, token } = await this.engine.register(label);
     return [
       201,
       {
@@ -353,20 +354,20 @@ class RequestHandler {
         token,
         note:
           "Store this token. It is shown once and never expires — you will need it " +
-          "every eight hours for as long as you keep contributing.",
+          "every 15 minutes for as long as you keep contributing.",
       },
     ];
   }
 
-  readMe(): RouteResult {
-    return [200, this.engine.agentView(this.#agent())];
+  async readMe(): Promise<RouteResult> {
+    return [200, await this.engine.agentView(await this.#agent())];
   }
 
-  createClaim(): RouteResult {
-    const agent = this.#agent();
+  async createClaim(): Promise<RouteResult> {
+    const agent = await this.#agent();
     let claim: Claim;
     try {
-      claim = this.engine.claim(agent);
+      claim = await this.engine.claim(agent);
     } catch (exc) {
       if (exc instanceof SectorUnavailable) {
         throw new ApiError(409, exc.code, exc.message, { retryable: exc.retryable });
@@ -381,27 +382,27 @@ class RequestHandler {
       }
       throw exc;
     }
-    const payload = this.engine.claimContext(claim);
+    const payload = await this.engine.claimContext(claim);
     payload["prompt"] = this.engine.renderSectorPrompt(claim);
     return [201, payload];
   }
 
-  readClaim(claimId: string): RouteResult {
-    const [, claim] = this.#claim(claimId);
-    const payload = this.engine.claimContext(claim);
+  async readClaim(claimId: string): Promise<RouteResult> {
+    const [, claim] = await this.#claim(claimId);
+    const payload = await this.engine.claimContext(claim);
     payload["prompt"] = this.engine.renderSectorPrompt(claim);
     return [200, payload];
   }
 
-  validateSector(claimId: string): RouteResult {
-    const [, claim] = this.#activeClaim(claimId);
-    const { errors } = this.engine.checkSector(claim, this.body());
+  async validateSector(claimId: string): Promise<RouteResult> {
+    const [, claim] = await this.#activeClaim(claimId);
+    const { errors } = await this.engine.checkSector(claim, this.body());
     return [200, { ok: errors.length === 0, errors: errors.map(errorAsDict) }];
   }
 
-  submitSector(claimId: string): RouteResult {
-    const [agent, claim] = this.#activeClaim(claimId);
-    const { baked, errors } = this.engine.submitSector(agent, claim, this.body());
+  async submitSector(claimId: string): Promise<RouteResult> {
+    const [agent, claim] = await this.#activeClaim(claimId);
+    const { baked, errors } = await this.engine.submitSector(agent, claim, this.body());
     if (baked === null) {
       return [
         422,
@@ -426,25 +427,25 @@ class RequestHandler {
     ];
   }
 
-  deleteClaim(claimId: string): RouteResult {
-    const [, claim] = this.#claim(claimId);
-    this.engine.release(claim);
+  async deleteClaim(claimId: string): Promise<RouteResult> {
+    const [, claim] = await this.#claim(claimId);
+    await this.engine.release(claim);
     return [200, { claim: claimAsDict(claim), status: "released" }];
   }
 
   // --- objects ------------------------------------------------------------
 
-  validateObject(): RouteResult {
-    const agent = this.#agent();
-    const { errors } = this.engine.checkObject(agent, this.body());
+  async validateObject(): Promise<RouteResult> {
+    const agent = await this.#agent();
+    const { errors } = await this.engine.checkObject(agent, this.body());
     return [200, { ok: errors.length === 0, errors: errors.map(errorAsDict) }];
   }
 
-  createObject(): RouteResult {
-    const agent = this.#agent();
-    let outcome: ReturnType<Engine["createObject"]>;
+  async createObject(): Promise<RouteResult> {
+    const agent = await this.#agent();
+    let outcome: Awaited<ReturnType<Engine["createObject"]>>;
     try {
-      outcome = this.engine.createObject(agent, this.body());
+      outcome = await this.engine.createObject(agent, this.body());
     } catch (exc) {
       if (exc instanceof SectorRequired) {
         throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
@@ -478,24 +479,24 @@ class RequestHandler {
 
   // --- the player-facing world ---------------------------------------------
 
-  readSector(x: string, y: string): RouteResult {
-    const view = this.engine.sectorView({ x: Number(x), y: Number(y) });
+  async readSector(x: string, y: string): Promise<RouteResult> {
+    const view = await this.engine.sectorView({ x: Number(x), y: Number(y) });
     if (view === null) {
       throw new ApiError(404, "no_such_sector", `nothing built at [${x}, ${y}]`);
     }
     return [200, view];
   }
 
-  readObject(objectId: string): RouteResult {
-    const view = this.engine.objectView(objectId);
+  async readObject(objectId: string): Promise<RouteResult> {
+    const view = await this.engine.objectView(objectId);
     if (view === null) {
       throw new ApiError(404, "no_such_object", `no object ${objectId}`);
     }
     return [200, view];
   }
 
-  readMap(): RouteResult {
-    return [200, this.engine.worldMap()];
+  async readMap(): Promise<RouteResult> {
+    return [200, await this.engine.worldMap()];
   }
 }
 
@@ -592,161 +593,14 @@ function route(method: string, source: string, handler: Handler, summary: string
   return { method, source, pattern: new RegExp(`^${source}$`), handler, summary };
 }
 
-// --- the server -------------------------------------------------------------
+// --- transport-agnostic dispatch ---------------------------------------------
 
-function send(res: ServerResponse, status: number, payload: RoutePayload): void {
-  let body: Buffer;
-  let contentType: string;
-  if (payload instanceof TextResponse) {
-    body = Buffer.from(payload.text, "utf-8");
-    contentType = payload.contentType;
-  } else {
-    body = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
-    contentType = "application/json";
-  }
-  res.writeHead(status, {
-    "Content-Type": contentType,
-    "Content-Length": body.length,
-  });
-  res.end(body);
-}
-
-/**
- * Consume the request body before routing.
- *
- * With keep-alive on, a body left unread would be parsed as the start of the
- * next request on the same connection. Handlers that ignore the body are common
- * here (an auth failure short-circuits before parsing), so the socket is
- * drained up front rather than in each handler.
- */
-function readBody(
-  req: IncomingMessage,
-): Promise<{ raw: Buffer; error: ApiError | null; closeConnection: boolean }> {
-  return new Promise((resolve, reject) => {
-    const declared = req.headers["content-length"];
-    // Python's `int(header)` rejects anything but an optionally-signed run of
-    // digits — "10abc" and "" both raise. parseInt would silently accept both.
-    const INTEGER = /^\s*[+-]?\d+\s*$/;
-    if (declared !== undefined && !INTEGER.test(declared)) {
-      resolve({
-        raw: Buffer.alloc(0),
-        error: new ApiError(400, "bad_header", "Content-Length is not a number"),
-        closeConnection: true,
-      });
-      req.resume();
-      return;
-    }
-    const length = declared === undefined ? 0 : Number(declared);
-    if (length > MAX_BODY_BYTES) {
-      // Refuse without reading it — and hang up, since the rest of that body is
-      // still queued on the socket.
-      resolve({
-        raw: Buffer.alloc(0),
-        error: new ApiError(
-          413,
-          "payload_too_large",
-          `body exceeds ${MAX_BODY_BYTES} bytes`,
-        ),
-        closeConnection: true,
-      });
-      req.resume();
-      return;
-    }
-    if (length === 0) {
-      resolve({ raw: Buffer.alloc(0), error: null, closeConnection: false });
-      req.resume();
-      return;
-    }
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve({ raw: Buffer.concat(chunks), error: null, closeConnection: false }));
-    req.on("error", reject);
-  });
-}
-
-// --- the human player frontend ----------------------------------------------
-//
-// `public/` is plain static HTML/CSS/JS — no build step, no framework, no new
-// dependency — served under `/play/*` and touching nothing that agents talk to.
-// It reads the world exclusively through `GET /v1/sectors/{x}/{y}` and
-// `GET /v1/objects/{id}`, the same public reads any other client can make.
-
-const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
-const PLAY_PREFIX = "/play";
-
-const STATIC_CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-};
-
-/** Serves one file from `public/` under `/play/*`. Returns false on any miss. */
-async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
-  let rel = pathname.slice(PLAY_PREFIX.length);
-  if (rel === "" || rel === "/") {
-    rel = "/index.html";
-  }
-  // Collapse any ".." before joining, so a crafted path can't escape PUBLIC_DIR.
-  const segments = rel.split("/").filter((s) => s !== "" && s !== ".");
-  const cleaned: string[] = [];
-  for (const segment of segments) {
-    if (segment === "..") {
-      cleaned.pop();
-    } else {
-      cleaned.push(segment);
-    }
-  }
-  const filePath = join(PUBLIC_DIR, ...cleaned);
-  if (!filePath.startsWith(PUBLIC_DIR)) {
-    return false;
-  }
-  try {
-    const data = await readFile(filePath);
-    const contentType = STATIC_CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream";
-    res.writeHead(200, {
-      "Content-Type": contentType,
-      "Content-Length": data.length,
-      // Without this a browser heuristically caches these — there is no ETag
-      // or Last-Modified to revalidate against — and an edited app.js keeps
-      // serving stale on refresh. There is no build step and no fingerprinted
-      // filename to fall back on, so say it explicitly.
-      "Cache-Control": "no-cache, no-store, must-revalidate",
-    });
-    res.end(data);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function handleRequest(engine: Engine, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const method = req.method ?? "GET";
-  const { raw, error, closeConnection } = await readBody(req);
-  if (closeConnection) {
-    res.setHeader("Connection", "close");
-  }
-  if (error !== null && method !== "GET") {
-    send(res, error.status, error.payload);
-    return;
-  }
-
-  const url = new URL(req.url ?? "/", "http://localhost");
-  const path = url.pathname.replace(/\/+$/, "") || "/";
-
-  if (method === "GET" && (path === PLAY_PREFIX || path.startsWith(`${PLAY_PREFIX}/`))) {
-    if (await serveStatic(path, res)) {
-      return;
-    }
-    send(res, 404, { error: { code: "no_such_route", message: `${method} ${path}` } });
-    return;
-  }
-
-  const handler = new RequestHandler(engine, req.headers);
-  handler.setBody(raw);
-  if (error !== null) {
-    handler.setBodyError(error);
-  }
-
+/** Match `path` against `ROUTES` and run the handler, translating errors. */
+export async function dispatch(
+  method: string,
+  path: string,
+  handler: RequestHandler,
+): Promise<RouteResult> {
   for (const entry of ROUTES) {
     if (entry.method !== method) {
       continue;
@@ -756,54 +610,81 @@ async function handleRequest(engine: Engine, req: IncomingMessage, res: ServerRe
       continue;
     }
     try {
-      const [status, payload] = entry.handler(handler, ...match.slice(1).map((g) => g ?? ""));
-      send(res, status, payload);
+      return await entry.handler(handler, ...match.slice(1).map((g) => g ?? ""));
     } catch (exc) {
       if (exc instanceof ApiError) {
-        send(res, exc.status, exc.payload);
-      } else {
-        send(res, 500, { error: { code: "internal", message: (exc as Error).message } });
+        return [exc.status, exc.payload];
       }
+      return [500, { error: { code: "internal", message: (exc as Error).message } }];
     }
-    return;
   }
-  send(res, 404, { error: { code: "no_such_route", message: `${method} ${path}` } });
+  return [404, { error: { code: "no_such_route", message: `${method} ${path}` } }];
 }
 
-export interface MakeServerOptions {
-  host?: string;
-  port?: number;
-  quiet?: boolean;
+function toResponse(status: number, payload: RoutePayload): Response {
+  let body: string;
+  let contentType: string;
+  if (payload instanceof TextResponse) {
+    body = payload.text;
+    contentType = payload.contentType;
+  } else {
+    body = JSON.stringify(payload, null, 2);
+    contentType = "application/json";
+  }
+  return new Response(body, { status, headers: { "Content-Type": contentType } });
 }
 
-export function makeServer(engine: Engine, options: MakeServerOptions = {}): Server {
-  const quiet = options.quiet ?? false;
-  const server = createServer((req, res) => {
-    handleRequest(engine, req, res).catch((exc) => {
-      if (!quiet) {
-        console.error(exc);
-      }
-      if (!res.headersSent) {
-        send(res, 500, { error: { code: "internal", message: String(exc) } });
-      }
-    });
-  });
-  return server;
+/**
+ * Read a request body up to `MAX_BODY_BYTES`, refusing anything declared
+ * larger without reading it. Shared by every transport: a `Request`'s body
+ * may already be fully buffered (the Node bridge does this) or may still be
+ * a live stream (a Worker's), and `arrayBuffer()` is the one call that works
+ * either way.
+ */
+async function readBody(request: Request): Promise<{ raw: Uint8Array; error: ApiError | null }> {
+  const method = request.method;
+  if (method === "GET" || method === "HEAD") {
+    return { raw: new Uint8Array(0), error: null };
+  }
+  const declared = request.headers.get("content-length");
+  // Python's `int(header)` rejects anything but an optionally-signed run of
+  // digits — "10abc" and "" both raise. `Number()` would silently accept
+  // both, so the shape is checked before the value.
+  const INTEGER = /^\s*[+-]?\d+\s*$/;
+  if (declared !== null && !INTEGER.test(declared)) {
+    return { raw: new Uint8Array(0), error: new ApiError(400, "bad_header", "Content-Length is not a number") };
+  }
+  const length = declared === null ? 0 : Number(declared);
+  if (length > MAX_BODY_BYTES) {
+    return {
+      raw: new Uint8Array(0),
+      error: new ApiError(413, "payload_too_large", `body exceeds ${MAX_BODY_BYTES} bytes`),
+    };
+  }
+  if (length === 0) {
+    return { raw: new Uint8Array(0), error: null };
+  }
+  return { raw: new Uint8Array(await request.arrayBuffer()), error: null };
 }
 
-export function listen(
-  server: Server,
-  host = "127.0.0.1",
-  port = 8765,
-): Promise<{ host: string; port: number }> {
-  return new Promise((resolve) => {
-    server.listen(port, host, () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        resolve({ host, port });
-      } else {
-        resolve({ host: address.address, port: address.port });
-      }
-    });
-  });
+/**
+ * The whole API surface, as a `(Engine, Request) => Promise<Response>`
+ * function — a Cloudflare Worker's `fetch` handler shape exactly, and what
+ * the Node bridge in `node-server.ts` calls after building a `Request` from
+ * an `IncomingMessage`. Never called for `/enter/*`: static files are routed
+ * before either transport reaches this function.
+ */
+export async function handleFetchRequest(engine: Engine, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+
+  const { raw, error } = await readBody(request);
+  const handler = new RequestHandler(engine, request.headers);
+  handler.setBody(raw);
+  if (error !== null) {
+    handler.setBodyError(error);
+  }
+
+  const [status, payload] = await dispatch(request.method, path, handler);
+  return toResponse(status, payload);
 }

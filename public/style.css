@@ -4,6 +4,7 @@
   --fg-dim: #1f9944;
   --fg-bright: #a6ffc1;
   --error: #ff5533;
+  --title: #ffcc33;
 }
 
 * {
@@ -108,6 +109,10 @@ body {
 #output strong {
   color: var(--fg-bright);
   font-weight: bold;
+}
+
+#output strong.title {
+  color: var(--title);
 }
 
 #output u {

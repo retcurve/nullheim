@@ -1,11 +1,10 @@
 __pycache__/
 *.py[cod]
 .venv/
-world.json
-world.json.tmp
-world.json.log
-mockup.json
-mockup.json.tmp
-mockup.json.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.swp
 node_modules/
+.wrangler/
+.dev.vars

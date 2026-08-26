@@ -12,16 +12,21 @@
  * Usage:
  *   node scripts/generate_mockup.ts [count] [out-path]
  *
- * Defaults to 1000 sectors written to mockup.json at the repo root. Point a
+ * Defaults to 1000 sectors written to mockup.sqlite at the repo root. Point a
  * server at the result to browse it:
  *
- *   node src/cli.ts serve --cooldown-seconds 0 --state mockup.json
+ *   node src/cli.ts serve --cooldown-seconds 0 --db mockup.sqlite
  */
 
-import { Engine } from "../src/engine.ts";
+import { openSqlite } from "../src/db/sqlite.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { Engine, ensureGenesis } from "../src/engine.ts";
+import { loadPrompts } from "../src/prompts.node.ts";
+import { Registry } from "../src/registry.ts";
+import { WorldStore } from "../src/store.ts";
 
 const TARGET_SECTORS = Number(process.argv[2] ?? 1000);
-const OUT_PATH = process.argv[3] ?? new URL("../mockup.json", import.meta.url).pathname;
+const OUT_PATH = process.argv[3] ?? new URL("../mockup.sqlite", import.meta.url).pathname;
 
 const ADJECTIVES = [
   "Copper", "Salt", "Quiet", "Burnt", "Drowned", "Hollow", "Gilded", "Frozen",
@@ -110,32 +115,39 @@ function makeSector(rng: () => number, coordinate: [number, number], index: numb
   };
 }
 
-const rng = mulberry32(0xc0ffee);
-const engine = new Engine({ statePath: OUT_PATH, leaseSeconds: 3600, cooldownSeconds: 0 });
+async function main(): Promise<void> {
+  const rng = mulberry32(0xc0ffee);
 
-// Single-threaded and synchronous: nothing else is holding a lease on the
-// frontier at the same time, so frontier_busy/claim_in_progress genuinely
-// cannot happen here — a fresh agent, one claim, one immediate submission,
-// every time. No retry loop needed.
-let built = engine.store.count(); // genesis is already seeded
-let index = built;
+  const db = openSqlite(OUT_PATH);
+  await db.exec(SCHEMA_SQL);
+  const store = new WorldStore(db);
+  const registry = new Registry(db, { leaseSeconds: 3600, cooldownSeconds: 0 });
+  await ensureGenesis(store);
+  const engine = new Engine({ store, registry, prompts: loadPrompts() });
 
-while (built < TARGET_SECTORS) {
-  const { agent } = engine.register(`mockup-agent-${index}`);
-  const claim = engine.claim(agent);
+  // Nothing else is holding a lease on the frontier at the same time, so
+  // frontier_busy/claim_in_progress genuinely cannot happen here — a fresh
+  // agent, one claim, one immediate submission, every time. No retry loop
+  // needed.
+  let built = await engine.store.count(); // genesis is already seeded
+  let index = built;
 
-  const [x, y] = [claim.coordinate.x, claim.coordinate.y];
-  const sectorPayload = makeSector(rng, [x, y], index);
-  const { baked, errors } = engine.submitSector(agent, claim, sectorPayload);
-  if (!baked) {
-    throw new Error(`unexpected validation failure at ${x},${y}: ${JSON.stringify(errors)}`);
+  while (built < TARGET_SECTORS) {
+    const { agent } = await engine.register(`mockup-agent-${index}`);
+    const claim = await engine.claim(agent);
+
+    const [x, y] = [claim.coordinate.x, claim.coordinate.y];
+    const sectorPayload = makeSector(rng, [x, y], index);
+    const { baked, errors } = await engine.submitSector(agent, claim, sectorPayload);
+    if (!baked) {
+      throw new Error(`unexpected validation failure at ${x},${y}: ${JSON.stringify(errors)}`);
+    }
+    built++;
+    index++;
   }
-  built++;
-  index++;
+
+  db.close();
+  console.log(`wrote ${built} sectors to ${OUT_PATH}`);
 }
 
-// Fold the log into one clean snapshot — this is a static fixture, not a
-// live world, so there is no reason to ship it as a snapshot-plus-log pair.
-engine.store.compact();
-
-console.log(`wrote ${built} sectors to ${OUT_PATH}`);
+main();

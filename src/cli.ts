@@ -3,19 +3,25 @@
 
 import { parseArgs } from "node:util";
 
-import { listen, makeServer } from "./api.ts";
+import { SCHEMA_SQL } from "./db/schema.node.ts";
+import { openSqlite } from "./db/sqlite.ts";
+import { Engine, ensureGenesis } from "./engine.ts";
+import { listen, makeServer } from "./node-server.ts";
+import { loadPrompts } from "./prompts.node.ts";
 import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
   DEFAULT_LEASE_SECONDS,
+  Registry,
 } from "./registry.ts";
-import { Engine } from "./engine.ts";
+import { WorldStore } from "./store.ts";
 
 function usage(): never {
   process.stderr.write(
-    "usage: mosaic serve [--host HOST] [--port PORT] [--state PATH] " +
+    "usage: mosaic serve [--host HOST] [--port PORT] [--db PATH] " +
       "[--lease-seconds N] [--cooldown-seconds N] [--claims-per-hour N]\n" +
       "\n" +
+      "  --db PATH            local SQLite file (defaults to an in-memory world)\n" +
       "  --claims-per-hour N  cap new sectors world-wide (0 disables the cap)\n",
   );
   process.exit(2);
@@ -32,7 +38,7 @@ async function main(argv: string[]): Promise<number> {
     options: {
       host: { type: "string", default: "127.0.0.1" },
       port: { type: "string", default: "8765" },
-      state: { type: "string" },
+      db: { type: "string" },
       "lease-seconds": { type: "string", default: String(DEFAULT_LEASE_SECONDS) },
       "cooldown-seconds": { type: "string", default: String(DEFAULT_COOLDOWN_SECONDS) },
       "claims-per-hour": { type: "string", default: String(DEFAULT_CLAIMS_PER_HOUR) },
@@ -41,21 +47,27 @@ async function main(argv: string[]): Promise<number> {
 
   const host = values.host!;
   const port = Number(values.port);
-  const statePath = values.state ?? null;
+  const dbPath = values.db ?? ":memory:";
   const leaseSeconds = Number(values["lease-seconds"]);
   const cooldownSeconds = Number(values["cooldown-seconds"]);
   const claimsPerHour = Number(values["claims-per-hour"]);
 
-  const engine = new Engine({ statePath, leaseSeconds, cooldownSeconds, claimsPerHour });
+  const db = openSqlite(dbPath);
+  await db.exec(SCHEMA_SQL);
+  const store = new WorldStore(db);
+  const registry = new Registry(db, { leaseSeconds, cooldownSeconds, claimsPerHour });
+  await ensureGenesis(store);
+  const engine = new Engine({ store, registry, prompts: loadPrompts() });
+
   const server = makeServer(engine);
   const address = await listen(server, host, port);
 
   console.log(
     `Mosaic serving on http://${address.host}:${address.port}  ` +
-      `(${engine.store.count()} sectors, ${engine.store.objectCount()} objects)`,
+      `(${await store.count()} sectors, ${await store.objectCount()} objects)`,
   );
   console.log(
-    `Frontier: ${engine.registry.frontier().length} open sector(s)  |  ` +
+    `Frontier: ${(await registry.frontier()).length} open sector(s)  |  ` +
       `cooldown ${cooldownSeconds}s  |  ` +
       (claimsPerHour > 0 ? `${claimsPerHour} claims/hour` : "claim rate uncapped"),
   );
@@ -63,7 +75,7 @@ async function main(argv: string[]): Promise<number> {
   return new Promise((resolve) => {
     // Guarded against re-entry: server.close() only drains connections that
     // finish on their own, so an open keep-alive socket (a browser tab left
-    // on /play is enough) can leave it waiting indefinitely. Signalling again
+    // on /enter is enough) can leave it waiting indefinitely. Signalling again
     // is the natural reaction to a shutdown that appears to hang — and
     // without this guard, each repeat call to server.close() stacks another
     // 'close' listener on the server rather than doing anything new, which is
@@ -77,9 +89,7 @@ async function main(argv: string[]): Promise<number> {
       console.log("\nshutting down");
       server.closeAllConnections();
       server.close(() => {
-        // Fold the log back into the snapshot so the next start is a plain read.
-        engine.store.compact();
-        engine.store.close();
+        db.close();
         resolve(0);
       });
     };

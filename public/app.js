@@ -6,12 +6,14 @@
  *
  * The client keeps a small model of "the sector the player is currently
  * standing in": its title/description/exits, and whatever objects are known
- * about it (name only, until examined). Moving to a new sector always throws
- * that model away and re-fetches — the world can change while you're not
- * looking at it. Examining an object merges its full detail (and its own
- * nested things_you_can_see) into the model, so later `look`s can resolve
- * nested objects without re-fetching, and re-examining something already
- * known doesn't need the network.
+ * about it (name only, until examined). This model is a display cache only,
+ * never a source of truth for a `look` — moving to a new sector, looking
+ * around, and examining an object all re-fetch, every time, because the
+ * world can change while you're not looking at it. Examining an object
+ * merges its full detail (and its own nested things_you_can_see) into the
+ * model so later commands can resolve a nested object by name without
+ * fetching the whole sector again, but the examine itself is never served
+ * from that cache.
  */
 
 (() => {
@@ -37,9 +39,16 @@
       .replace(/>/g, "&gt;");
   }
 
-  /** Turns our `**bold**`/`__underline__` conventions into real markup, after escaping. */
+  /**
+   * Turns our `**bold**`/`__underline__`/`##title##` conventions into real
+   * markup, after escaping. `##title##` is its own convention rather than a
+   * flag on `**bold**` because the section titles ("Exits", "You can also
+   * see", "Commands") are the only bold text styled differently (yellow, via
+   * the `.title` class in CSS) — everything else stays plain bold green.
+   */
   function toHtml(text) {
     return escapeHtml(text)
+      .replace(/##(.+?)##/g, '<strong class="title">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/__(.+?)__/g, "<u>$1</u>");
   }
@@ -195,11 +204,11 @@
   function renderSectorText(m) {
     const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
     if (m.exits.length > 0) {
-      lines.push("", "__Exits__", exitsSentence(m.exits));
+      lines.push("", "##Exits##", exitsSentence(m.exits));
     }
     const objects = Array.from(m.objects.values());
     if (objects.length > 0) {
-      lines.push("", "__You can also see__", ...objects.map((o) => `**${o.title}**`));
+      lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
     }
     return lines.join("\n");
   }
@@ -208,7 +217,7 @@
     const lines = [`**${obj.title}**`, obj.description ?? ""];
     const kids = obj.things_you_can_see ?? [];
     if (kids.length > 0) {
-      lines.push("", "__You can also see__", ...kids.map((k) => `**${k.title}**`));
+      lines.push("", "##You can also see##", ...kids.map((k) => `**${k.title}**`));
     }
     return lines.join("\n");
   }
@@ -610,12 +619,8 @@
     }
   }
 
+  /** Always hits the network — an object's description can change underneath a stale id. */
   async function examineObject(id) {
-    const known = model.objects.get(id);
-    if (known && known.description !== undefined) {
-      print(renderObjectText(known));
-      return;
-    }
     try {
       const data = await fetchJson(`/v1/objects/${id}`);
       const merged = mergeObject(data);
@@ -625,7 +630,31 @@
     }
   }
 
-  function doLook(name) {
+  /** Re-fetches the current sector so exits and things_you_can_see are current, then prints it. */
+  async function lookHere() {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+      print(renderSectorText(model));
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+    }
+  }
+
+  /**
+   * Refreshes the sector before matching, so a name typed against a stale
+   * view still resolves correctly, then always re-fetches whatever it
+   * resolves to rather than trusting anything already in `model`.
+   */
+  async function doLook(name) {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+      return;
+    }
+
     const { exitMatches, objectMatches } = findMatches(name);
     const total = exitMatches.length + objectMatches.length;
     if (total === 0) {
@@ -640,7 +669,7 @@
       print(renderExitText(exitMatches[0]));
       return;
     }
-    examineObject(objectMatches[0].object_id);
+    await examineObject(objectMatches[0].object_id);
   }
 
   // --- command parsing --------------------------------------------------------
@@ -655,6 +684,101 @@
     east: "east",
     west: "west",
   };
+
+  /**
+   * Every command is one canonical name plus, optionally, a handful of
+   * whole-word aliases ("examine" for "look") — never a short form of its
+   * own name. Short forms come for free from prefix matching in
+   * `matchCommands` below: "ex" or even "e" resolves to "examine" because
+   * it's the only command word that starts with it. This is also what makes
+   * `help` able to show one true list of commands instead of a parallel list
+   * of abbreviations that has to be kept in sync by hand.
+   */
+  const COMMANDS = [
+    {
+      name: "look",
+      aliases: ["examine"],
+      args: "<thing>",
+      description: "Look around the sector, or examine a specific exit or object.",
+      run(rest) {
+        if (!rest) {
+          lookHere();
+        } else {
+          doLook(rest);
+        }
+      },
+    },
+    {
+      name: "go",
+      aliases: ["walk", "run", "fly"],
+      args: "<direction | exit name>",
+      description: "Move through an exit, by compass direction or by its name. Compass directions can also be used on their own without **go**",
+      run(rest) {
+        if (!rest) {
+          printError("Go where?");
+          return;
+        }
+        const direction = BARE_DIRECTIONS[rest.toLowerCase()];
+        if (direction) {
+          doGoDirection(direction);
+        } else {
+          doGoByName(rest);
+        }
+      },
+    },
+    {
+      name: "teleport",
+      aliases: [],
+      args: "<x> <y> | <sector name>",
+      description: "Jump straight to any sector.",
+      run(rest) {
+        doTeleport(rest);
+      },
+    },
+    {
+      name: "map",
+      aliases: [],
+      args: "",
+      description: "Open a map showing every sector.",
+      run() {
+        doMap();
+      },
+    },
+    {
+      name: "help",
+      aliases: [],
+      args: "",
+      description: "List the available commands.",
+      run() {
+        doHelp();
+      },
+    },
+  ];
+
+  function commandUsage(cmd) {
+    const aliasNote = cmd.aliases.length > 0 ? ` (${cmd.aliases.join(", ")})` : "";
+    const argsNote = cmd.args ? ` ${cmd.args}` : "";
+    return `${cmd.name}${aliasNote}${argsNote}`;
+  }
+
+  function doHelp() {
+    const lines = ["##Commands##"];
+    for (const cmd of COMMANDS) {
+      lines.push(`**${commandUsage(cmd)}** — ${cmd.description}`);
+    }
+    print(lines.join("\n"));
+  }
+
+  /**
+   * A word matches a command if it's a prefix of that command's name or of
+   * any of its aliases — "e", "ex" and "exam" all match "examine" this way.
+   * Two different commands whose words share a prefix (a future "go"/"get"
+   * collision) come back as separate entries here, and the caller reports
+   * that ambiguity the same way it already does for exits and objects.
+   */
+  function matchCommands(word) {
+    return COMMANDS.filter((cmd) => [cmd.name, ...cmd.aliases].some((w) => w.startsWith(word)));
+  }
 
   const DROP_WORDS = new Set([
     // Articles
@@ -687,39 +811,15 @@
       return;
     }
     const first = parts[0].toLowerCase();
+    const rest = parts.slice(1).join(" ");
 
-    if (first === "look" || first === "l" || first === "examine" || first === "ex") {
-      const rest = parts.slice(1).join(" ");
-      if (!rest) {
-        print(renderSectorText(model));
-      } else {
-        doLook(rest);
-      }
+    const matches = matchCommands(first);
+    if (matches.length === 1) {
+      matches[0].run(rest);
       return;
     }
-
-    if (first === "go" || first === "g" || first === "walk" || first === "run" || first === "fly") {
-      const rest = parts.slice(1).join(" ");
-      if (!rest) {
-        printError("Go where?");
-        return;
-      }
-      const direction = BARE_DIRECTIONS[rest.toLowerCase()];
-      if (direction) {
-        doGoDirection(direction);
-      } else {
-        doGoByName(rest);
-      }
-      return;
-    }
-
-    if (first === "teleport" || first === "tele" || first === "t") {
-      doTeleport(parts.slice(1).join(" "));
-      return;
-    }
-
-    if (first === "map" || first === "m") {
-      doMap();
+    if (matches.length > 1) {
+      printError(`Which do you mean: ${matches.map((cmd) => cmd.name).join(", ")}?`);
       return;
     }
 
