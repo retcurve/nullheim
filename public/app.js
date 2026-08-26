@@ -6,12 +6,14 @@
  *
  * The client keeps a small model of "the sector the player is currently
  * standing in": its title/description/exits, and whatever objects are known
- * about it (name only, until examined). Moving to a new sector always throws
- * that model away and re-fetches — the world can change while you're not
- * looking at it. Examining an object merges its full detail (and its own
- * nested things_you_can_see) into the model, so later `look`s can resolve
- * nested objects without re-fetching, and re-examining something already
- * known doesn't need the network.
+ * about it (name only, until examined). This model is a display cache only,
+ * never a source of truth for a `look` — moving to a new sector, looking
+ * around, and examining an object all re-fetch, every time, because the
+ * world can change while you're not looking at it. Examining an object
+ * merges its full detail (and its own nested things_you_can_see) into the
+ * model so later commands can resolve a nested object by name without
+ * fetching the whole sector again, but the examine itself is never served
+ * from that cache.
  */
 
 (() => {
@@ -610,12 +612,8 @@
     }
   }
 
+  /** Always hits the network — an object's description can change underneath a stale id. */
   async function examineObject(id) {
-    const known = model.objects.get(id);
-    if (known && known.description !== undefined) {
-      print(renderObjectText(known));
-      return;
-    }
     try {
       const data = await fetchJson(`/v1/objects/${id}`);
       const merged = mergeObject(data);
@@ -625,7 +623,31 @@
     }
   }
 
-  function doLook(name) {
+  /** Re-fetches the current sector so exits and things_you_can_see are current, then prints it. */
+  async function lookHere() {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+      print(renderSectorText(model));
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+    }
+  }
+
+  /**
+   * Refreshes the sector before matching, so a name typed against a stale
+   * view still resolves correctly, then always re-fetches whatever it
+   * resolves to rather than trusting anything already in `model`.
+   */
+  async function doLook(name) {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+      return;
+    }
+
     const { exitMatches, objectMatches } = findMatches(name);
     const total = exitMatches.length + objectMatches.length;
     if (total === 0) {
@@ -640,7 +662,7 @@
       print(renderExitText(exitMatches[0]));
       return;
     }
-    examineObject(objectMatches[0].object_id);
+    await examineObject(objectMatches[0].object_id);
   }
 
   // --- command parsing --------------------------------------------------------
@@ -691,7 +713,7 @@
     if (first === "look" || first === "l" || first === "examine" || first === "ex") {
       const rest = parts.slice(1).join(" ");
       if (!rest) {
-        print(renderSectorText(model));
+        lookHere();
       } else {
         doLook(rest);
       }
