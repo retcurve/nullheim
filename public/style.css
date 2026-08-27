@@ -5,6 +5,7 @@
   --fg-bright: #a6ffc1;
   --error: #ff5533;
   --title: #ffcc33;
+  --image: #33ccff;
 }
 
 * {
@@ -58,6 +59,35 @@ body {
 }
 
 /* subtle scanlines + phosphor glow */
+/* The fixed 900x640-ish sizing above is right for a window with browser
+   chrome around it; fullscreen has no chrome to leave room for, so the
+   terminal should fill it instead of sitting small and bordered in a corner. */
+#crt:fullscreen,
+#crt:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Held for ~10s after entering fullscreen (see app.js), so the browser's
+   "swipe down to exit full screen" banner has empty space to sit in.
+   Deepening the bottom padding lifts the prompt line — the last flex child —
+   up off the bottom edge, rather than pushing the whole terminal down.
+
+   Touch only: the banner sits at the bottom of the screen on mobile, which
+   is what this clears. Desktop's equivalent is a pill at the top centre that
+   this would not help with, so a ten-second layout shift there would be
+   movement for nothing. `pointer: coarse` is the same touch test the
+   scrollbar rule below uses. */
+@media (pointer: coarse) {
+  #crt.banner-clearance {
+    padding-bottom: 76px;
+    transition: padding-bottom 0.3s ease-out;
+  }
+}
+
 #crt::before {
   content: "";
   position: absolute;
@@ -134,19 +164,11 @@ body {
    `pre` so its own spacing survives, and horizontal scroll rather than wrap
    so a full-width (up to 80 column) drawing never destroys its letterforms. */
 #output .entry.ascii-image {
-  color: var(--fg);
+  color: var(--image);
+  text-shadow: 0 0 6px rgba(51, 204, 255, 0.55);
   white-space: pre;
   overflow-x: auto;
   font-size: 13px;
-}
-
-/* Below #crt's own 900px design width there isn't room to show agent-authored
-   art without wrapping or shrinking it past legibility, so it is dropped
-   rather than degraded — the description it precedes is unaffected. */
-@media (max-width: 900px) {
-  #output .entry.ascii-image {
-    display: none;
-  }
 }
 
 #output strong {
@@ -211,6 +233,21 @@ body {
   margin-left: 1px;
 }
 
+#fullscreen-toggle {
+  margin-left: auto;
+  padding-left: 12px;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#fullscreen-toggle:hover {
+  color: var(--fg-bright);
+}
+
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -239,6 +276,18 @@ body {
 
 #output::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Touch devices scroll #output by swipe, so its own scrollbar is just
+   clutter there — desktop (mouse-driven) keeps it. */
+@media (pointer: coarse) {
+  #output {
+    scrollbar-width: none;
+  }
+
+  #output::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* --- map overlay ----------------------------------------------------- */

@@ -29,6 +29,7 @@
   const mapZoomInButton = document.getElementById("map-zoom-in");
   const mapZoomOutButton = document.getElementById("map-zoom-out");
   const mapExitButton = document.getElementById("map-exit");
+  const fullscreenToggleButton = document.getElementById("fullscreen-toggle");
 
   /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map}|null} */
   let model = null;
@@ -201,12 +202,10 @@
 
   /**
    * A sector's or object's own optional `image`, printed the same raw way as
-   * the boot logo and for the same reason. Its `.ascii-image` class (not
-   * `.logo`, which is this page's own wordmark) is what `#crt`'s narrow-
-   * screen media query hides — agent-authored art at up to 80 columns simply
-   * does not fit once the terminal itself has shrunk below its own 900px
-   * design width, and a wrapped or overflowing "drawing" reads as broken
-   * rather than small.
+   * the boot logo and for the same reason: `.ascii-image` (like `.logo`)
+   * keeps its exact spacing and scrolls horizontally rather than wrapping or
+   * shrinking, so agent-authored art at up to 80 columns stays legible even
+   * once the terminal is narrower than that.
    */
   function printImage(text) {
     appendEntry(text, "ascii-image", { raw: true });
@@ -947,10 +946,15 @@
    * Every command is one canonical name plus, optionally, a handful of
    * whole-word aliases ("examine" for "look") — never a short form of its
    * own name. Short forms come for free from prefix matching in
-   * `matchCommands` below: "ex" or even "e" resolves to "examine" because
-   * it's the only command word that starts with it. This is also what makes
-   * `help` able to show one true list of commands instead of a parallel list
-   * of abbreviations that has to be kept in sync by hand.
+   * `matchCommands` below: "ex" resolves to "examine" because it's the only
+   * command word that starts with it. This is also what makes `help` able to
+   * show one true list of commands instead of a parallel list of
+   * abbreviations that has to be kept in sync by hand.
+   *
+   * The exception is a lone compass word: `handleCommand` resolves those
+   * ahead of prefix matching, so "e" is east rather than the shortest
+   * unique prefix of "examine". Anything longer ("ex") still prefix-matches
+   * as normal.
    */
   const COMMANDS = [
     {
@@ -1080,6 +1084,16 @@
     const first = parts[0].toLowerCase();
     const rest = parts.slice(1).join(" ");
 
+    // Before prefix matching, not after: a lone compass word is the one
+    // input a prefix can't be allowed to win. "w" and "e" would otherwise
+    // resolve to the `walk` and `examine` aliases and mean "go nowhere" and
+    // "look" — while "n" and "s", matching no command word, went west and
+    // south correctly. A direction on its own is never a truncated verb.
+    if (parts.length === 1 && BARE_DIRECTIONS[first]) {
+      doGoDirection(BARE_DIRECTIONS[first]);
+      return;
+    }
+
     const matches = matchCommands(first);
     if (matches.length === 1) {
       matches[0].run(rest);
@@ -1087,11 +1101,6 @@
     }
     if (matches.length > 1) {
       printError(`Which do you mean: ${matches.map((cmd) => cmd.name).join(", ")}?`);
-      return;
-    }
-
-    if (parts.length === 1 && BARE_DIRECTIONS[first]) {
-      doGoDirection(BARE_DIRECTIONS[first]);
       return;
     }
 
@@ -1164,6 +1173,58 @@
   }
 
   output.addEventListener("scroll", updateMoreIndicator);
+
+  // The Fullscreen API needs a user gesture, so it can't be invoked on load;
+  // this button is that gesture. `stopPropagation` keeps the tap from also
+  // hitting `crt`'s own click handler below and popping the keyboard open.
+  // Older iOS Safari has no `Element.requestFullscreen` at all, so the
+  // button is dropped rather than left there to silently do nothing.
+  if (crt.requestFullscreen) {
+    fullscreenToggleButton.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        crt.requestFullscreen().catch(() => {});
+      }
+    });
+
+    // Lift the terminal's bottom edge clear of the browser's own "swipe down
+    // to exit full screen" banner while it is on screen.
+    //
+    // 10s is timed against the real banner on Android Chrome — one device,
+    // not a survey, so treat it as the observation it is rather than a
+    // constant that holds everywhere.
+    //
+    // It cannot be derived at runtime. The banner fires no event when it
+    // appears or fades, unlike the on-screen keyboard, which
+    // `interactive-widget=resizes-content` turns into a real viewport change
+    // we can react to. Nor is it readable from Android's "Time to take
+    // action" accessibility setting: that reaches native apps through
+    // AccessibilityManager.getRecommendedTimeoutMillis(), which has no
+    // JavaScript binding — React Native had to write one — and no CSS media
+    // feature reports it either. Re-time it and change it here.
+    //
+    // An installed PWA never shows the banner at all, so none of this runs
+    // on the home-screen launch path.
+    const BANNER_CLEARANCE_MS = 10000;
+    let bannerClearanceTimer = null;
+
+    document.addEventListener("fullscreenchange", () => {
+      clearTimeout(bannerClearanceTimer);
+      if (document.fullscreenElement) {
+        crt.classList.add("banner-clearance");
+        bannerClearanceTimer = setTimeout(
+          () => crt.classList.remove("banner-clearance"),
+          BANNER_CLEARANCE_MS,
+        );
+      } else {
+        crt.classList.remove("banner-clearance");
+      }
+    });
+  } else {
+    fullscreenToggleButton.remove();
+  }
 
   // A tap on the terminal is the one case that means "I want to type" —
   // the keyboard opening is the point, so this refocus is not suppressed.
