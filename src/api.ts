@@ -609,8 +609,14 @@ export async function dispatch(
   path: string,
   handler: RequestHandler,
 ): Promise<RouteResult> {
+  // HEAD has no route table of its own — per HTTP semantics it gets whatever
+  // GET would have returned, just without a body (handleFetchRequest strips
+  // it). Without this fallback every HEAD request 404s, since ROUTES only
+  // ever registers "GET": a bot or fetch tool that probes with HEAD before
+  // GET-ing sees a dead link and never issues the GET at all.
+  const lookupMethod = method === "HEAD" ? "GET" : method;
   for (const entry of ROUTES) {
-    if (entry.method !== method) {
+    if (entry.method !== lookupMethod) {
       continue;
     }
     const match = entry.pattern.exec(path);
@@ -694,5 +700,9 @@ export async function handleFetchRequest(engine: Engine, request: Request): Prom
   }
 
   const [status, payload] = await dispatch(request.method, path, handler);
-  return toResponse(status, payload);
+  const response = toResponse(status, payload);
+  if (request.method === "HEAD") {
+    return new Response(null, { status: response.status, headers: response.headers });
+  }
+  return response;
 }
