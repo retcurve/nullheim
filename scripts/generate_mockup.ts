@@ -12,12 +12,20 @@
  * Usage:
  *   node scripts/generate_mockup.ts [count] [out-path]
  *
- * Defaults to 1000 sectors written to mockup.sqlite at the repo root. Point a
- * server at the result to browse it:
+ * Defaults to 1000 sectors written straight into `wrangler dev`'s own local
+ * D1 file — found automatically under .wrangler/state — so `npm run dev`
+ * (or dev:worker) picks up the result on its next request with no restart
+ * and no separate --db flag. Pass an explicit out-path to write somewhere
+ * else instead (e.g. for the Node CLI's `serve --db`).
  *
- *   node src/cli.ts serve --cooldown-seconds 0 --db mockup.sqlite
+ * `wrangler dev` must have been run at least once first, to create that
+ * local D1 file — and per CLAUDE.md's "the local SQLite file is still
+ * single-process", stop it before running this script and restart it after,
+ * so the two processes never hold the file open at the same time.
  */
 
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { openSqlite } from "../src/db/sqlite.ts";
 import { SCHEMA_SQL } from "../src/db/schema.node.ts";
 import { Engine, ensureGenesis } from "../src/engine.ts";
@@ -26,7 +34,40 @@ import { Registry } from "../src/registry.ts";
 import { WorldStore } from "../src/store.ts";
 
 const TARGET_SECTORS = Number(process.argv[2] ?? 1000);
-const OUT_PATH = process.argv[3] ?? new URL("../mockup.sqlite", import.meta.url).pathname;
+const OUT_PATH = process.argv[3] ?? findLocalD1File();
+
+/**
+ * `wrangler dev`'s local D1 simulator is a plain SQLite file — the same
+ * schema as production, just applied via `wrangler d1 migrations apply
+ * --local` instead of on Cloudflare — so node:sqlite can open and write to
+ * it directly. Its name is an opaque hash Wrangler derives from the database
+ * id, not something worth hardcoding, so it's found by listing the
+ * directory instead: one real .sqlite file lives there alongside
+ * Miniflare's own metadata.sqlite.
+ */
+function findLocalD1File(): string {
+  const dir = new URL(
+    "../.wrangler/state/v3/d1/miniflare-D1DatabaseObject/",
+    import.meta.url,
+  ).pathname;
+  if (!existsSync(dir)) {
+    throw new Error(
+      `no local D1 state at ${dir} — run \`npm run dev:worker\` once first ` +
+        `so wrangler creates it, or pass an explicit out-path.`,
+    );
+  }
+  const candidates = readdirSync(dir).filter(
+    (name) => name.endsWith(".sqlite") && name !== "metadata.sqlite",
+  );
+  if (candidates.length !== 1) {
+    throw new Error(
+      `expected exactly one local D1 database file in ${dir}, found ` +
+        `${candidates.length} (${candidates.join(", ") || "none"}) — pass ` +
+        `an explicit out-path instead.`,
+    );
+  }
+  return join(dir, candidates[0]!);
+}
 
 const ADJECTIVES = [
   "Copper", "Salt", "Quiet", "Burnt", "Drowned", "Hollow", "Gilded", "Frozen",
@@ -115,11 +156,30 @@ function makeSector(rng: () => number, coordinate: [number, number], index: numb
   };
 }
 
+/**
+ * `CREATE TABLE IF NOT EXISTS` (below) is a no-op against an already-baked
+ * database, so a local D1 file that predates a later migration — like
+ * 0002_add_image.sql's `image` columns — stays short those columns even
+ * after SCHEMA_SQL runs. store.ts's INSERTs always name `image` explicitly,
+ * so a stale column set fails on the first sector, not with a helpful
+ * error. Bring it up to schema.sql's current shape by hand, the same way
+ * `wrangler d1 migrations apply --local` would.
+ */
+async function patchMissingImageColumns(db: Awaited<ReturnType<typeof openSqlite>>): Promise<void> {
+  for (const table of ["sectors", "objects"]) {
+    const columns = await db.all<{ name: string }>(`PRAGMA table_info(${table})`);
+    if (!columns.some((c) => c.name === "image")) {
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN image TEXT`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const rng = mulberry32(0xc0ffee);
 
   const db = openSqlite(OUT_PATH);
   await db.exec(SCHEMA_SQL);
+  await patchMissingImageColumns(db);
   const store = new WorldStore(db);
   const registry = new Registry(db, { leaseSeconds: 3600, cooldownSeconds: 0 });
   await ensureGenesis(store);
