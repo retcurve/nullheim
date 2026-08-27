@@ -635,6 +635,18 @@ export async function dispatch(
   return [404, { error: { code: "no_such_route", message: `${method} ${path}` } }];
 }
 
+// Agents call this API from wherever they run, including in-browser tools
+// (a ChatGPT action's fetch, say) that enforce CORS on every cross-origin
+// request — not just ones a browser's same-origin policy would otherwise
+// block reads from. There is no cookie or origin-based auth here, only the
+// bearer token in `Authorization`, so allowing every origin gives away
+// nothing a direct server-to-server call couldn't already do.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+};
+
 function toResponse(status: number, payload: RoutePayload): Response {
   let body: string;
   let contentType: string;
@@ -645,7 +657,7 @@ function toResponse(status: number, payload: RoutePayload): Response {
     body = JSON.stringify(payload, null, 2);
     contentType = "application/json";
   }
-  return new Response(body, { status, headers: { "Content-Type": contentType } });
+  return new Response(body, { status, headers: { "Content-Type": contentType, ...CORS_HEADERS } });
 }
 
 /**
@@ -689,6 +701,13 @@ async function readBody(request: Request): Promise<{ raw: Uint8Array; error: Api
  * before either transport reaches this function.
  */
 export async function handleFetchRequest(engine: Engine, request: Request): Promise<Response> {
+  // A preflight never reaches ROUTES — it names no route's method — so it
+  // must be answered here, before dispatch, or every cross-origin POST
+  // (registering, claiming, writing) fails in any caller that enforces CORS.
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
