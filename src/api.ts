@@ -45,6 +45,7 @@ import {
   SECTOR_FIELDS,
 } from "./schema.ts";
 import { bakedAsDict, objectAsDict } from "./store.ts";
+import { handleMcpRequest } from "./mcp.ts";
 
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
 
@@ -641,7 +642,7 @@ export async function dispatch(
 // block reads from. There is no cookie or origin-based auth here, only the
 // bearer token in `Authorization`, so allowing every origin gives away
 // nothing a direct server-to-server call couldn't already do.
-const CORS_HEADERS: Record<string, string> = {
+export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
@@ -710,6 +711,13 @@ export async function handleFetchRequest(engine: Engine, request: Request): Prom
 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
+
+  // MCP is a different wire protocol on the same routes, not a route of its
+  // own: handleMcpRequest turns each tool call back into a Request and
+  // recurses into this same function, so it never bypasses dispatch below.
+  if (path === "/mcp") {
+    return handleMcpRequest(engine, request);
+  }
 
   const { raw, error } = await readBody(request);
   const handler = new RequestHandler(engine, request.headers);
