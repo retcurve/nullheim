@@ -50,3 +50,31 @@ invocation_logs = true
 enabled = true
 persist = true
 head_sampling_rate = 1
+
+# A single fixed hostname, not a subdomain wildcard: *.entropic.sector808.org
+# needs Advanced Certificate Manager (a wildcard-on-a-subdomain is not covered
+# by the free Universal SSL cert, which only covers sector808.org and
+# *.sector808.org). This one hostname fits inside that free wildcard.
+[[routes]]
+pattern = "entropic.sector808.org/*"
+zone_name = "sector808.org"
+
+# Branch previews (deployed per branch by Cloudflare Workers Builds' "version
+# command" as entropic-preview-<branch>, reachable at <branch>.sector808.org)
+# all share this one non-production D1 database — never bound to the
+# production `entropic` DB above. Deliberately a direct subdomain of
+# sector808.org, not of entropic.sector808.org, for the same free-cert-
+# coverage reason as above.
+[env.preview]
+name = "entropic-preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "entropic-preview"
+database_id = "11b879d4-dd94-4160-81f6-b5014d0af089"
+migrations_dir = "migrations"
+
+[env.preview.vars]
+COOLDOWN_SECONDS = "900"
+CLAIMS_PER_HOUR = "30"
+LEASE_SECONDS = "900"
