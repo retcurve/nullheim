@@ -11,8 +11,16 @@
   box-sizing: border-box;
 }
 
-html, body {
+/* `dvh` (dynamic viewport height) is the unit that actually shrinks with
+   the on-screen keyboard on a phone — `%`/`vh` measure the layout viewport,
+   which most mobile browsers leave full-size behind the keyboard instead of
+   resizing. The plain `100%`/`100vh` line first is a fallback for browsers
+   old enough not to know `dvh` at all; they simply ignore the line after
+   it, so this needs no @supports check. Set on both html and body, the same
+   pairing used for this in kira-platform's app/layout.js. */
+html {
   height: 100%;
+  height: 100dvh;
 }
 
 /* Set on <html> while the map popup is open — belt and suspenders against
@@ -23,6 +31,8 @@ html.map-open, html.map-open body {
 
 body {
   margin: 0;
+  height: 100%;
+  height: 100dvh;
   background: #000;
   display: flex;
   align-items: center;
@@ -255,6 +265,7 @@ body {
    fit the viewport outright (never larger), so unlike the scrollable grid
    inside it, this box itself never needs to scroll or grow. */
 #map-popup {
+  position: relative;
   width: min(900px, 96vw);
   height: min(640px, 92vh);
   background: var(--bg);
@@ -284,14 +295,27 @@ body {
   min-height: 0;
   /* Hidden, not auto — no native scrollbar. Still fully scrollable: `hidden`
      only turns off the browser's own scrollbar and wheel/touch handling,
-     not scriptable scrollTop/scrollLeft, so the wheel and arrow-key handlers
-     below drive it directly instead. */
+     not scriptable scrollTop/scrollLeft, so the wheel, arrow-key and touch
+     handlers below drive it directly instead. `touch-action: none` stops
+     the browser's own pan/zoom gestures (and any pull-to-refresh) from
+     intercepting a drag before the touchmove handler sees it. */
+  touch-action: none;
   overflow: hidden;
+  cursor: grab;
+  /* Click-and-hold panning is a mousedown-then-drag, exactly what the
+     browser's own text selection listens for — without this, dragging over
+     a sector's label highlights its text instead of just panning. */
+  user-select: none;
+  -webkit-user-select: none;
   display: flex;
   /* Breathing room lives here, as padding on the scrollable container, not
      as margin on the grid — padding stays reachable at every scroll extreme
      once the grid overflows, where a margin would just get clipped. */
   padding: 24px;
+}
+
+#map-viewport.dragging {
+  cursor: grabbing;
 }
 
 #map-grid {
@@ -365,6 +389,43 @@ body {
 .map-cell .map-cell-label strong {
   color: var(--fg-bright);
   font-weight: bold;
+}
+
+/* Tappable equivalents of the +/-/Esc keys — the popup is otherwise
+   keyboard-only, which a touch device has no way to drive. Floated over the
+   viewport's own top-right corner rather than added to #map-hint so they
+   stay reachable by thumb regardless of scroll position. */
+#map-controls {
+  position: absolute;
+  top: 52px;
+  right: 24px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#map-controls button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--title);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--title);
+  font: bold 18px "Courier New", ui-monospace, monospace;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(255, 204, 51, 0.25);
+}
+
+#map-controls button:hover,
+#map-controls button:active {
+  background: rgba(255, 204, 51, 0.22);
+  border-color: var(--title);
+}
+
+#map-controls #map-exit {
+  margin-top: 8px;
 }
 
 #map-tooltip {

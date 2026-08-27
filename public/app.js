@@ -26,6 +26,9 @@
   const mapViewport = document.getElementById("map-viewport");
   const mapGrid = document.getElementById("map-grid");
   const mapTooltip = document.getElementById("map-tooltip");
+  const mapZoomInButton = document.getElementById("map-zoom-in");
+  const mapZoomOutButton = document.getElementById("map-zoom-out");
+  const mapExitButton = document.getElementById("map-exit");
 
   /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map}|null} */
   let model = null;
@@ -507,7 +510,19 @@
     mapGrid.appendChild(frag);
   }
 
-  function mapZoomTo(cellPx, focus) {
+  /**
+   * `relayout: false` resizes without rebuilding the grid's children.
+   *
+   * The grid's geometry is entirely a function of the --map-cell variable,
+   * so a resize only needs to set that; renderMapGrid()'s `innerHTML = ""`
+   * exists solely to re-decide which labels still fit. That rebuild is fatal
+   * mid-touch: a touch's target element is fixed when the finger lands, and
+   * once that node is detached, later touchmove events no longer bubble to
+   * #map-viewport (browsers commonly fire touchcancel instead), so a pinch
+   * would die after its first frame. Pinch therefore resizes with
+   * `relayout: false` and does one full render when the gesture ends.
+   */
+  function mapZoomTo(cellPx, focus, { relayout = true } = {}) {
     const s = mapState;
     if (!s) {
       return;
@@ -521,7 +536,11 @@
     const ratio = mapClampCell(cellPx) / s.cell;
 
     s.cell = mapClampCell(cellPx);
-    renderMapGrid();
+    if (relayout) {
+      renderMapGrid();
+    } else {
+      mapGrid.style.setProperty("--map-cell", `${s.cell}px`);
+    }
 
     mapViewport.scrollLeft = contentX * ratio - before.x;
     mapViewport.scrollTop = contentY * ratio - before.y;
@@ -591,7 +610,7 @@
     mapState = null;
     document.documentElement.classList.remove("map-open");
     document.removeEventListener("keydown", onMapKeydown);
-    refocus();
+    refocus({ suppressKeyboard: true });
   }
 
   function onMapKeydown(ev) {
@@ -622,6 +641,12 @@
     }
   }
 
+  // Same actions as the +/-/Esc keys, exposed as tappable buttons — the
+  // keyboard has no equivalent on a phone or tablet.
+  mapZoomInButton.addEventListener("click", () => mapZoomTo(mapState.cell + 12));
+  mapZoomOutButton.addEventListener("click", () => mapZoomTo(mapState.cell - 12));
+  mapExitButton.addEventListener("click", () => closeMapOverlay());
+
   mapViewport.addEventListener("wheel", (ev) => {
     ev.preventDefault();
     if (ev.ctrlKey) {
@@ -633,9 +658,112 @@
     // overflow is `hidden` on this element (no native scrollbar, see the
     // CSS), which also means no native wheel scrolling — driven by hand here
     // instead, the same as the arrow keys just below.
+    if (ev.shiftKey) {
+      // A plain mouse wheel only ever reports motion as deltaY — shift is
+      // the conventional modifier for "scroll that sideways instead" — so
+      // deltaY is what drives scrollLeft here, not deltaX (which stays ~0
+      // for a wheel in the first place, shift or not).
+      mapViewport.scrollLeft += ev.deltaX || ev.deltaY;
+      return;
+    }
     mapViewport.scrollLeft += ev.deltaX;
     mapViewport.scrollTop += ev.deltaY;
   });
+
+  // Touch has no wheel and no arrow keys, so a single-finger drag pans and a
+  // two-finger pinch zooms (touch's equivalent of ctrl+wheel) — tracked by
+  // hand as one gesture, keyed by how many fingers are down right now.
+  let touchGesture = null; // { count: 1, x, y, scrollLeft, scrollTop } or { count: 2, startDistance, startCell }
+  // Set while a pinch has resized the grid without relaying it out, so the
+  // labels get their one full render once the fingers are off.
+  let pinchNeedsRelayout = false;
+
+  function touchMidpoint(touches) {
+    const rect = mapViewport.getBoundingClientRect();
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+      y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top,
+    };
+  }
+
+  function touchDistance(touches) {
+    return Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+  }
+
+  /** (Re)establishes the gesture baseline from whatever touches are down right now. */
+  function beginTouchGesture(touches) {
+    if (touches.length === 1) {
+      touchGesture = {
+        count: 1,
+        x: touches[0].clientX,
+        y: touches[0].clientY,
+        scrollLeft: mapViewport.scrollLeft,
+        scrollTop: mapViewport.scrollTop,
+      };
+    } else if (touches.length === 2) {
+      touchGesture = { count: 2, startDistance: touchDistance(touches), startCell: mapState.cell };
+    } else {
+      touchGesture = null;
+    }
+  }
+
+  mapViewport.addEventListener("touchstart", (ev) => {
+    // Only for a second finger — never for the first. preventDefault() on a
+    // single-finger touchstart suppresses the synthesized click that a tap
+    // depends on, which is how you select a sector; the native gestures it
+    // would otherwise guard against are already off via `touch-action: none`
+    // in the CSS. With two fingers down there is no tap to preserve, and
+    // suppressing the browser's own pinch is worth having.
+    if (ev.touches.length === 2) {
+      ev.preventDefault();
+    }
+    beginTouchGesture(ev.touches);
+  }, { passive: false });
+
+  mapViewport.addEventListener("touchmove", (ev) => {
+    // A second finger landing mid-pan (or the first lifting mid-pinch)
+    // doesn't reliably raise its own touchstart/touchend before this fires —
+    // phones vary, and waiting for one lets a fast pinch get read as a pan
+    // that ignores the second finger entirely. Re-baselining here instead of
+    // trusting only touchstart/touchend is what makes that transition solid.
+    if (!touchGesture || touchGesture.count !== ev.touches.length) {
+      beginTouchGesture(ev.touches);
+      if (!touchGesture) {
+        return;
+      }
+    }
+    ev.preventDefault();
+    if (touchGesture.count === 2) {
+      const ratio = touchDistance(ev.touches) / touchGesture.startDistance;
+      // relayout: false — see mapZoomTo. Rebuilding the grid here would
+      // detach the elements this very gesture's touches are targeting.
+      mapZoomTo(touchGesture.startCell * ratio, touchMidpoint(ev.touches), { relayout: false });
+      pinchNeedsRelayout = true;
+      return;
+    }
+    const touch = ev.touches[0];
+    mapViewport.scrollLeft = touchGesture.scrollLeft - (touch.clientX - touchGesture.x);
+    mapViewport.scrollTop = touchGesture.scrollTop - (touch.clientY - touchGesture.y);
+  }, { passive: false });
+
+  // Lifting a finger — out of a pinch down to one, or the last one entirely —
+  // re-baselines the same way, so a remaining finger resumes panning from
+  // wherever it already is instead of a dead gesture until all fingers lift.
+  function endTouch(ev) {
+    beginTouchGesture(ev.touches);
+    // Only once every finger is off: a relayout with a touch still down
+    // would detach that touch's target and kill the follow-on pan.
+    if (pinchNeedsRelayout && ev.touches.length === 0) {
+      pinchNeedsRelayout = false;
+      renderMapGrid();
+    }
+  }
+
+  mapViewport.addEventListener("touchend", endTouch);
+  mapViewport.addEventListener("touchcancel", endTouch);
 
   mapGrid.addEventListener("mousemove", (ev) => {
     const cellEl = ev.target.closest(".map-cell.filled");
@@ -654,7 +782,67 @@
     mapTooltip.classList.add("hidden");
   });
 
+  // Click-and-hold panning — a mouse has no fingers to drag with, so this is
+  // the desktop equivalent of the touch drag above. A plain click still
+  // teleports: MOUSE_DRAG_THRESHOLD lets the mousedown/mouseup pair under it
+  // fall through to the click handler below untouched, same as a real click
+  // always would.
+  const MOUSE_DRAG_THRESHOLD = 4;
+  let mouseDrag = null; // { x, y, scrollLeft, scrollTop, dragging }
+  let suppressNextMapClick = false;
+
+  mapViewport.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0) {
+      return;
+    }
+    // Belt and suspenders alongside the CSS user-select: none — stops the
+    // browser starting a text selection from this mousedown before the drag
+    // even begins, in case CSS alone doesn't catch a given browser's timing.
+    ev.preventDefault();
+    mouseDrag = {
+      x: ev.clientX,
+      y: ev.clientY,
+      scrollLeft: mapViewport.scrollLeft,
+      scrollTop: mapViewport.scrollTop,
+      dragging: false,
+    };
+  });
+
+  // Bound on document, not mapViewport, so the drag keeps tracking even if
+  // the cursor slips past the viewport's edge mid-drag.
+  document.addEventListener("mousemove", (ev) => {
+    if (!mouseDrag) {
+      return;
+    }
+    const dx = ev.clientX - mouseDrag.x;
+    const dy = ev.clientY - mouseDrag.y;
+    if (!mouseDrag.dragging) {
+      if (Math.hypot(dx, dy) < MOUSE_DRAG_THRESHOLD) {
+        return;
+      }
+      mouseDrag.dragging = true;
+      mapViewport.classList.add("dragging");
+    }
+    mapViewport.scrollLeft = mouseDrag.scrollLeft - dx;
+    mapViewport.scrollTop = mouseDrag.scrollTop - dy;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (mouseDrag?.dragging) {
+      mapViewport.classList.remove("dragging");
+      // The mouseup that ends a drag is immediately followed by a click
+      // event on whatever's under the cursor — without this, releasing a
+      // drag over a sector would also teleport there.
+      suppressNextMapClick = true;
+    }
+    mouseDrag = null;
+  });
+
   mapGrid.addEventListener("click", (ev) => {
+    if (suppressNextMapClick) {
+      suppressNextMapClick = false;
+      return;
+    }
     const cellEl = ev.target.closest(".map-cell.filled");
     if (!cellEl) {
       return;
@@ -912,8 +1100,29 @@
 
   // --- input handling ---------------------------------------------------------
 
-  function refocus() {
+  /**
+   * `suppressKeyboard: true` refocuses the hidden input (so a physical
+   * keyboard keeps working immediately) without popping the on-screen one up
+   * on mobile — toggling `readOnly` around the `focus()` call is the
+   * standard way to get that, since mobile browsers don't summon a virtual
+   * keyboard for a read-only field. It flips back on the next tick, well
+   * before any human could react, so it never blocks real typing. Used
+   * wherever focus is restored programmatically rather than from a tap the
+   * user meant as "I want to type now" — page load, tab refocus, and
+   * closing the map overlay (a tap on its own Exit button or a sector, which
+   * would otherwise count as exactly that kind of gesture and summon the
+   * keyboard right as the map disappears).
+   */
+  function refocus({ suppressKeyboard = false } = {}) {
+    if (!suppressKeyboard) {
+      hiddenInput.focus();
+      return;
+    }
+    hiddenInput.readOnly = true;
     hiddenInput.focus();
+    setTimeout(() => {
+      hiddenInput.readOnly = false;
+    }, 0);
   }
 
   hiddenInput.addEventListener("input", () => {
@@ -956,11 +1165,13 @@
 
   output.addEventListener("scroll", updateMoreIndicator);
 
-  crt.addEventListener("click", refocus);
-  window.addEventListener("load", refocus);
+  // A tap on the terminal is the one case that means "I want to type" —
+  // the keyboard opening is the point, so this refocus is not suppressed.
+  crt.addEventListener("click", () => refocus());
+  window.addEventListener("load", () => refocus({ suppressKeyboard: true }));
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      refocus();
+      refocus({ suppressKeyboard: true });
     }
   });
 
@@ -1039,7 +1250,7 @@
         }
       }
     }
-    refocus();
+    refocus({ suppressKeyboard: true });
   }
 
   start();

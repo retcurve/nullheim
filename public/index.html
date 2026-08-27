@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- interactive-widget=resizes-content: without it, Chrome's default
+     (resizes-visual) only shrinks window.visualViewport for the on-screen
+     keyboard, not the layout viewport that 100dvh/vh/% measure — so #crt
+     would stay full-size and sit half behind the keyboard. iOS Safari
+     ignores this hint and already resizes dvh for the keyboard on its own,
+     so this only changes behavior on the browsers where it was missing. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>The Entropic</title>
 <link rel="stylesheet" href="/enter/style.css">
 </head>
@@ -22,6 +28,11 @@
     <div id="map-hint">+/&minus; zoom &middot; arrow keys scroll &middot; click a sector to teleport &middot; Esc to close</div>
     <div id="map-viewport">
       <div id="map-grid"></div>
+    </div>
+    <div id="map-controls">
+      <button id="map-zoom-in" type="button" aria-label="Zoom in">+</button>
+      <button id="map-zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+      <button id="map-exit" type="button" aria-label="Close map">&times;</button>
     </div>
   </div>
 </div>
