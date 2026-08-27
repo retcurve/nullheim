@@ -26,7 +26,8 @@ html {
 
 /* Set on <html> while the map popup is open — belt and suspenders against
    page-level scroll, on top of the popup's own containment. */
-html.map-open, html.map-open body {
+html.map-open, html.map-open body,
+html.boss-open, html.boss-open body {
   overflow: hidden;
 }
 
@@ -288,6 +289,37 @@ body {
   #output::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* --- boss overlay ------------------------------------------------------ */
+
+/* Unlike #map-overlay, this reads as the whole screen being taken over —
+   no framed popup, no dimmed backdrop behind it — because the entire point
+   is that nothing of the game is visible while it's up. */
+#boss-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  color: #d8d8d8;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  cursor: default;
+}
+
+#boss-overlay.hidden {
+  display: none;
+}
+
+#boss-sheet {
+  margin: 0;
+  padding: 12px;
+  font-family: "Courier New", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 14px;
+  line-height: 1.25;
+  white-space: pre;
 }
 
 /* --- map overlay ----------------------------------------------------- */

@@ -30,6 +30,8 @@
   const mapZoomOutButton = document.getElementById("map-zoom-out");
   const mapExitButton = document.getElementById("map-exit");
   const fullscreenToggleButton = document.getElementById("fullscreen-toggle");
+  const bossOverlay = document.getElementById("boss-overlay");
+  const bossSheet = document.getElementById("boss-sheet");
 
   /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map}|null} */
   let model = null;
@@ -1024,6 +1026,16 @@
         doHelp();
       },
     },
+    {
+      name: "boss",
+      aliases: [],
+      args: "",
+      hidden: true,
+      description: "Pull up a spreadsheet, in case anyone's looking over your shoulder.",
+      run() {
+        doBoss();
+      },
+    },
   ];
 
   function commandUsage(cmd) {
@@ -1035,9 +1047,77 @@
   function doHelp() {
     const lines = ["##Commands##"];
     for (const cmd of COMMANDS) {
+      if (cmd.hidden) {
+        continue;
+      }
       lines.push(`**${commandUsage(cmd)}** — ${cmd.description}`);
     }
     print(lines.join("\n"));
+  }
+
+  /**
+   * A fake MS-DOS-style spreadsheet, set as `textContent` (never run through
+   * `toHtml`) so its box-drawing characters and column alignment survive
+   * untouched — the classic "boss key" gag, minus actually hiding anything.
+   */
+  const BOSS_SHEET = String.raw`
+L E D G E R S T O N E   -   [SYNERGY_Q3_FINAL_FINAL_v2.LSX]
+File  Edit  Style  Graph  Print  Database  Tools  Window  Help              F1=Help
+================================================================================
+      A                B          C          D          E          F
+   +----------------------------------------------------------------------+
+ 1 |  TOTALLY LEGITIMATE QUARTERLY SYNERGY REPORT                         |
+ 2 |------------------------------------------------------------------------
+ 3 |               Q1        Q2        Q3        Q4        TOTAL          |
+ 4 |------------------------------------------------------------------------
+ 5 | Blue-Sky Revenue 42,100 45,900    48,250    51,700    187,950        |
+ 6 | Buzzword Spend   18,400 19,100    20,050    21,300     78,850        |
+ 7 | Vibes (net)      23,700 26,800    28,200    30,400    109,100        |
+ 8 |------------------------------------------------------------------------
+ 9 | Salaries We Deny 15,000 15,000    15,750    15,750     61,500        |
+10 | Snacks & Regret   3,200  3,350     3,400     3,600      13,550       |
+11 | Printer Toner       810    640       905       775        3,130     |
+12 | Misc "Consulting"   999    999       999       999        3,996     |
+13 | Emergency Pizza     412    288       650       310        1,660     |
+14 |------------------------------------------------------------------------
+15 | Definitely Profit 4,690  7,810    8,145    10,275     30,920        |
+   +----------------------------------------------------------------------+
+
+C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
+================================================================================
+`.replace(/^\n/, "");
+
+  /**
+   * Unlike the map, this takes over the whole screen and hides the rest of
+   * the interface — that's the entire point of a boss key — so it gets its
+   * own overlay rather than printing into #output. Closed only by Esc, the
+   * same as the map overlay, and for the same reason: keeps the rest of
+   * the game locked out from underneath while it's up.
+   */
+  function openBossOverlay() {
+    bossSheet.textContent = BOSS_SHEET;
+    bossOverlay.classList.remove("hidden");
+    document.documentElement.classList.add("boss-open");
+    hiddenInput.blur();
+    document.addEventListener("keydown", onBossKeydown);
+  }
+
+  function closeBossOverlay() {
+    bossOverlay.classList.add("hidden");
+    document.documentElement.classList.remove("boss-open");
+    document.removeEventListener("keydown", onBossKeydown);
+    refocus({ suppressKeyboard: true });
+  }
+
+  function onBossKeydown(ev) {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeBossOverlay();
+    }
+  }
+
+  function doBoss() {
+    openBossOverlay();
   }
 
   /**
