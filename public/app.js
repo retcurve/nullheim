@@ -167,10 +167,10 @@
     scrollOutputTo(anchorEl.offsetTop - revealContextPx());
   }
 
-  function appendEntry(text, className, { anchor = false } = {}) {
+  function appendEntry(text, className, { anchor = false, raw = false } = {}) {
     const div = document.createElement("div");
     div.className = className ? `entry ${className}` : "entry";
-    div.innerHTML = toHtml(text);
+    div.innerHTML = raw ? escapeHtml(text) : toHtml(text);
     output.appendChild(div);
 
     if (anchor) {
@@ -185,6 +185,15 @@
 
   function print(text) {
     appendEntry(text, "");
+  }
+
+  /**
+   * ASCII art is printed raw (escaped, not run through toHtml) because its
+   * own underscores and asterisks would otherwise be misread as our
+   * `__underline__`/`**bold**` convention and mangle the letterforms.
+   */
+  function printLogo(text) {
+    appendEntry(text, "logo", { raw: true });
   }
 
   function printError(text) {
@@ -926,6 +935,13 @@
 
   // --- boot ---------------------------------------------------------------
 
+  const LOGO = [
+    " _____ _  _ ___   ___ _  _ _____ ___  ___  ___ ___ ___",
+    "|_   _| || | __| | __| \\| |_   _| _ \\/ _ \\| _ \\_ _/ __|",
+    "  | | | __ | _|  | _|| .` | | | |   / (_) |  _/| | (__",
+    "  |_| |_||_|___| |___|_|\\_| |_| |_|_\\\\___/|_| |___\\___|",
+  ].join("\n");
+
   const LAST_COORDINATE_KEY = "entropic-last-coordinate";
 
   /** The sector this browser last looked at, or null the first time it ever visits. */
@@ -968,6 +984,7 @@
   }
 
   async function start() {
+    printLogo(LOGO);
     print("Connecting to The Entropic...");
     const coordinate = pickStartCoordinate();
     try {

@@ -106,6 +106,19 @@ body {
   text-shadow: 0 0 4px rgba(255, 85, 51, 0.6);
 }
 
+/* Boot-time ASCII wordmark: exact-width art, so it scrolls horizontally on a
+   narrow screen instead of wrapping (which would destroy the letterforms),
+   and it skips the bold/underline/title markdown convention entirely (see
+   printLogo) so the figlet art's own underscores and asterisks can't be
+   misread as it. */
+#output .entry.logo {
+  color: var(--fg-bright);
+  text-shadow: 0 0 6px rgba(166, 255, 193, 0.55);
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
 #output strong {
   color: var(--fg-bright);
   font-weight: bold;
