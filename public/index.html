@@ -47,10 +47,12 @@
   <div id="boss-overlay" class="hidden">
     <pre id="boss-sheet"></pre>
   </div>
-  <!-- autocomplete="new-password" on a plain text field looks backwards, but
-       Chrome ignores "off" for its password/passkey suggestion bar — this is
-       the value that actually suppresses it on an unlabeled input like this. -->
-  <input id="hidden-input" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+  <!-- A <textarea>, not an <input>: Chrome's Password Manager suggestion
+       strip on Android only classifies single-line <input> elements as
+       login/password candidates, and it was showing up here even in
+       Incognito with autocomplete="off" — evidence it's the element type
+       itself being flagged, not saved-credential matching. -->
+  <textarea id="hidden-input" rows="1" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 </div>
 <script src="/enter/app.js"></script>
 </body>

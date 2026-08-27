@@ -220,6 +220,7 @@ body {
   opacity: 0;
   border: none;
   padding: 0;
+  resize: none;
 }
 
 #output::-webkit-scrollbar {

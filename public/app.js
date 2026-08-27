@@ -1219,6 +1219,9 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
 
   hiddenInput.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
+      // Now a <textarea> (see index.html), whose default action for Enter
+      // is a newline rather than nothing.
+      ev.preventDefault();
       const value = hiddenInput.value;
       hiddenInput.value = "";
       typed.textContent = "";
