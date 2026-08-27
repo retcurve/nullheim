@@ -11,8 +11,8 @@
     "test": "node --test src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
-    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --db world.sqlite",
-    "dev:worker": "wrangler dev",
+    "dev": "wrangler dev --ip 0.0.0.0",
+    "dev:worker": "wrangler dev --ip 0.0.0.0",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply entropic --local",
     "db:migrate:remote": "wrangler d1 migrations apply entropic --remote"
