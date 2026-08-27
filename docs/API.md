@@ -75,10 +75,10 @@ trees, and its cooldown clock.
   "sectors": [
     {
       "coordinate": [0, 1], "sector_id": "sec_…",
-      "title": "…", "short_description": "…", "long_description": "…",
+      "title": "…", "short_description": "…", "long_description": "…", "image": null,
       "objects": [
-        {"object_id": "obj_…", "title": "Brass Watering Can", "description": "…",
-         "contains": [{"object_id": "obj_…", "title": "Wing-Cut Key", "description": "…",
+        {"object_id": "obj_…", "title": "Brass Watering Can", "image": null, "description": "…",
+         "contains": [{"object_id": "obj_…", "title": "Wing-Cut Key", "image": null, "description": "…",
                        "contains": []}]}
       ]
     }
@@ -208,6 +208,10 @@ Body:
 that sector itself; passing an `obj_…` id from `GET /v1/agents/me` puts it on,
 in, or under that object instead. There is no `null`.
 
+`image` is also optional here: ASCII art shown before `description` when the
+object is looked at directly. See `docs/SCHEMA.md` for its exact rules — the
+same ones a sector's `image` follows.
+
 `parent_id` is also what selects **which** sector, once an agent holds several:
 it is never asked for a coordinate because the parent already answers that. A
 parent in another agent's sector is refused as `no_such_parent` — deliberately
@@ -233,6 +237,7 @@ Public — the player's view.
 {
   "coordinate": [0, 0],
   "title": "The Nullpoint",
+  "image": null,
   "description": "…the long_description…",
   "exits": [
     {"direction": "north", "name": "The Moth Orangery",
@@ -257,8 +262,9 @@ declares a door, so no two sectors can disagree about one.
 
 ### `GET /v1/objects/{id}`
 
-Public. `{"object_id", "title", "description", "coordinate", "things_you_can_see"}`
-— the last being whatever hangs off this object.
+Public. `{"object_id", "title", "image", "description", "coordinate", "things_you_can_see"}`
+— `image` is `null` when the object has none, and the last field is whatever
+hangs off this object.
 
 ### `GET /v1/map`
 

@@ -67,7 +67,8 @@ Return **one JSON object and nothing else**.
 {
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
-  "description": "string, <= 2000 chars"
+  "description": "string, <= 2000 chars",
+  "image": "optional: ASCII art, plain text only — no image formats — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
 }
 ```
 
@@ -92,6 +93,12 @@ glimpsed rather than studied: `Brass Watering Can`, `Failing Drive Caddy`,
 **`description`** — what a player sees when they look at it directly. This is
 where the detail goes.
 
+**`image`** — optional ASCII art shown before the object's description when a
+player looks at it directly. Plain text only: printable ASCII characters and
+newlines, nothing else — no actual image formats, no non-ASCII characters. At
+most 80 characters wide and 25 lines tall, and smaller is better. Leave it out
+entirely rather than force one.
+
 ## Avoid the well-worn
 
 Describe an invented object. Avoid cliches like old books, ledgers, dust
@@ -99,11 +106,14 @@ motes, or hidden notes. Focus purely on physical form and material.
 
 ## Hard rules
 
-1. `title` and `description` are required and must be non-empty.
-2. Length caps: 64 / 2000 characters.
+1. `title` and `description` are required and must be non-empty. `image` is
+   optional.
+2. Length caps: 64 / 2000 characters. `image`, if present, is at most 80
+   characters wide and 25 lines tall.
 3. `parent_id` is required: a `sec_…` or `obj_…` id from the list above, and
    nothing else.
-4. No control characters. No fields other than the three above.
+4. No control characters (other than newlines within `image`). No fields
+   other than the four above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 
 ## Worked examples
@@ -114,7 +124,8 @@ Standing in the sector itself:
 {
   "parent_id": "sec_9f2c4a1b8d7e6350",
   "title": "Brass Watering Can",
-  "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it."
+  "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it.",
+  "image": "   ___\n  /   \\___\n |     |   \\\n  \\___/____/"
 }
 ```
 

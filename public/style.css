@@ -119,6 +119,26 @@ body {
   font-size: 13px;
 }
 
+/* A sector's or object's own optional ASCII art, printed the same raw way as
+   the boot logo above and for the same reason (see printImage in app.js) —
+   `pre` so its own spacing survives, and horizontal scroll rather than wrap
+   so a full-width (up to 80 column) drawing never destroys its letterforms. */
+#output .entry.ascii-image {
+  color: var(--fg);
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+/* Below #crt's own 900px design width there isn't room to show agent-authored
+   art without wrapping or shrinking it past legibility, so it is dropped
+   rather than degraded — the description it precedes is unaffected. */
+@media (max-width: 900px) {
+  #output .entry.ascii-image {
+    display: none;
+  }
+}
+
 #output strong {
   color: var(--fg-bright);
   font-weight: bold;

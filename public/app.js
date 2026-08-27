@@ -27,7 +27,7 @@
   const mapGrid = document.getElementById("map-grid");
   const mapTooltip = document.getElementById("map-tooltip");
 
-  /** @type {{coordinate:[number,number], title:string, description:string, exits:Array, objects:Map}|null} */
+  /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map}|null} */
   let model = null;
 
   // --- rendering ------------------------------------------------------------
@@ -196,6 +196,19 @@
     appendEntry(text, "logo", { raw: true });
   }
 
+  /**
+   * A sector's or object's own optional `image`, printed the same raw way as
+   * the boot logo and for the same reason. Its `.ascii-image` class (not
+   * `.logo`, which is this page's own wordmark) is what `#crt`'s narrow-
+   * screen media query hides — agent-authored art at up to 80 columns simply
+   * does not fit once the terminal itself has shrunk below its own 900px
+   * design width, and a wrapped or overflowing "drawing" reads as broken
+   * rather than small.
+   */
+  function printImage(text) {
+    appendEntry(text, "ascii-image", { raw: true });
+  }
+
   function printError(text) {
     appendEntry(text, "error");
   }
@@ -220,6 +233,14 @@
       lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
     }
     return lines.join("\n");
+  }
+
+  /** A sector's own optional `image`, ahead of everything `renderSectorText` prints. */
+  function printSector(m) {
+    if (m.image) {
+      printImage(m.image);
+    }
+    print(renderSectorText(m));
   }
 
   /** Seconds-since-epoch, as the API sends every timestamp, to a readable date. */
@@ -247,6 +268,14 @@
       lines.push("", "##You can also see##", ...kids.map((k) => `**${k.title}**`));
     }
     return lines.join("\n");
+  }
+
+  /** An object's own optional `image`, ahead of everything `renderObjectText` prints. */
+  function printObject(obj) {
+    if (obj.image) {
+      printImage(obj.image);
+    }
+    print(renderObjectText(obj));
   }
 
   function renderExitText(exit) {
@@ -285,6 +314,7 @@
     model = {
       coordinate: data.coordinate,
       title: data.title,
+      image: data.image,
       description: data.description,
       exits: data.exits,
       objects,
@@ -296,6 +326,7 @@
     const merged = {
       object_id: data.object_id,
       title: data.title,
+      image: data.image,
       description: data.description,
       things_you_can_see: data.things_you_can_see,
     };
@@ -327,7 +358,7 @@
     try {
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       printError(`The way is blocked: ${exc.message}`);
     }
@@ -652,7 +683,7 @@
     try {
       const data = await fetchJson(`/v1/objects/${id}`);
       const merged = mergeObject(data);
-      print(renderObjectText(merged));
+      printObject(merged);
     } catch (exc) {
       printError(`Couldn't examine that: ${exc.message}`);
     }
@@ -663,7 +694,7 @@
     try {
       const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       printError(`Couldn't look around: ${exc.message}`);
     }
@@ -990,7 +1021,7 @@
     try {
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       // The stored coordinate can be stale (nothing here has ever been deleted,
       // but a bad or corrupted value could still slip through), so a returning
@@ -1002,7 +1033,7 @@
         try {
           const data = await fetchJson("/v1/sectors/0/0");
           loadModelFromSector(data);
-          print(renderSectorText(model));
+          printSector(model);
         } catch (originExc) {
           printError(`Could not reach the world: ${originExc.message}`);
         }

@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 
 import { coord } from "./coords.ts";
 import {
+  MAX_IMAGE_HEIGHT,
+  MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -100,6 +102,67 @@ describe("parsing a sector", () => {
     assert.deepEqual(second.errors, []);
     assert.deepEqual(second.parsed, first.parsed);
   });
+
+  describe("the optional image", () => {
+    test("is null when the field is absent or explicitly null", () => {
+      let { parsed, errors } = parseSector(sector([0, 1]));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, null);
+
+      ({ parsed, errors } = parseSector(sector([0, 1], { image: null })));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, null);
+    });
+
+    test("a plain ASCII multi-line image is accepted", () => {
+      const art = "+----+\n|    |\n+----+";
+      const { parsed, errors } = parseSector(sector([0, 1], { image: art }));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, art);
+    });
+
+    test("a blank image is rejected rather than treated as absent", () => {
+      const { errors } = parseSector(sector([0, 1], { image: "   " }));
+      assert.ok(codes(errors).has("empty_text"));
+    });
+
+    test("a non-string image is rejected", () => {
+      const { errors } = parseSector(sector([0, 1], { image: 12345 }));
+      assert.ok(codes(errors).has("type_error"));
+    });
+
+    test("non-ASCII characters are rejected — text only, no image formats", () => {
+      for (const bad of ["café", "🙂", "line one\tindented with a tab"]) {
+        const { errors } = parseSector(sector([0, 1], { image: bad }));
+        assert.ok(codes(errors).has("not_ascii_art"), JSON.stringify(bad));
+      }
+    });
+
+    test("a line over the width cap is rejected", () => {
+      const tooWide = "x".repeat(MAX_IMAGE_WIDTH + 1);
+      let { errors } = parseSector(sector([0, 1], { image: tooWide }));
+      assert.ok(codes(errors).has("too_wide"));
+
+      ({ errors } = parseSector(sector([0, 1], { image: "x".repeat(MAX_IMAGE_WIDTH) })));
+      assert.deepEqual(errors, []);
+    });
+
+    test("more rows than the height cap is rejected", () => {
+      const tooTall = Array(MAX_IMAGE_HEIGHT + 1).fill("x").join("\n");
+      let { errors } = parseSector(sector([0, 1], { image: tooTall }));
+      assert.ok(codes(errors).has("too_tall"));
+
+      const exact = Array(MAX_IMAGE_HEIGHT).fill("x").join("\n");
+      ({ errors } = parseSector(sector([0, 1], { image: exact })));
+      assert.deepEqual(errors, []);
+    });
+
+    test("a single trailing newline doesn't count as an extra row", () => {
+      const exact = Array(MAX_IMAGE_HEIGHT).fill("x").join("\n") + "\n";
+      const { errors } = parseSector(sector([0, 1], { image: exact }));
+      assert.deepEqual(errors, []);
+    });
+  });
 });
 
 describe("parsing an object", () => {
@@ -163,5 +226,33 @@ describe("parsing an object", () => {
       obj("sec_abc123", { weight_class: "light", is_weapon: false }),
     );
     assert.ok(codes(errors).has("unknown_field"));
+  });
+
+  describe("the optional image", () => {
+    test("is null when the field is absent", () => {
+      const { parsed, errors } = parseObject(obj("sec_abc123"));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, null);
+    });
+
+    test("a plain ASCII image is accepted, sharing the sector's own limits", () => {
+      const art = "   ___\n  /   \\\n |     |";
+      const { parsed, errors } = parseObject(obj("sec_abc123", { image: art }));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, art);
+    });
+
+    test("non-ASCII characters and oversized dimensions are rejected", () => {
+      let { errors } = parseObject(obj("sec_abc123", { image: "🙂" }));
+      assert.ok(codes(errors).has("not_ascii_art"));
+
+      errors = parseObject(obj("sec_abc123", { image: "x".repeat(MAX_IMAGE_WIDTH + 1) })).errors;
+      assert.ok(codes(errors).has("too_wide"));
+
+      errors = parseObject(
+        obj("sec_abc123", { image: Array(MAX_IMAGE_HEIGHT + 1).fill("x").join("\n") }),
+      ).errors;
+      assert.ok(codes(errors).has("too_tall"));
+    });
   });
 });

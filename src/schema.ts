@@ -22,6 +22,8 @@ export const MAX_SHORT_DESCRIPTION_LEN = 300;
 export const MAX_LONG_DESCRIPTION_LEN = 4000;
 export const MAX_OBJECT_DESCRIPTION_LEN = 2000;
 export const MAX_SUBMISSION_BYTES = 32_768;
+export const MAX_IMAGE_WIDTH = 80;
+export const MAX_IMAGE_HEIGHT = 25;
 
 // --- Sector -----------------------------------------------------------------
 
@@ -45,6 +47,8 @@ export interface Sector {
   readonly title: string;
   readonly shortDescription: string;
   readonly longDescription: string;
+  /** Optional ASCII art, shown before the description. `null` when absent. */
+  readonly image: string | null;
 }
 
 /**
@@ -57,12 +61,14 @@ export const SECTOR_FIELDS = [
   "title",
   "short_description",
   "long_description",
+  "image",
 ] as const;
 
 export function sectorAsDict(sector: Sector): Record<string, unknown> {
   return {
     coordinate: coords.asList(sector.coordinate),
     title: sector.title,
+    image: sector.image,
     short_description: sector.shortDescription,
     long_description: sector.longDescription,
   };
@@ -83,14 +89,17 @@ export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
+  /** Optional ASCII art, shown before the description. `null` when absent. */
+  readonly image: string | null;
 }
 
-export const OBJECT_FIELDS = ["parent_id", "title", "description"] as const;
+export const OBJECT_FIELDS = ["parent_id", "title", "description", "image"] as const;
 
 export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
   return {
     parent_id: draft.parentId,
     title: draft.title,
+    image: draft.image,
     description: draft.description,
   };
 }
@@ -136,6 +145,62 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
     if (point < 32 && ch !== "\n" && ch !== "\t") {
       errors.add("control_characters", path, "must not contain control characters");
       break;
+    }
+  }
+  return raw;
+}
+
+/**
+ * Optional ASCII art. Unlike `text()`, absence is not an error — omitting the
+ * field entirely (or sending `null`) is exactly how an agent says it has none.
+ *
+ * Deliberately stricter than `text()`: only printable ASCII (0x20–0x7E) and
+ * `\n` are allowed, not `\t` or anything outside the ASCII range. Tabs render
+ * inconsistently across terminal widths and would break a fixed-width
+ * drawing; non-ASCII is exactly what "text only, no actual image formats"
+ * rules out, since it is the door base64 or other encoded payloads would
+ * walk through.
+ */
+function asciiImage(raw: unknown, path: string, errors: Collector): string | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  if (typeof raw !== "string") {
+    errors.add("type_error", path, "expected a string of ASCII art, or omit this field entirely");
+    return null;
+  }
+  if (!raw.trim()) {
+    errors.add("empty_text", path, "must not be blank if present; omit the field instead");
+    return raw;
+  }
+  for (const ch of raw) {
+    const point = ch.codePointAt(0)!;
+    if (ch !== "\n" && (point < 0x20 || point > 0x7e)) {
+      errors.add(
+        "not_ascii_art",
+        path,
+        "must be plain ASCII text only (printable characters and newlines) — no " +
+          "image formats and no non-ASCII characters",
+      );
+      break;
+    }
+  }
+  // A single trailing newline is how most editors and generators end a block
+  // of text; counting it as an extra blank row would punish the common case
+  // for a distinction no reader would notice.
+  const lines = raw.split("\n");
+  const rows = lines.length > 1 && lines.at(-1) === "" ? lines.slice(0, -1) : lines;
+  if (rows.length > MAX_IMAGE_HEIGHT) {
+    errors.add("too_tall", path, `must be at most ${MAX_IMAGE_HEIGHT} lines tall (got ${rows.length})`);
+  }
+  for (const [index, line] of rows.entries()) {
+    const width = codePointLength(line);
+    if (width > MAX_IMAGE_WIDTH) {
+      errors.add(
+        "too_wide",
+        `${path}[${index}]`,
+        `line ${index + 1} must be at most ${MAX_IMAGE_WIDTH} characters wide (got ${width})`,
+      );
     }
   }
   return raw;
@@ -218,6 +283,7 @@ export function parseSector(raw: unknown): ParseResult<Sector> {
       "$.long_description",
       errors,
     ),
+    image: asciiImage(raw["image"], "$.image", errors),
   };
   return { parsed: sector, errors: errors.errors };
 }
@@ -259,6 +325,7 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       "$.description",
       errors,
     ),
+    image: asciiImage(raw["image"], "$.image", errors),
   };
   return { parsed: draft, errors: errors.errors };
 }

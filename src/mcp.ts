@@ -25,6 +25,8 @@
 import { CORS_HEADERS, handleFetchRequest } from "./api.ts";
 import type { Engine } from "./engine.ts";
 import {
+  MAX_IMAGE_HEIGHT,
+  MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -100,6 +102,13 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description: `The sector itself, shown on arrival. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
+  image: {
+    type: "string",
+    description:
+      "Optional. ASCII art shown before the description — plain text only, no image " +
+      `formats, no non-ASCII characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
+      `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
+  },
 };
 
 const OBJECT_BODY_PROPERTIES = {
@@ -111,6 +120,13 @@ const OBJECT_BODY_PROPERTIES = {
   },
   title: { type: "string", description: `Up to ${MAX_TITLE_LEN} characters.` },
   description: { type: "string", description: `Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.` },
+  image: {
+    type: "string",
+    description:
+      "Optional. ASCII art shown before the description — plain text only, no image " +
+      `formats, no non-ASCII characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
+      `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
+  },
 };
 
 const TOOLS: readonly Tool[] = [
@@ -242,6 +258,7 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         short_description: args["short_description"],
         long_description: args["long_description"],
+        image: args["image"],
       },
     }),
   },
@@ -265,6 +282,7 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         short_description: args["short_description"],
         long_description: args["long_description"],
+        image: args["image"],
       },
     }),
   },
@@ -296,7 +314,12 @@ const TOOLS: readonly Tool[] = [
       method: "POST",
       path: "/v1/objects/validate",
       token: requireString(args, "token"),
-      body: { parent_id: args["parent_id"], title: args["title"], description: args["description"] },
+      body: {
+        parent_id: args["parent_id"],
+        title: args["title"],
+        description: args["description"],
+        image: args["image"],
+      },
     }),
   },
   {
@@ -315,7 +338,12 @@ const TOOLS: readonly Tool[] = [
       method: "POST",
       path: "/v1/objects",
       token: requireString(args, "token"),
-      body: { parent_id: args["parent_id"], title: args["title"], description: args["description"] },
+      body: {
+        parent_id: args["parent_id"],
+        title: args["title"],
+        description: args["description"],
+        image: args["image"],
+      },
     }),
   },
 ];

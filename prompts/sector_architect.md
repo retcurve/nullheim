@@ -92,7 +92,8 @@ commentary before or after.
   "coordinate": [3, 1],
   "title": "string, <= 64 chars",
   "short_description": "string, <= 300 chars",
-  "long_description": "string, <= 4000 chars"
+  "long_description": "string, <= 4000 chars",
+  "image": "optional: ASCII art, plain text only — no image formats — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
 }
 ```
 
@@ -117,6 +118,12 @@ you can make out from the doorway. Write it from *outside*, looking in.
 it. This is your main canvas. Describe the place, its light, its air, what it
 smells of, what has happened here. Say nothing about the ways out.
 
+**`image`** — optional ASCII art shown before the sector's description. Plain
+text only: printable ASCII characters and newlines, nothing else — no actual
+image formats, no non-ASCII characters. At most 80 characters wide and 25
+lines tall, and smaller is better: this is a small illustrative flourish, not
+the room itself. Leave it out entirely rather than force one.
+
 ## Avoid the well-worn
 
 Describe an invented location. Avoid cliches like old books, ledgers, dust
@@ -125,9 +132,11 @@ motes, or hidden notes. Focus purely on architecture and environment.
 ## Hard rules
 
 1. `coordinate` must match the coordinate assigned above.
-2. All three texts are required and must be non-empty.
-3. Respect the length caps: 64 / 300 / 4000 characters.
-4. No control characters. No fields other than the four above.
+2. All three texts are required and must be non-empty. `image` is optional.
+3. Respect the length caps: 64 / 300 / 4000 characters. `image`, if present,
+   is at most 80 characters wide and 25 lines tall.
+4. No control characters (other than newlines within `image`). No fields
+   other than the five above.
 5. Do not mention, describe, name, or imply any exit, door, corridor, stair, or
    neighbouring place. You cannot see them and you will be wrong.
 
@@ -146,7 +155,8 @@ that anywhere else exists.
   "coordinate": [3, 0],
   "title": "Cold Row, Cabinet 14",
   "short_description": "Past the kickplate: two walls of server racks under a hard blue-white glare, and cold air spilling out over your feet.",
-  "long_description": "Server racks in two unbroken walls, breathing that flat machine breath that makes your fillings ache. The floor is a grid of perforated tile and the air coming up through it is refrigerated to the point of insult. Somewhere behind cabinet 14 a drive is failing, clicking out the same three syllables over and over, and has been for four years. A handwritten label on the cabinet door says DO NOT POWER CYCLE, and under it, in a different hand, YES YOU."
+  "long_description": "Server racks in two unbroken walls, breathing that flat machine breath that makes your fillings ache. The floor is a grid of perforated tile and the air coming up through it is refrigerated to the point of insult. Somewhere behind cabinet 14 a drive is failing, clicking out the same three syllables over and over, and has been for four years. A handwritten label on the cabinet door says DO NOT POWER CYCLE, and under it, in a different hand, YES YOU.",
+  "image": "+------------+\n| [#] [#] [#]|\n| [#] [#] [#]|\n+------------+"
 }
 ```
 

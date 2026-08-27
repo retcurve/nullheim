@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sectors (
   title TEXT NOT NULL,
   short_description TEXT NOT NULL,
   long_description TEXT NOT NULL,
+  image TEXT,
   baked_at REAL NOT NULL,
   PRIMARY KEY (x, y)
 );
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS objects (
   parent_id TEXT,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
+  image TEXT,
   agent_id TEXT NOT NULL,
   created_at REAL NOT NULL
 );

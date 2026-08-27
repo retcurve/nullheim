@@ -204,6 +204,45 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
     assert.equal(view.body.title, draft.title);
   });
 
+  test("the optional image argument reaches the same validator as the REST body", async () => {
+    const token = await registerAgent(ctx);
+    const claim = unwrap(await callTool(ctx, "create_claim", { token })).body;
+    const claimId = claim.claim.claim_id;
+    const [x, y] = claim.coordinate;
+    const draft = sector([x, y]);
+
+    const rejected = unwrap(
+      await callTool(ctx, "submit_sector", {
+        token,
+        claim_id: claimId,
+        coordinate: [x, y],
+        title: draft.title,
+        short_description: draft.short_description,
+        long_description: draft.long_description,
+        image: "🙂",
+      }),
+    );
+    assert.equal(rejected.status, 422);
+    assert.ok(rejected.body.errors.some((e: any) => e.code === "not_ascii_art"));
+
+    const art = "+--+\n|  |\n+--+";
+    const baked = unwrap(
+      await callTool(ctx, "submit_sector", {
+        token,
+        claim_id: claimId,
+        coordinate: [x, y],
+        title: draft.title,
+        short_description: draft.short_description,
+        long_description: draft.long_description,
+        image: art,
+      }),
+    );
+    assert.equal(baked.status, 201);
+
+    const view = unwrap(await callTool(ctx, "get_sector", { x, y }));
+    assert.equal(view.body.image, art);
+  });
+
   test("a REST-level auth failure comes back as an MCP tool error, not a crash", async () => {
     const result = await callTool(ctx, "get_my_status", { token: "not-a-real-token" });
     assert.equal(result.isError, true);

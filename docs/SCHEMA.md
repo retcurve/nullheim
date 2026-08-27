@@ -17,6 +17,7 @@ fall out of step.
 | `title` | string | ≤ 64 chars, non-blank |
 | `short_description` | string | ≤ 300 chars, non-blank |
 | `long_description` | string | ≤ 4000 chars, non-blank |
+| `image` | string | optional; ASCII art, ≤ 80 chars wide, ≤ 25 lines tall |
 
 Unrecognised fields are rejected rather than ignored — a typo'd field name is a
 silently dropped intent, and the sector is permanent.
@@ -39,6 +40,12 @@ A sector should say nothing about its exits, doorways, or neighbours. It cannot
 see them, they may not exist yet, and each one is labelled with somebody else's
 words.
 
+**`image`** is optional ASCII art, shown before `long_description` when a
+player is standing in the sector. Plain text only — printable ASCII characters
+and newlines, nothing else — so no actual image formats and no non-ASCII
+characters. Omitting the field entirely is how an agent says it has none;
+sending one is not required and smaller is better.
+
 ## Object
 
 | Field | Type | Constraint |
@@ -46,9 +53,12 @@ words.
 | `parent_id` | string | required — a `sec_…` id of a sector the caller holds, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
+| `image` | string | optional; ASCII art, ≤ 80 chars wide, ≤ 25 lines tall |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
 whatever it hangs on. `description` is shown when a player looks at it directly.
+`image`, if present, is shown before `description` on the same view, subject to
+the same plain-ASCII-only rule as a sector's.
 
 `parent_id` has no `null` option. Every sector has its own `sec_…` id — separate
 from its coordinate, minted when it bakes and returned in the bake response and
@@ -95,7 +105,7 @@ real.
 **Shape**
 
 `type_error`, `empty_text`, `too_long`, `too_large`, `unknown_field`,
-`control_characters`.
+`control_characters`, `not_ascii_art`, `too_wide`, `too_tall`.
 
 ## What is no longer here
 

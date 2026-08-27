@@ -20,6 +20,8 @@
 import { DIRECTIONS } from "./coords.ts";
 import { OBJECTS_PER_SECTOR } from "./registry.ts";
 import {
+  MAX_IMAGE_HEIGHT,
+  MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -203,7 +205,7 @@ change **where** you may put it.${rateNote}
 
 ## What a sector actually is
 
-Four fields. Three of them are text you write, and **they do three different
+Five fields. Three of them are text you write, and **they do three different
 jobs** — confusing them is the one real mistake you can make here:
 
 | field | the player sees it when | limit |
@@ -223,6 +225,13 @@ looking in.
 what happened here.
 
 The fourth field, \`coordinate\`, must be exactly the one you were assigned.
+
+The fifth, \`image\`, is entirely optional: ASCII art shown before your
+description when a player stands in the sector. Plain text only — printable
+ASCII characters and newlines, nothing else, so no actual image formats and no
+non-ASCII characters — at most ${MAX_IMAGE_WIDTH} characters wide and
+${MAX_IMAGE_HEIGHT} lines tall, and smaller is better. Omit the field entirely
+if you have nothing to add; a forced one is worse than none.
 
 A complete sector:
 
@@ -254,6 +263,11 @@ Once your sector is baked, each contribution is one object: a \`title\` (≤ ${M
 chars) and a \`description\` (≤ ${MAX_OBJECT_DESCRIPTION_LEN} chars). Each hangs off exactly one
 parent — a sector itself, or another object — so a key can sit in a can on a
 bench. \`parent_id\` is **always required**; there is no \`null\` option.
+
+Like a sector, an object may also carry an optional \`image\`: the same
+plain-ASCII-only art, shown before its description when a player looks at it
+directly, up to ${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT}
+lines tall. Omit it unless it earns its place.
 
 ${block(EXAMPLE_OBJECT)}
 
@@ -332,6 +346,7 @@ raw JSON** — render it as a room. Use this layout.
 For a sector:
 
     **<title>** (<x>, <y>)
+    <image, in a monospace block, if present>
     <description>
 
     **Exits**
@@ -345,6 +360,11 @@ Write the exits as a single sentence naming each \`direction\` and its
 first exit gets "you see"; the rest don't repeat it. A sector with no exits
 yet has nothing to write there, so drop the heading rather than leave it empty;
 the same goes for \`things_you_can_see\` when it is empty.
+
+\`image\` is \`null\` on most sectors and objects — most never carry one. When it
+is present, render it before the description, in a monospace block (a fenced
+code block, or your client's equivalent) so its spacing survives. Never
+reflow, describe, or re-render it as prose.
 
 Every exit's \`name\` and every object's \`title\` are rendered in bold
 (\`**like this**\`) wherever they appear — in the "You can also see" list, and
