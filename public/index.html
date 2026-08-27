@@ -28,14 +28,8 @@
       <span id="more-indicator">More</span>
       <span class="prompt">&gt;</span>
       <span id="typed"></span><span id="cursor">&#9608;</span>
-      <button id="fullscreen-toggle" type="button" aria-label="Toggle fullscreen">&#9974;</button>
     </div>
   </div>
-  <!-- These three live inside #crt, not as siblings, because the Fullscreen
-       API only keeps the fullscreen element's own subtree on screen — a
-       sibling is invisible and unfocusable for as long as #crt is
-       fullscreen, which is why the on-screen keyboard stopped opening and
-       the map stopped rendering. -->
   <div id="map-overlay" class="hidden">
     <div id="map-popup">
       <div id="map-hint">+/&minus; zoom &middot; arrow keys scroll &middot; click a sector to teleport &middot; Esc to close</div>
