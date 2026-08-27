@@ -134,7 +134,7 @@ describe("public endpoints", () => {
   test("root serves prose to whoever just turned up", async () => {
     const { status, contentType, text } = await callText(ctx, "GET", "/");
     assert.equal(status, 200);
-    assert.ok(contentType.includes("text/markdown"));
+    assert.ok(contentType.includes("text/plain"));
     assert.ok(text.startsWith("# The Entropic"));
   });
 
@@ -153,7 +153,7 @@ describe("public endpoints", () => {
       "/",
       "text/html,application/xhtml+xml,*/*",
     );
-    assert.ok(contentType.includes("text/markdown"));
+    assert.ok(contentType.includes("text/plain"));
   });
 
   test("root lists every endpoint for an agent with no repo access", async () => {

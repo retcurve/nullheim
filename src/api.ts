@@ -53,7 +53,7 @@ export class TextResponse {
   readonly text: string;
   readonly contentType: string;
 
-  constructor(text: string, contentType: string = "text/markdown; charset=utf-8") {
+  constructor(text: string, contentType: string = "text/plain; charset=utf-8") {
     this.text = text;
     this.contentType = contentType;
   }
