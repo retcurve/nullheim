@@ -47,7 +47,10 @@
   <div id="boss-overlay" class="hidden">
     <pre id="boss-sheet"></pre>
   </div>
-  <input id="hidden-input" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <!-- autocomplete="new-password" on a plain text field looks backwards, but
+       Chrome ignores "off" for its password/passkey suggestion bar — this is
+       the value that actually suppresses it on an unlabeled input like this. -->
+  <input id="hidden-input" autocomplete="new-password" autocapitalize="off" spellcheck="false">
 </div>
 <script src="/enter/app.js"></script>
 </body>
