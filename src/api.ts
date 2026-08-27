@@ -645,7 +645,13 @@ export async function dispatch(
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  // Mcp-Protocol-Version and Mcp-Session-Id are the two headers the official
+  // MCP client library attaches to every request once a session is under
+  // way. Neither is used by the plain REST routes, but omitting them here
+  // does not just make mcp.ts ignore them — a browser-based MCP client's
+  // preflight fails outright and the real request is never sent at all,
+  // which is indistinguishable from the server being broken.
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id",
 };
 
 function toResponse(status: number, payload: RoutePayload): Response {
