@@ -74,9 +74,15 @@ zone_name = "sector808.org"
 # `routes` is an inheritable key, so without the empty list here this
 # environment would inherit the production route above and any deploy of it
 # would take entropic.sector808.org.
+#
+# `workers_dev` is also inheritable, and defaults to false once any `routes`
+# exist anywhere above unless an environment says otherwise — which is why
+# adding the production route silently took the preview URL down too. This
+# environment is only ever reachable at its preview URL, so it must say true.
 [env.preview]
 name = "entropic-preview"
 routes = []
+workers_dev = true
 
 [[env.preview.d1_databases]]
 binding = "DB"
