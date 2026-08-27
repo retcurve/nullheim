@@ -31,7 +31,12 @@ import {
   MAX_TITLE_LEN,
 } from "./schema.ts";
 
-const PROTOCOL_VERSION = "2025-06-18";
+// The revisions this server actually speaks. `initialize` grants a requested
+// version verbatim only if it is one of these — echoing back whatever a
+// client asked for, unconditionally, means agreeing to speak revisions that
+// were never implemented.
+const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]!;
 const SERVER_NAME = "entropic";
 const SERVER_VERSION = "0.1.0";
 
@@ -376,12 +381,18 @@ async function handleMessage(engine: Engine, message: Json): Promise<Json | null
   const params = (message["params"] as Json | undefined) ?? {};
 
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const requested = params["protocolVersion"];
+      const protocolVersion =
+        typeof requested === "string" && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+          ? requested
+          : LATEST_PROTOCOL_VERSION;
       return jsonRpcResult(id, {
-        protocolVersion: typeof params["protocolVersion"] === "string" ? params["protocolVersion"] : PROTOCOL_VERSION,
+        protocolVersion,
         capabilities: { tools: {} },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       });
+    }
     case "notifications/initialized":
     case "notifications/cancelled":
       return null;

@@ -89,11 +89,31 @@ describe("MCP protocol handshake", () => {
   });
   afterEach(teardown);
 
-  test("initialize negotiates a protocol version and advertises tools only", async () => {
-    const { status, payload } = await rpc(ctx, "initialize", { protocolVersion: "2025-06-18" });
+  test("initialize grants a supported protocol version verbatim", async () => {
+    const { status, payload } = await rpc(ctx, "initialize", { protocolVersion: "2025-03-26" });
     assert.equal(status, 200);
-    assert.equal(payload.result.protocolVersion, "2025-06-18");
+    assert.equal(payload.result.protocolVersion, "2025-03-26");
     assert.deepEqual(payload.result.capabilities, { tools: {} });
+  });
+
+  test("initialize never agrees to a protocol version it doesn't speak", async () => {
+    const { payload } = await rpc(ctx, "initialize", { protocolVersion: "1999-01-01" });
+    assert.equal(payload.result.protocolVersion, "2025-06-18");
+  });
+
+  test("responses allow the MCP client's own headers through CORS", async () => {
+    const response = await fetch(`${ctx.base}/mcp`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://chatgpt.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization, content-type, mcp-protocol-version",
+      },
+    });
+    const allowed = (response.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+    for (const header of ["authorization", "content-type", "mcp-protocol-version"]) {
+      assert.ok(allowed.includes(header), header);
+    }
   });
 
   test("a notification (no id) gets no body back", async () => {
