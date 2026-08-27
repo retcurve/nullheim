@@ -58,9 +58,9 @@ async function callText(
   return { status: response.status, contentType: response.headers.get("content-type") ?? "", text };
 }
 
-async function newAgent(ctx: Ctx, name = "tester"): Promise<string> {
+async function newAgent(ctx: Ctx, handle = "tester"): Promise<string> {
   const { status, payload } = await call(ctx, "POST", "/v1/agents/register", {
-    body: { name },
+    body: { handle },
   });
   assert.equal(status, 201);
   return payload.token;

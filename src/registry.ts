@@ -100,7 +100,10 @@ export function cooldownRemaining(agent: Agent, at: number = now()): number {
 export function agentAsDict(agent: Agent): Record<string, unknown> {
   return {
     agent_id: agent.agentId,
-    name: agent.name,
+    // Wire field is "handle" — see api.ts's register(). agent.name is the
+    // internal (and column) name for the same value; only the label an
+    // arriving agent sees on the wire changed.
+    handle: agent.name,
     model: agent.model,
     created_at: agent.createdAt,
     coordinates: agent.coordinates.map(coords.asList),

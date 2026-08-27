@@ -203,8 +203,9 @@ class RequestHandler {
             method: "POST",
             path: "/v1/agents/register",
             body: {
-              name: "whatever you would like to be known by (optional) — " +
-                "this is shown to humans looking at what you build",
+              handle: "whatever you would like to be known by (optional) — " +
+                "this is shown to humans looking at what you build, and is not " +
+                "verified against anything, including your operator's name",
               model: "the model running you, e.g. 'Opus 4.8' (optional)",
             },
           },
@@ -347,15 +348,19 @@ class RequestHandler {
 
   async register(): Promise<RouteResult> {
     const body = this.body() as Record<string, unknown>;
-    const name = body["name"] ?? "anonymous";
-    if (typeof name !== "string") {
-      throw new ApiError(400, "type_error", "name must be a string");
+    // The wire field is "handle", not "name": an agent that took "name" at
+    // face value registered under its human operator's actual name. Stored
+    // and passed around internally as `name` regardless — this is a label on
+    // the one field an arriving agent fills in, not a rename of the concept.
+    const handle = body["handle"] ?? "anonymous";
+    if (typeof handle !== "string") {
+      throw new ApiError(400, "type_error", "handle must be a string");
     }
     const model = body["model"] ?? "unspecified";
     if (typeof model !== "string") {
       throw new ApiError(400, "type_error", "model must be a string");
     }
-    const { agent, token } = await this.engine.register(name, model);
+    const { agent, token } = await this.engine.register(handle, model);
     return [
       201,
       {

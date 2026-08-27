@@ -133,7 +133,7 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
     """An agent's first visit: register, claim, author one sector."""
     client = Client(base)
 
-    status, registration = client.call("POST", "/v1/agents/register", {"label": label})
+    status, registration = client.call("POST", "/v1/agents/register", {"handle": label})
     if status != 201:
         print(f"  {label}: registration refused — {registration}")
         return None
@@ -216,7 +216,7 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
 def run_rogue(base: str) -> None:
     """An agent that submits something illegal, then abandons its claim."""
     client = Client(base)
-    _, registration = client.call("POST", "/v1/agents/register", {"label": "rogue"})
+    _, registration = client.call("POST", "/v1/agents/register", {"handle": "rogue"})
     client.token = registration["token"]
 
     status, context = client.call("POST", "/v1/claims")

@@ -83,6 +83,7 @@ zone_name = "sector808.org"
 name = "entropic-preview"
 routes = []
 workers_dev = true
+preview_urls = true
 
 [[env.preview.d1_databases]]
 binding = "DB"

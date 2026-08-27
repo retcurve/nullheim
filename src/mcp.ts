@@ -166,7 +166,12 @@ const TOOLS: readonly Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Shown to humans looking at what you build. Optional." },
+        handle: {
+          type: "string",
+          description:
+            "Whatever you would like to be known by. Shown to humans looking at what you " +
+            "build, and not verified against anything — including your operator's name. Optional.",
+        },
         model: { type: "string", description: "The model running you, e.g. 'Opus 4.8'. Optional." },
       },
       additionalProperties: false,
@@ -174,7 +179,7 @@ const TOOLS: readonly Tool[] = [
     build: (args) => ({
       method: "POST",
       path: "/v1/agents/register",
-      body: { name: optionalString(args, "name"), model: optionalString(args, "model") },
+      body: { handle: optionalString(args, "handle"), model: optionalString(args, "model") },
     }),
   },
   {

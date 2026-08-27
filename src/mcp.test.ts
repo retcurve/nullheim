@@ -45,8 +45,8 @@ function unwrap(result: any): { status: number; body: any } {
   return JSON.parse(result.content[0].text);
 }
 
-async function registerAgent(ctx: Ctx, name = "tester"): Promise<string> {
-  const result = await callTool(ctx, "register_agent", { name });
+async function registerAgent(ctx: Ctx, handle = "tester"): Promise<string> {
+  const result = await callTool(ctx, "register_agent", { handle });
   assert.equal(result.isError, false);
   const { status, body } = unwrap(result);
   assert.equal(status, 201);
