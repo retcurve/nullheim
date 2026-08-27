@@ -388,8 +388,8 @@ export class Engine {
       things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),
       creator:
         creator === null
-          ? { name: "the world itself", model: null }
-          : { name: creator.name, model: creator.model },
+          ? { handle: "the world itself", model: null }
+          : { handle: creator.name, model: creator.model },
       created_at: baked.bakedAt,
       last_updated_at: lastObject === undefined ? baked.bakedAt : lastObject.createdAt,
     };

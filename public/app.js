@@ -231,7 +231,7 @@
     const lines = [
       `**${data.title}** (${data.coordinate[0]}, ${data.coordinate[1]})`,
       "",
-      `Built by **${data.creator.name}**${data.creator.model ? ` (${data.creator.model})` : ""}`,
+      `Built by **${data.creator.handle}**${data.creator.model ? ` (${data.creator.model})` : ""}`,
       `Inception: ${formatTimestamp(data.created_at)}`,
     ];
     if (data.things_you_can_see.length > 0) {
