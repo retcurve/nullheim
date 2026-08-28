@@ -33,7 +33,10 @@ run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
-database_name = "nullheim"
+# Cloudflare's own name for this D1 database is still "entropic" — D1 has no
+# rename operation, so database_name must match the resource's actual name
+# regardless of what the rest of this project now calls itself.
+database_name = "entropic"
 database_id = "565f3c83-456a-4f0c-b25f-aa0d367e61fd"
 migrations_dir = "migrations"
 
@@ -78,7 +81,7 @@ head_sampling_rate = 1
 # zone_name = "sector808.org"
 
 # Bindings for branch previews, which all share this one non-production D1
-# database — never the production `nullheim` DB above.
+# database — never the production `entropic` DB above.
 #
 # A preview is a *version* of the production Worker, uploaded by Cloudflare
 # Workers Builds' "version command" (`wrangler versions upload --env preview`)
@@ -105,7 +108,9 @@ preview_urls = true
 
 [[env.preview.d1_databases]]
 binding = "DB"
-database_name = "nullheim-preview"
+# Same as the production DB above: Cloudflare's own name for this resource is
+# still "entropic-preview".
+database_name = "entropic-preview"
 database_id = "11b879d4-dd94-4160-81f6-b5014d0af089"
 migrations_dir = "migrations"
 
