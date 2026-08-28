@@ -54,31 +54,66 @@ function numberEnv(value: string | undefined, fallback: number): number {
  */
 let genesisChecked = false;
 
+/**
+ * Every *.workers.dev hostname — the default one and every branch preview —
+ * must never show up in Google/Bing: it's not the canonical address, and a
+ * preview build indexed under its own URL would outlive the branch. Only
+ * the custom domain (entropic.sector808.org, once re-enabled) should be
+ * indexable. There's no way to tell workers.dev and the custom domain apart
+ * in wrangler.toml — both hit the same Worker — so this has to be a runtime
+ * check on the request's own hostname.
+ */
+function isWorkersDevHost(hostname: string): boolean {
+  return hostname.endsWith(".workers.dev");
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
-      // The Assets binding serves straight out of `./public` with no notion
-      // of the `/enter` prefix the browser sees — see wrangler.toml — so the
-      // prefix is stripped before handing the request off, the same job
-      // node-server.ts's serveStatic() does for the Node build.
-      const assetUrl = new URL(request.url);
-      assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
-      return env.ASSETS.fetch(new Request(assetUrl, request));
+    const blockIndexing = isWorkersDevHost(url.hostname);
+
+    if (blockIndexing && url.pathname === "/robots.txt") {
+      return new Response("User-agent: *\nDisallow: /\n", {
+        headers: { "content-type": "text/plain" },
+      });
     }
 
-    const db = openD1(env.DB);
-    const store = new WorldStore(db);
-    const registry = new Registry(db, {
-      leaseSeconds: numberEnv(env.LEASE_SECONDS, DEFAULT_LEASE_SECONDS),
-      cooldownSeconds: numberEnv(env.COOLDOWN_SECONDS, DEFAULT_COOLDOWN_SECONDS),
-      claimsPerHour: numberEnv(env.CLAIMS_PER_HOUR, DEFAULT_CLAIMS_PER_HOUR),
-    });
-    if (!genesisChecked) {
-      await ensureGenesis(store);
-      genesisChecked = true;
+    const response = await routeRequest(request, url, env);
+    // robots.txt alone doesn't stop a crawler that finds a link some other
+    // way, so every response on a workers.dev host also carries the header
+    // form of the same instruction. The Assets binding can hand back a
+    // Response with immutable headers, so this rebuilds rather than mutates.
+    if (blockIndexing) {
+      const headers = new Headers(response.headers);
+      headers.set("X-Robots-Tag", "noindex, nofollow");
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     }
-    const engine = new Engine({ store, registry, prompts: PROMPTS });
-    return handleFetchRequest(engine, request);
+    return response;
   },
 };
+
+async function routeRequest(request: Request, url: URL, env: Env): Promise<Response> {
+  if (url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
+    // The Assets binding serves straight out of `./public` with no notion
+    // of the `/enter` prefix the browser sees — see wrangler.toml — so the
+    // prefix is stripped before handing the request off, the same job
+    // node-server.ts's serveStatic() does for the Node build.
+    const assetUrl = new URL(request.url);
+    assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
+    return env.ASSETS.fetch(new Request(assetUrl, request));
+  }
+
+  const db = openD1(env.DB);
+  const store = new WorldStore(db);
+  const registry = new Registry(db, {
+    leaseSeconds: numberEnv(env.LEASE_SECONDS, DEFAULT_LEASE_SECONDS),
+    cooldownSeconds: numberEnv(env.COOLDOWN_SECONDS, DEFAULT_COOLDOWN_SECONDS),
+    claimsPerHour: numberEnv(env.CLAIMS_PER_HOUR, DEFAULT_CLAIMS_PER_HOUR),
+  });
+  if (!genesisChecked) {
+    await ensureGenesis(store);
+    genesisChecked = true;
+  }
+  const engine = new Engine({ store, registry, prompts: PROMPTS });
+  return handleFetchRequest(engine, request);
+}
