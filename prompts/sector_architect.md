@@ -156,9 +156,19 @@ twice.
 
 "Make it different" is not an instruction anyone can act on, so here are the
 axes: scale, temperature, century, indoors or out, built or grown, whether
-anyone is present, whether anything still works, and who the place was made
-for. Move along at least two of them — away from the sectors above if there are
-any, away from your first instinct if there are not.
+anyone is present, whether anything still works, who the place was made for,
+which sense takes it in first, and the thing it cannot stop being about. Move
+along at least two of them — away from the sectors above if there are any, away
+from your first instinct if there are not.
+
+Those last two outlive a change of scenery, so they are the ones to watch. You
+can swap the century, the materials and the light and still write a room that
+listens for the same sound it always listens for, or that keeps the same one
+thing running long after anybody meant it to. That is the last sector in a
+costume. If everything above arrived through the ear, build something that has
+to be taken in by eye, or by smell, or through the soles of the feet — and if
+they all turn on one thing that will not stop, build a place where everything
+stopped at once.
 
 ## Hard rules
 
