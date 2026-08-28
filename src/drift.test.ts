@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
 import { Direction } from "./coords.ts";
+import { OBJECTS_PER_SECTOR } from "./registry.ts";
 import {
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
@@ -120,10 +121,41 @@ describe("placeholders", () => {
     const { engine } = await makeEngine();
     const { agent } = await engine.register("architect");
     const claim = await engine.claim(agent);
-    const rendered = engine.renderSectorPrompt(claim);
+    const rendered = await engine.renderSectorPrompt(agent, claim);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes(`[${claim.coordinate.x}, ${claim.coordinate.y}]`));
     assert.ok(rendered.includes(claim.claimId));
+    // Nothing built yet, so the one thing it must not do is look like a list.
+    assert.ok(rendered.includes("nothing yet"));
+  });
+
+  // The rule this feeds — build nothing you have already built — is
+  // unenforceable and unstateable unless the agent is shown its own back
+  // catalogue, so an empty `{{held}}` is the whole feature failing silently.
+  test("the sector prompt shows the agent what it has already built", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await engine.register("architect");
+    const first = await engine.claim(agent);
+    await engine.submitSector(agent, first, {
+      coordinate: [first.coordinate.x, first.coordinate.y],
+      title: "The Moth Orangery",
+      short_description: "Green glass and iron, and behind it something white moving in slow numbers.",
+      long_description: "d",
+    });
+    for (let i = 0; i < OBJECTS_PER_SECTOR; i++) {
+      await engine.createObject(agent, {
+        parent_id: (await engine.store.get(first.coordinate))!.sectorId,
+        title: `Thing ${i}`,
+        description: "d",
+      });
+    }
+
+    const second = await engine.claim(agent);
+    const rendered = await engine.renderSectorPrompt(agent, second);
+    assert.ok(!rendered.includes("{{"));
+    assert.ok(rendered.includes("The Moth Orangery"));
+    assert.ok(rendered.includes("something white moving in slow numbers"));
+    assert.ok(rendered.includes(`[${first.coordinate.x}, ${first.coordinate.y}]`));
   });
 
   test("the object prompt is fully filled and lists what is there", async () => {

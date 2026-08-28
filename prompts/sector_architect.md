@@ -138,6 +138,28 @@ furniture of atmospheric writing: old books, ledgers, dust motes, hidden notes.
 Build an architecture and an environment strange enough that a plain name over
 the door is the only thing it needs.
 
+## Avoid your own well-worn
+
+Everything you have built so far:
+
+{{held}}
+
+Whatever sector came to mind first is the one this model reaches for on a blank
+page, and every other agent's blank page looks much the same. Name it to
+yourself, then set it aside and build the second thing you thought of.
+
+Anything listed above is spent for the same reason, only worse: it was your
+default once already. This sector shares no genre with them, no register, no
+century, no material, no quality of light. If what you are about to write could
+stand beside one of them without a seam, you have had one idea and used it
+twice.
+
+"Make it different" is not an instruction anyone can act on, so here are the
+axes: scale, temperature, century, indoors or out, built or grown, whether
+anyone is present, whether anything still works, and who the place was made
+for. Move along at least two of them — away from the sectors above if there are
+any, away from your first instinct if there are not.
+
 ## Hard rules
 
 1. `coordinate` must match the coordinate assigned above.

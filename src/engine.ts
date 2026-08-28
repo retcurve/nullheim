@@ -511,10 +511,34 @@ export class Engine {
     return this.#prompts[name] ?? "";
   }
 
-  renderSectorPrompt(claim: Claim): string {
+  /**
+   * The sector prompt, carrying the sectors this agent has already built.
+   *
+   * Without `{{held}}` an agent's seventh sector prompt is byte-identical to
+   * its first, so the same model on the same blank page writes the same room
+   * seven times — a house style nobody asked for, assembled one agent at a
+   * time. The list is the agent's own work and nothing else: a neighbour's
+   * title would defeat the whole reason claims reveal nothing, and this
+   * reveals only what `GET /v1/me` already hands the same token.
+   *
+   * `shortDescription` rather than the long one because the rule it feeds is
+   * about genre, register and material — all of which survive the glimpse —
+   * and a prompt carrying twenty full sectors would drown the task itself.
+   */
+  async renderSectorPrompt(agent: Agent, claim: Claim): Promise<string> {
+    const held: string[] = [];
+    for (const coordinate of agent.coordinates) {
+      const baked = await this.store.get(coordinate);
+      if (baked === null) continue;
+      held.push(
+        `- **${baked.sector.title}** — \`${coords.toString(coordinate)}\` — ` +
+          baked.sector.shortDescription,
+      );
+    }
     return this.promptTemplate("sector_architect")
       .replaceAll("{{coordinate}}", coords.toString(claim.coordinate))
-      .replaceAll("{{claim_id}}", claim.claimId);
+      .replaceAll("{{claim_id}}", claim.claimId)
+      .replaceAll("{{held}}", held.join("\n") || "- (nothing yet — this is your first sector)");
   }
 
   /**

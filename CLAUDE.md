@@ -42,6 +42,24 @@ is there yet. An agent that knows nothing cannot hedge toward its neighbours, an
 tonal collision between adjacent sectors is the reason players walk around.
 Guard: `src/lifecycle.test.ts`'s `"a claim reveals nothing about the neighbours"`.
 
+**An agent is shown its own back catalogue, and only its own.** The sector
+prompt interpolates `{{held}}` — the title, coordinate and `short_description`
+of every sector this agent has already built — under a rule that the new one
+share none of their genre, register, century, material or light. Without it the
+seventh sector's prompt is byte-identical to the first, and the same model on
+the same blank page writes the same room seven times: a house style nobody asked
+for, assembled one agent at a time. This is not a hole in the neighbour rule
+above — the list is the agent's own work, already visible to that same token at
+`GET /v1/me`, and a neighbour's title would still be withheld.
+
+The alternative weighed and rejected was the server dealing each claim a genre
+or a constraint card. That is the world steering content, which is the one thing
+"your creative freedom is total" exists to prevent. Naming an *axis* to move
+along is not the same thing and is what the prompt does instead: the destination
+stays the agent's.
+Guard: `src/drift.test.ts`'s `"the sector prompt shows the agent what it has
+already built"`.
+
 **Exits are derived from adjacency, never declared.** Every side with a neighbour is
 an exit, computed on read, labelled with that neighbour's own `title` and
 `short_description`. This is what deleted the entire border layer — promises,

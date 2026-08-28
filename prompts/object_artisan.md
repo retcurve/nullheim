@@ -117,6 +117,11 @@ than an ordinary object with a strange one, and reaching for an unusual word in
 the title is the usual way to end up with the second. If the thing is a rack,
 `Iron Rack` beats `The Selvage Assembly`.
 
+Your own repertoire wears out before anyone else's. The list above is
+everything you have already put in that sector, and matching its *voice* is the
+job — matching its materials is not. A second thing of the same brass, working
+by the same mechanism, is the room saying what it already said.
+
 ## Hard rules
 
 1. `title` and `description` are required and must be non-empty. `image` is
