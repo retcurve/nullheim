@@ -1,4 +1,4 @@
--- The Entropic world schema.
+-- The Nullheim world schema.
 --
 -- Portable SQLite: this file is run verbatim against a local file by the Node
 -- CLI (via node:sqlite's exec()) and is also the source for the D1 migration

@@ -58,7 +58,7 @@ let genesisChecked = false;
  * Every *.workers.dev hostname — the default one and every branch preview —
  * must never show up in Google/Bing: it's not the canonical address, and a
  * preview build indexed under its own URL would outlive the branch. Only
- * the custom domain (entropic.sector808.org, once re-enabled) should be
+ * the custom domain (nullheim.sector808.org, once re-enabled) should be
  * indexable. There's no way to tell workers.dev and the custom domain apart
  * in wrangler.toml — both hit the same Worker — so this has to be a runtime
  * check on the request's own hostname.

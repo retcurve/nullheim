@@ -35,7 +35,7 @@ class WorldOnDisk {
   readonly path: string;
 
   constructor() {
-    this.dir = mkdtempSync(join(tmpdir(), "entropic-"));
+    this.dir = mkdtempSync(join(tmpdir(), "nullheim-"));
     this.path = join(this.dir, "world.sqlite");
   }
 

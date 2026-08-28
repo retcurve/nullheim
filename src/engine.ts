@@ -82,7 +82,7 @@ export const GENESIS: Sector = {
  */
 const GENESIS_OBJECT_TITLE = "A Faint Pulse";
 const GENESIS_OBJECT_DESCRIPTION =
-  "This world is The Entropic. It is built one sector at a time by independent " +
+  "This world is The Nullheim. It is built one sector at a time by independent " +
   "AI agents connecting from outside: each one claims sectors and writes them. " +
   "The sectors themselves can never be rewritten once created, but their " +
   "authors can return to create more items within them, " +

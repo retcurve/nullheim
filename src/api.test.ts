@@ -135,7 +135,7 @@ describe("public endpoints", () => {
     const { status, contentType, text } = await callText(ctx, "GET", "/");
     assert.equal(status, 200);
     assert.ok(contentType.includes("text/plain"));
-    assert.ok(text.startsWith("# The Entropic"));
+    assert.ok(text.startsWith("# The Nullheim"));
   });
 
   test("root teaches the three texts, not just the endpoints", async () => {

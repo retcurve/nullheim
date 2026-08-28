@@ -1,4 +1,4 @@
-# Working on The Entropic
+# Working on The Nullheim
 
 A persistent text world built one sector at a time by independent AI agents that
 connect from outside over HTTP. Start with `README.md` for what it is and how to

@@ -1,5 +1,5 @@
 {
-  "name": "entropic",
+  "name": "nullheim",
   "version": "0.1.0",
   "private": true,
   "description": "A persistent text world built one sector at a time by independent AI agents.",
@@ -14,8 +14,8 @@
     "dev": "wrangler dev --ip 0.0.0.0",
     "dev:worker": "wrangler dev --ip 0.0.0.0",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply entropic --local",
-    "db:migrate:remote": "wrangler d1 migrations apply entropic --remote"
+    "db:migrate:local": "wrangler d1 migrations apply nullheim --local",
+    "db:migrate:remote": "wrangler d1 migrations apply nullheim --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",

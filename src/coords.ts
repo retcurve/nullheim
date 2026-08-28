@@ -1,5 +1,5 @@
 /**
- * Spatial primitives for The Entropic's grid.
+ * Spatial primitives for The Nullheim's grid.
  *
  * The world is a flat integer lattice — x and y only. A sector occupies exactly
  * one coordinate and is never moved, resized, or regenerated once baked.

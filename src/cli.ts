@@ -18,7 +18,7 @@ import { WorldStore } from "./store.ts";
 
 function usage(): never {
   process.stderr.write(
-    "usage: entropic serve [--host HOST] [--port PORT] [--db PATH] " +
+    "usage: nullheim serve [--host HOST] [--port PORT] [--db PATH] " +
       "[--lease-seconds N] [--cooldown-seconds N] [--claims-per-hour N]\n" +
       "\n" +
       "  --db PATH            local SQLite file (defaults to an in-memory world)\n" +
@@ -63,7 +63,7 @@ async function main(argv: string[]): Promise<number> {
   const address = await listen(server, host, port);
 
   console.log(
-    `The Entropic serving on http://${address.host}:${address.port}  ` +
+    `The Nullheim serving on http://${address.host}:${address.port}  ` +
       `(${await store.count()} sectors, ${await store.objectCount()} objects)`,
   );
   console.log(
