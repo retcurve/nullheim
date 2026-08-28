@@ -226,31 +226,21 @@
     return sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
 
-  /** Shared by the live model's render and a peek at a sector we haven't moved to. */
-  function renderSectorLikeText({ title, coordinate, description, exits, things }) {
-    const lines = [`**${title}** (${coordinate[0]}, ${coordinate[1]})`, description];
-    if (exits.length > 0) {
-      lines.push("", "##Exits##", exitsSentence(exits));
-    }
-    if (things.length > 0) {
-      lines.push("", "##You can also see##", ...things.map((o) => `**${o.title}**`));
-    }
-    return lines.join("\n");
-  }
-
   /**
    * `m.objects` also holds sub-objects merged in from examining a parent
    * (see `loadModelFromSector`), so only the sector's own top-level ids —
    * `m.topLevelIds` — belong in "You can also see" here.
    */
   function renderSectorText(m) {
-    return renderSectorLikeText({
-      title: m.title,
-      coordinate: m.coordinate,
-      description: m.description,
-      exits: m.exits,
-      things: m.topLevelIds.map((id) => m.objects.get(id)),
-    });
+    const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
+    if (m.exits.length > 0) {
+      lines.push("", "##Exits##", exitsSentence(m.exits));
+    }
+    const objects = m.topLevelIds.map((id) => m.objects.get(id));
+    if (objects.length > 0) {
+      lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
+    }
+    return lines.join("\n");
   }
 
   /** A sector's own optional `image`, ahead of everything `renderSectorText` prints. */
@@ -294,6 +284,10 @@
       printImage(obj.image);
     }
     print(renderObjectText(obj));
+  }
+
+  function renderExitText(exit) {
+    return `**${exit.name}**\n${exit.description}`;
   }
 
 
@@ -901,33 +895,6 @@
     }
   }
 
-  /**
-   * Always hits the network — an exit only carries the neighbour's name and
-   * short description, so looking at it by name fetches that sector's own
-   * full detail, the same way `examineObject` does for an object. This is a
-   * peek, not a move: it prints without touching `model` or the player's
-   * position.
-   */
-  async function lookAtExit(exit) {
-    try {
-      const data = await fetchJson(`/v1/sectors/${exit.to[0]}/${exit.to[1]}`);
-      if (data.image) {
-        printImage(data.image);
-      }
-      print(
-        renderSectorLikeText({
-          title: data.title,
-          coordinate: data.coordinate,
-          description: data.description,
-          exits: data.exits,
-          things: data.things_you_can_see,
-        }),
-      );
-    } catch (exc) {
-      printError(`Couldn't look that way: ${exc.message}`);
-    }
-  }
-
   /** Re-fetches the current sector so exits and things_you_can_see are current, then prints it. */
   async function lookHere() {
     try {
@@ -951,16 +918,24 @@
   }
 
   /**
-   * Matches against the current in-memory model rather than refetching the
-   * current sector first — that used to wipe out any sub-objects
+   * Re-fetches the current sector before matching, same as `lookHere`, so a
+   * name typed against a stale view still resolves correctly and an exit's
+   * short description is current. This used to wipe out any sub-objects
    * `mergeObject` had already merged into `model.objects` from examining a
-   * parent, since reloading the sector rebuilt that map from scratch every
-   * time. Whatever the name resolves to is still always fetched fresh —
-   * `lookAtExit` for a neighbouring sector, `examineObject` for an object —
-   * only the candidate list to match against is drawn from what's already
-   * known.
+   * parent; `loadModelFromSector` now merges into the existing map instead
+   * of replacing it when the coordinate hasn't changed, so that survives
+   * the refresh. An object match is still always fetched fresh on top of
+   * that via `examineObject`.
    */
   async function doLook(name) {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+      return;
+    }
+
     const { exitMatches, objectMatches } = findMatches(name);
     const total = exitMatches.length + objectMatches.length;
     if (total === 0) {
@@ -972,7 +947,7 @@
       return;
     }
     if (exitMatches.length === 1) {
-      await lookAtExit(exitMatches[0]);
+      print(renderExitText(exitMatches[0]));
       return;
     }
     await examineObject(objectMatches[0].object_id);
