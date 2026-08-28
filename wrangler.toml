@@ -2,6 +2,14 @@ name = "entropic"
 main = "src/worker.ts"
 compatibility_date = "2026-08-01"
 
+# Keeps production dark while the custom route further down is commented out —
+# `workers_dev` defaults to true once no `routes` exist, so without this,
+# disabling that route would just swap the custom domain for the *.workers.dev
+# one instead. It has to live up here among the top-level keys: below the first
+# table header TOML would read it as a key of that table (it previously sat
+# under [observability.traces], where wrangler ignored it).
+workers_dev = false
+
 # The prompt templates are bundled in as text, not read from disk — see
 # src/worker.ts and src/worker-env.d.ts. There is no filesystem on Cloudflare
 # at request time.
@@ -57,17 +65,17 @@ head_sampling_rate = 1
 # *.sector808.org). This one hostname fits inside that free wildcard.
 #
 # Disabled for now — reenable by uncommenting this and removing the
-# `workers_dev = false` line just below (which exists only because, per the
-# preview environment's own comment further down, `workers_dev` defaults to
-# true once no `routes` exist — without it, disabling this route would just
-# swap the custom domain for the *.workers.dev one instead of going dark).
+# top-level `workers_dev = false` near the top of this file (which exists only
+# because, per the preview environment's own comment further down,
+# `workers_dev` defaults to true once no `routes` exist — without it, disabling
+# this route would just swap the custom domain for the *.workers.dev one
+# instead of going dark).
 # Needs a `wrangler deploy` (or the next Workers Builds deploy of main) to
 # actually take the domain down or back up; editing this file alone changes
 # nothing live until deployed.
 # [[routes]]
 # pattern = "entropic.sector808.org/*"
 # zone_name = "sector808.org"
-workers_dev = false
 
 # Bindings for branch previews, which all share this one non-production D1
 # database — never the production `entropic` DB above.
