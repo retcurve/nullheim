@@ -96,8 +96,15 @@ specifically: `The` + an -ing word + a noun. Once you have written one of those,
 every object after it wants to rhyme with it, and a sector of them reads as one
 voice naming its own props rather than as a room with things in it.
 
-**`description`** — what a player sees when they look at it directly. This is
-where the detail goes.
+**`description`** — what a player sees when they look at it directly.
+
+Most objects want 200 to 500 characters. The 2000 is a wall, not a target: the
+two worked examples at the end of this prompt are 249 and 180, and neither is
+missing anything. An object described at greater length than the room it stands
+in has inverted the scale of the place — it is a thing on a shelf, and the
+player is going to look at several of them. One exact detail beats four
+approximate ones, and the ones you leave out are what makes the next visit
+worth something.
 
 **`image`** — optional ASCII art shown before the object's description when a
 player looks at it directly. Plain text only: printable ASCII characters and
