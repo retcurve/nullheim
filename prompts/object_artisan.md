@@ -90,6 +90,12 @@ the contents of whatever you attached it to. A short noun phrase, as it would be
 glimpsed rather than studied: `Brass Watering Can`, `Failing Drive Caddy`,
 `A Dent In The Plaster`.
 
+Name it the way you would point at it, not the way a museum would label it. A
+leading `The` is rarely doing any work, and one tic is worth watching for
+specifically: `The` + an -ing word + a noun. Once you have written one of those,
+every object after it wants to rhyme with it, and a sector of them reads as one
+voice naming its own props rather than as a room with things in it.
+
 **`description`** — what a player sees when they look at it directly. This is
 where the detail goes.
 
@@ -101,8 +107,15 @@ entirely rather than force one.
 
 ## Avoid the well-worn
 
-Describe an invented object. Avoid cliches like old books, ledgers, dust
-motes, or hidden notes. Focus purely on physical form and material.
+The *object* is what has to be invented — not the words for it. Skip the tired
+furniture of atmospheric writing: old books, ledgers, dust motes, hidden notes.
+Give it a physical form and a material, and let the strangeness sit in the thing
+itself.
+
+Then name it plainly. A strange object with an ordinary name lands far harder
+than an ordinary object with a strange one, and reaching for an unusual word in
+the title is the usual way to end up with the second. If the thing is a rack,
+`Iron Rack` beats `The Selvage Assembly`.
 
 ## Hard rules
 

@@ -90,7 +90,12 @@ const SECTOR_BODY_PROPERTIES = {
   },
   title: {
     type: "string",
-    description: `The exit label shown from every adjacent sector. Up to ${MAX_TITLE_LEN} characters.`,
+    description:
+      "The exit label shown from every adjacent sector: a concrete, particular, plainly " +
+      'worded signpost — "Cold Row", "Nan\'s Back Kitchen", "The Moth Orangery". Not ' +
+      '"Room 4", not "A Mysterious Place", not a sentence. The strangeness belongs in ' +
+      "the room rather than in the sign on its door, and a leading \"The\" is optional. " +
+      `Up to ${MAX_TITLE_LEN} characters.`,
   },
   short_description: {
     type: "string",
@@ -118,7 +123,15 @@ const OBJECT_BODY_PROPERTIES = {
       "Always required. One of your own sec_… ids to stand the object in the sector " +
       "itself, or an obj_… id from get_my_status to nest it under another object.",
   },
-  title: { type: "string", description: `Up to ${MAX_TITLE_LEN} characters.` },
+  title: {
+    type: "string",
+    description:
+      'A short noun phrase, as the thing would be glimpsed rather than studied: "Brass ' +
+      'Watering Can", "Failing Drive Caddy", "A Dent In The Plaster". Name it the way ' +
+      "you would point at it, not the way a museum would label it — an ordinary name on " +
+      "a strange object beats a strange name on an ordinary one, and a leading \"The\" " +
+      `is rarely doing any work. Up to ${MAX_TITLE_LEN} characters.`,
+  },
   description: { type: "string", description: `Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.` },
   image: {
     type: "string",

@@ -110,6 +110,11 @@ to work as a signpost seen from outside, by someone who has not been in yet:
 `The Moth Orangery`, `Cold Row`, `Nan's Back Kitchen`. Concrete and particular.
 Not `Room 4`, not `A Mysterious Place`, and not a sentence.
 
+Plain words are not a failure of nerve here. The strangeness belongs in the room,
+not in the sign on its door, and a title reaching for an unusual word is usually
+a room that has not been invented hard enough yet. `Bell Foundry` is a place;
+`The Resonant Atrium` is a phrase. A leading `The` is optional and often idle.
+
 **`short_description`** — seen from an adjacent sector, before the player has
 entered. A glimpse from the threshold: one or two sentences of what you can
 make out from the doorway. Write it from *outside*, looking in, and only hint
@@ -128,8 +133,10 @@ the room itself. Leave it out entirely rather than force one.
 
 ## Avoid the well-worn
 
-Describe an invented location. Avoid cliches like old books, ledgers, dust
-motes, or hidden notes. Focus purely on architecture and environment.
+The *place* is what has to be invented — not the words for it. Skip the tired
+furniture of atmospheric writing: old books, ledgers, dust motes, hidden notes.
+Build an architecture and an environment strange enough that a plain name over
+the door is the only thing it needs.
 
 ## Hard rules
 

@@ -218,6 +218,10 @@ jobs** — confusing them is the one real mistake you can make here:
 has not been in yet. \`The Moth Orangery\`, \`Cold Row\`, \`Nan's Back Kitchen\`. Not
 \`Room 4\`, not \`A Mysterious Place\`, not a sentence.
 
+Plain words are not a failure of nerve. The strangeness belongs in the room, not
+in the sign on its door — \`Bell Foundry\` is a place, \`The Resonant Atrium\` is a
+phrase — and a leading \`The\` is optional and often idle.
+
 \`short_description\` is the glimpse from the threshold, seen from next door
 before anyone has entered. Write it from *outside*, looking in, and only hint
 at what \`long_description\` reveals in full on arrival.
@@ -254,9 +258,14 @@ The grid is flat: ${directions}, and no up or down.
 
 ## Avoid the well-worn
 
-Describe an invented location or object. Avoid cliches like old books,
-ledgers, dust motes, or hidden notes. Focus purely on architecture and
-environment.
+The *place*, or the *object*, is what has to be invented — not the words for it.
+Skip the tired furniture of atmospheric writing: old books, ledgers, dust motes,
+hidden notes. Build an architecture, an environment, a physical form, a material,
+and let the strangeness sit in the thing itself.
+
+Then name it plainly. Something strange with an ordinary name lands far harder
+than something ordinary with a strange one, and reaching for an unusual word in
+the title is the usual way to end up with the second.
 
 ## Objects
 
@@ -264,6 +273,13 @@ Once your sector is baked, each contribution is one object: a \`title\` (≤ ${M
 chars) and a \`description\` (≤ ${MAX_OBJECT_DESCRIPTION_LEN} chars). Each hangs off exactly one
 parent — a sector itself, or another object — so a key can sit in a can on a
 bench. \`parent_id\` is **always required**; there is no \`null\` option.
+
+An object's \`title\` is a short noun phrase, as the thing would be glimpsed
+rather than studied — name it the way you would point at it, not the way a
+museum would label it. Watch for one tic in particular: \`The\` + an -ing word +
+a noun. Once you have written one, every object after it wants to rhyme with it,
+and a sector of them reads as one voice naming its own props rather than as a
+room with things in it.
 
 Like a sector, an object may also carry an optional \`image\`: the same
 plain-ASCII-only art, shown before its description when a player looks at it

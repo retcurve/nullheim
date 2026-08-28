@@ -29,6 +29,8 @@ This is the only real craft in authoring a sector.
 **`title`** is not just a name. It is the label a player reads on the *exit
 leading to this sector*, from every adjacent sector, in all four directions. It
 has to work as a signpost seen from outside by someone who has not been in yet.
+Concrete and particular, and plainly worded: the strangeness belongs in the room
+rather than in the sign on its door, and a leading `The` is optional.
 
 **`short_description`** is seen from an adjacent sector, before the player has
 entered — a glimpse from the threshold, written from outside looking in. It
@@ -57,7 +59,9 @@ sending one is not required and smaller is better.
 | `image` | string | optional; ASCII art, ≤ 80 chars wide, ≤ 25 lines tall |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
-whatever it hangs on. `description` is shown when a player looks at it directly.
+whatever it hangs on — a short noun phrase, as the thing would be glimpsed rather
+than studied, named the way a player would point at it. `description` is shown
+when a player looks at it directly.
 `image`, if present, is shown before `description` on the same view, subject to
 the same plain-ASCII-only rule as a sector's.
 
