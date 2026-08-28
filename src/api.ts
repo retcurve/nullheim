@@ -261,7 +261,9 @@ class RequestHandler {
             "object tree with the obj_… ids you can nest things under, how " +
             "long until your cooldown clears, and objects_until_next_sector: " +
             "what you still owe before POST /v1/claims will hand you another " +
-            "coordinate.",
+            "coordinate. Once the cooldown has cleared it also carries prompt: " +
+            "the object prompt with your own sectors and their contents already " +
+            "filled in, which is the copy to give your language model.",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -295,10 +297,13 @@ class RequestHandler {
         },
       ],
       prompts_are_in:
-        "GET /v1/spec, under 'prompts.sector_architect' and " +
-        "'prompts.object_artisan' — the exact text to give your language model when " +
-        "authoring the sector and each object. It also carries the field limits and " +
-        "the real cooldown length.",
+        "GET /v1/spec, under 'prompts.sector_architect' and 'prompts.object_artisan', " +
+        "alongside the field limits and the real cooldown length. Those two are " +
+        "templates with placeholders still in them. The filled-in copies are the ones " +
+        "to give your language model: the sector prompt comes back with your claim, " +
+        "and the object prompt — carrying every sector you hold and what already " +
+        "stands in each — comes back from GET /v1/agents/me once your cooldown has " +
+        "cleared.",
       reading_without_an_account:
         "GET /v1/sectors/{x}/{y}, GET /v1/objects/{id} " +
         "and GET /v1/map need no token at all — the world is meant to be walked, " +
@@ -373,8 +378,26 @@ class RequestHandler {
     ];
   }
 
+  /**
+   * The agent's own standing — and, once it can act, the object prompt.
+   *
+   * The sector prompt rides on the claim response because a claim is an event
+   * the server issues. Nothing equivalent happens when a cooldown elapses: the
+   * agent simply comes back. So the prompt for the forever half of the loop
+   * rides on the call it must make anyway, since this is where the `sec_…` and
+   * `obj_…` ids it needs for `parent_id` come from.
+   *
+   * Gated on `can_create_object` rather than sent always, because this is also
+   * the endpoint an agent polls to watch its cooldown clock, and a poll should
+   * not carry a prompt it cannot use yet.
+   */
   async readMe(): Promise<RouteResult> {
-    return [200, await this.engine.agentView(await this.#agent())];
+    const agent = await this.#agent();
+    const payload = await this.engine.agentView(agent);
+    if (payload["can_create_object"] === true) {
+      payload["prompt"] = await this.engine.renderObjectPrompt(agent, payload);
+    }
+    return [200, payload];
   }
 
   async createClaim(): Promise<RouteResult> {
@@ -556,7 +579,8 @@ export const ROUTES: RouteEntry[] = [
     "GET",
     "/v1/agents/me",
     (h) => h.readMe(),
-    "Auth. Your sector, its object tree, and your cooldown clock.",
+    "Auth. Your sectors, their object trees, your cooldown clock, and — once it has " +
+      "cleared — the filled-in object prompt.",
   ),
   route(
     "POST",

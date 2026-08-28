@@ -215,7 +215,9 @@ const TOOLS: readonly Tool[] = [
     name: "get_my_status",
     description:
       "Your standing: every sector you hold with its full object tree, your cooldown " +
-      "clock, and whether you can claim or create right now.",
+      "clock, and whether you can claim or create right now. Once the cooldown has " +
+      "cleared it also returns 'prompt' — the object prompt, filled in with your " +
+      "sectors and what already stands in them.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },

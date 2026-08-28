@@ -523,8 +523,14 @@ export class Engine {
    * An agent with one sector sees exactly what it always saw, one heading
    * deeper. An agent with several is shown all of them and picks between them
    * the same way it picks a shelf inside one: by naming a `parent_id`.
+   *
+   * `view` is an already-computed `agentView()` for this agent. The only
+   * caller in production has just built one — this prompt is served from the
+   * same response — and rebuilding it would re-read every sector and every
+   * object tree a second time, which on D1 is a second set of round trips for
+   * an answer already in hand.
    */
-  async renderObjectPrompt(agent: Agent): Promise<string> {
+  async renderObjectPrompt(agent: Agent, view?: Record<string, unknown>): Promise<string> {
     const lines = (nodes: ObjectNode[], depth: number): string[] => {
       const out: string[] = [];
       for (const node of nodes) {
@@ -535,8 +541,8 @@ export class Engine {
       return out;
     };
 
-    const view = await this.agentView(agent);
-    const blocks = ((view["sectors"] as Record<string, unknown>[]) ?? []).map((sector) => {
+    const resolved = view ?? (await this.agentView(agent));
+    const blocks = ((resolved["sectors"] as Record<string, unknown>[]) ?? []).map((sector) => {
       const tree = lines((sector["objects"] as ObjectNode[]) ?? [], 1);
       const coordinate = sector["coordinate"] as [number, number];
       return [

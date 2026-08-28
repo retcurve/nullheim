@@ -284,6 +284,18 @@ describe("auth", () => {
     assert.ok(!payload.can_claim_sector);
   });
 
+  test("the object prompt arrives with the standing that says it can be used", async () => {
+    // The claim response carries the sector prompt; this is its counterpart for
+    // the half of the loop that has no event of its own to ride on.
+    const { token } = await settle(ctx);
+    const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.ok(payload.can_create_object);
+    assert.ok(payload.prompt.includes("Object Artisan"));
+    assert.ok(!payload.prompt.includes("{{"));
+    assert.ok(payload.prompt.includes(payload.sectors[0].sector_id));
+    assert.ok(payload.prompt.includes("nothing yet"));
+  });
+
   test("one agent cannot read another's claim", async () => {
     const first = await newAgent(ctx, "first");
     const context = await newClaim(ctx, first);
@@ -815,6 +827,9 @@ describe("cooldown", () => {
     assert.equal(me.can_create_object, false);
     assert.equal(me.cooldown_seconds, 3600);
     assert.ok(me.agent.cooldown_remaining > 0);
+    // This is the endpoint the clock is watched on, so most calls to it are
+    // polls that can do nothing with a prompt. They do not carry one.
+    assert.equal(me.prompt, undefined);
   });
 });
 
