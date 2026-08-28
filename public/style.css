@@ -128,7 +128,7 @@ body {
   text-shadow: 0 0 6px rgba(166, 255, 193, 0.55);
   white-space: pre;
   overflow-x: auto;
-  font-size: 13px;
+  font-size: 6.5px;
 }
 
 /* A sector's or object's own optional ASCII art, printed the same raw way as
