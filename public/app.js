@@ -32,7 +32,7 @@
   const bossOverlay = document.getElementById("boss-overlay");
   const bossSheet = document.getElementById("boss-sheet");
 
-  /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map}|null} */
+  /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map, topLevelIds:Array}|null} */
   let model = null;
 
   // --- rendering ------------------------------------------------------------
@@ -226,16 +226,31 @@
     return sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
 
-  function renderSectorText(m) {
-    const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
-    if (m.exits.length > 0) {
-      lines.push("", "##Exits##", exitsSentence(m.exits));
+  /** Shared by the live model's render and a peek at a sector we haven't moved to. */
+  function renderSectorLikeText({ title, coordinate, description, exits, things }) {
+    const lines = [`**${title}** (${coordinate[0]}, ${coordinate[1]})`, description];
+    if (exits.length > 0) {
+      lines.push("", "##Exits##", exitsSentence(exits));
     }
-    const objects = Array.from(m.objects.values());
-    if (objects.length > 0) {
-      lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
+    if (things.length > 0) {
+      lines.push("", "##You can also see##", ...things.map((o) => `**${o.title}**`));
     }
     return lines.join("\n");
+  }
+
+  /**
+   * `m.objects` also holds sub-objects merged in from examining a parent
+   * (see `loadModelFromSector`), so only the sector's own top-level ids —
+   * `m.topLevelIds` — belong in "You can also see" here.
+   */
+  function renderSectorText(m) {
+    return renderSectorLikeText({
+      title: m.title,
+      coordinate: m.coordinate,
+      description: m.description,
+      exits: m.exits,
+      things: m.topLevelIds.map((id) => m.objects.get(id)),
+    });
   }
 
   /** A sector's own optional `image`, ahead of everything `renderSectorText` prints. */
@@ -281,9 +296,6 @@
     print(renderObjectText(obj));
   }
 
-  function renderExitText(exit) {
-    return `**${exit.name}**\n${exit.description}`;
-  }
 
   // --- networking -------------------------------------------------------------
 
@@ -309,10 +321,21 @@
 
   // --- model --------------------------------------------------------------
 
+  /**
+   * Reloading the same sector keeps `model.objects` (and whatever
+   * sub-objects examining a parent has merged into it) rather than
+   * replacing it — only a move to a different coordinate starts that map
+   * over. `topLevelIds` records this load's own top-level objects, which is
+   * how `renderSectorText` tells "in the room" apart from "merged in from
+   * examining something".
+   */
   function loadModelFromSector(data) {
-    const objects = new Map();
+    const sameSector = model !== null && model.coordinate[0] === data.coordinate[0] && model.coordinate[1] === data.coordinate[1];
+    const objects = sameSector ? model.objects : new Map();
+    const topLevelIds = [];
     for (const o of data.things_you_can_see) {
       objects.set(o.object_id, { object_id: o.object_id, title: o.title });
+      topLevelIds.push(o.object_id);
     }
     model = {
       coordinate: data.coordinate,
@@ -321,6 +344,7 @@
       description: data.description,
       exits: data.exits,
       objects,
+      topLevelIds,
     };
     saveLastCoordinate(data.coordinate);
   }
@@ -877,6 +901,33 @@
     }
   }
 
+  /**
+   * Always hits the network — an exit only carries the neighbour's name and
+   * short description, so looking at it by name fetches that sector's own
+   * full detail, the same way `examineObject` does for an object. This is a
+   * peek, not a move: it prints without touching `model` or the player's
+   * position.
+   */
+  async function lookAtExit(exit) {
+    try {
+      const data = await fetchJson(`/v1/sectors/${exit.to[0]}/${exit.to[1]}`);
+      if (data.image) {
+        printImage(data.image);
+      }
+      print(
+        renderSectorLikeText({
+          title: data.title,
+          coordinate: data.coordinate,
+          description: data.description,
+          exits: data.exits,
+          things: data.things_you_can_see,
+        }),
+      );
+    } catch (exc) {
+      printError(`Couldn't look that way: ${exc.message}`);
+    }
+  }
+
   /** Re-fetches the current sector so exits and things_you_can_see are current, then prints it. */
   async function lookHere() {
     try {
@@ -901,13 +952,13 @@
 
   /**
    * Matches against the current in-memory model rather than refetching the
-   * sector — only a bare `look` (lookHere) re-fetches it. Refetching here
-   * used to wipe out any sub-objects `mergeObject` had already merged into
-   * `model.objects` from examining a parent, since `loadModelFromSector`
-   * rebuilds that map from only the sector's top-level objects. Whatever
-   * this resolves to is still fetched fresh via `examineObject`, so the
-   * object's own detail is never stale — only the candidate list is drawn
-   * from what's already known.
+   * current sector first — that used to wipe out any sub-objects
+   * `mergeObject` had already merged into `model.objects` from examining a
+   * parent, since reloading the sector rebuilt that map from scratch every
+   * time. Whatever the name resolves to is still always fetched fresh —
+   * `lookAtExit` for a neighbouring sector, `examineObject` for an object —
+   * only the candidate list to match against is drawn from what's already
+   * known.
    */
   async function doLook(name) {
     const { exitMatches, objectMatches } = findMatches(name);
@@ -921,7 +972,7 @@
       return;
     }
     if (exitMatches.length === 1) {
-      print(renderExitText(exitMatches[0]));
+      await lookAtExit(exitMatches[0]);
       return;
     }
     await examineObject(objectMatches[0].object_id);
