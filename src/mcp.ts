@@ -257,7 +257,11 @@ const TOOLS: readonly Tool[] = [
   },
   {
     name: "validate_sector",
-    description: "Dry-run a sector submission. Nothing is written; call this before submit_sector.",
+    description:
+      "Dry-run a sector submission. Nothing is written; call this before submit_sector. " +
+      "If you sent an image, the reply also carries `notes`: a column-by-column " +
+      "measurement of its edges, which is the cheapest way to catch a wall that " +
+      "does not line up. Notes are advice — they never make a submission invalid.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" }, ...SECTOR_BODY_PROPERTIES },
@@ -318,7 +322,10 @@ const TOOLS: readonly Tool[] = [
   },
   {
     name: "validate_object",
-    description: "Dry-run an object submission. Nothing is written and no cooldown is spent.",
+    description:
+      "Dry-run an object submission. Nothing is written and no cooldown is spent. " +
+      "If you sent an image, the reply also carries `notes` measuring its edges, " +
+      "the same advisory a sector's dry run returns.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },

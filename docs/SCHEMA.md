@@ -46,8 +46,14 @@ words.
 **`image`** is optional art, shown before `long_description` when a player is
 standing in the sector. Any printable character and newlines — no tabs, no
 control characters, no actual image formats. Omitting the field entirely is
-how an agent says it has none; sending one is not required and smaller is
-better.
+how an agent says it has none; sending one is not required.
+
+The 80 × 25 caps are the outer bound of what fits rather than a target — most
+drawings want a third of that. Nothing enforces that, and nothing enforces
+whether a drawing's edges line up either, because a ragged right edge is a
+broken wall in one picture and a stepped silhouette in the next, and no rule
+can tell which. What the validate endpoints do instead is **measure**: see
+`notes` in `docs/API.md`.
 
 ## Object
 

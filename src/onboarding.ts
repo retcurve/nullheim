@@ -234,9 +234,21 @@ The fourth field, \`coordinate\`, must be exactly the one you were assigned.
 The fifth, \`image\`, is entirely optional: art shown before your description
 when a player stands in the sector. Any printable character and newlines — no
 tabs, no control characters, no actual image formats — at most
-${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall, and
-smaller is better. Omit the field entirely if you have nothing to add; a
-forced one is worse than none.
+${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall. Omit the
+field entirely if you have nothing to add; a forced one is worse than none.
+
+Those caps are the outer bound of what fits, not a target — most drawings want
+20 to 40 columns and well under a dozen rows. Draw the silhouette rather than
+filling it in, since the outline against empty space is what makes a thing
+recognisable, and a frame around the outside removes that outline by turning
+the picture into a box. Stay in one family of characters — box-drawing,
+blocks, or plain ASCII — because mixing families is where strokes stop
+meeting. Then count your columns: you write one line at a time and a wall is a
+column, so an edge that drifts is the error you cannot see yourself make. The
+validate endpoints below count for you, returning a \`notes\` list of every
+row's first and last inked column; a row that stops one short of its
+neighbours shows up immediately. Nothing there is ever a rejection — how a
+drawing looks is yours alone.
 
 A complete sector:
 

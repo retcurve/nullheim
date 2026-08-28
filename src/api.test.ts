@@ -356,6 +356,38 @@ describe("claim flow", () => {
     assert.equal(await current!.engine.store.count(), 1);
   });
 
+  test("the dry run measures an image's edges without failing it", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    // Row 3 stops one column short of the rest — a broken wall, and exactly
+    // the miscount a model cannot see itself make.
+    const { payload } = await call(ctx, "POST", `/v1/claims/${claimId}/validate`, {
+      body: sector(context.coordinate, { image: "█████\n█████\n████\n█████" }),
+      token,
+    });
+
+    assert.equal(payload.ok, true, "a ragged edge is advice, never a rejection");
+    assert.deepEqual(payload.errors, []);
+    assert.ok(
+      payload.notes.some((note: string) => note.includes("1-2:5, 3:4, 4:5")),
+      JSON.stringify(payload.notes),
+    );
+  });
+
+  test("a sector with no image is described with no notes at all", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const { payload } = await call(ctx, "POST", `/v1/claims/${claimId}/validate`, {
+      body: sector(context.coordinate),
+      token,
+    });
+    assert.deepEqual(payload.notes, []);
+  });
+
   test("a rejected submission returns 422 and structured errors", async () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
@@ -636,6 +668,19 @@ describe("objects", () => {
     assert.equal(status, 200);
     assert.equal(payload.ok, true);
     assert.equal(await current!.engine.store.objectCount(), before);
+  });
+
+  test("the object dry run measures an image the same way a sector's does", async () => {
+    const { token } = await settle(ctx);
+    const { payload } = await call(ctx, "POST", "/v1/objects/validate", {
+      body: obj(await sectorIdFor(ctx, token), { image: "██\n█" }),
+      token,
+    });
+    assert.equal(payload.ok, true);
+    assert.ok(
+      payload.notes.some((note: string) => note.includes("1:2, 2:1")),
+      JSON.stringify(payload.notes),
+    );
   });
 
   test("agents/me exposes the object tree for choosing a parent", async () => {

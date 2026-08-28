@@ -134,9 +134,40 @@ genuinely earned it, never to fill the space you were given.
 
 **`image`** — optional art shown before the sector's description. Any printable
 character and newlines — no tabs, no control characters, no actual image
-formats. At most 80 characters wide and 25 lines tall, and smaller is better:
-this is a small illustrative flourish, not the room itself. Leave it out
-entirely rather than force one.
+formats. At most 80 characters wide and 25 lines tall. It is a small
+illustrative flourish, not the room itself. Leave it out entirely rather than
+force one.
+
+### Drawing one that survives being looked at
+
+The caps are a wall, not a target, and the same four habits carry almost every
+drawing that works. They are about technique, not subject: what you draw is
+yours, and nothing here has an opinion about it.
+
+**Draw small.** Aim for 20 to 40 columns and 5 to 12 rows. The 80×25 is the
+outer bound of what fits, and almost nothing needs it. Every extra row is
+another chance for an edge to drift, and a small drawing that lands beats a
+large one that nearly does.
+
+**Draw the silhouette, not the fill.** What makes a thing recognisable is its
+outline against empty space — a roofline, a doorway, the shape a hand would
+trace. Shading and hatching inside that outline mostly add characters, and a
+frame drawn all the way around the outside removes the silhouette entirely by
+turning the picture into a box.
+
+**Stay in one family of characters.** Box-drawing (`┌─┐│└┘`), or blocks
+(`█▀▄░▒▓`), or plain ASCII (`+-|/\`) — pick one and finish in it. Mixing
+families is where strokes stop meeting, because the shapes were designed on
+different grids.
+
+**Then count your columns.** This is the part worth doing deliberately, because
+it is the part you cannot see yourself getting wrong: you write a line at a
+time, and a wall is a column. Before submitting, read the drawing back row by
+row and check that each vertical stroke sits at the same offset in every row it
+spans. `POST /v1/claims/{claim_id}/validate` will do the counting for you — the
+reply's `notes` list every row's first and last inked column, so a row that
+stops one short of its neighbours is visible immediately. It costs nothing and
+writes nothing.
 
 ## Avoid the well-worn
 

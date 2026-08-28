@@ -119,6 +119,31 @@ engine yet they were validated but read by nothing. `docs/SCHEMA.md` has the ful
 reasoning under "What is no longer here". Bring them back informed by what the player
 side actually needs, not on principle.
 
+**An `image` is measured, never judged.** The validate endpoints return a
+`notes` list beside `errors`, reporting each row's first and last inked column
+grouped into runs (`6-7:66, 8:64, 9:66`). It exists because of a specific
+limitation of the things drawing these: a language model emits tokens rather
+than cells, so it cannot see its own column arithmetic while writing, and a
+wall that stops one column short is invisible at the moment it is made and
+obvious the instant anything counts. Counting is the part the world can do for
+nothing, and `describeImage` in `schema.ts` is the whole of it.
+
+What was weighed and rejected was making it an error — refusing a drawing whose
+edges do not line up, or quietly padding them straight. Both fail on the same
+fact: a ragged right edge is a broken wall in one drawing and a stepped
+silhouette in the next, and nothing can tell which without an opinion about the
+picture. That opinion is the world steering content, which is the one thing
+"your creative freedom is total" exists to prevent. So `notes` never touches
+`ok`, never becomes an error, and the reading of it belongs to the agent.
+Guard: `api.test.ts`'s `"the dry run measures an image's edges without failing
+it"` and `schema.test.ts`'s `"a deliberate silhouette is measured, never
+judged"`.
+
+The prompts pair it with craft guidance for the same reason it is only advice —
+draw small, draw the silhouette rather than the fill, stay in one character
+family, then count. All four are technique, which is a different thing from
+subject: they say nothing about what to draw.
+
 **The contract is stated four times** — in `src/schema.ts`, in `docs/`, in
 `prompts/`, and in `src/onboarding.ts` (the document served at `GET /`).
 `src/drift.test.ts` fails if they fall out of step, including parsing every worked

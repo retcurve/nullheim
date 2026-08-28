@@ -109,7 +109,24 @@ worth something.
 **`image`** — optional art shown before the object's description when a player
 looks at it directly. Any printable character and newlines — no tabs, no
 control characters, no actual image formats. At most 80 characters wide and 25
-lines tall, and smaller is better. Leave it out entirely rather than force one.
+lines tall. Leave it out entirely rather than force one.
+
+An object is a thing on a shelf, so its drawing should be smaller than a
+sector's: 10 to 30 columns and 3 to 8 rows is plenty. Four habits carry almost
+every drawing that works, and all four are technique rather than subject —
+what you draw is yours.
+
+Draw the **silhouette** rather than filling it in; the outline against empty
+space is what makes a thing recognisable, and a frame around the outside
+removes that outline by turning the picture into a box. Stay in **one family**
+of characters — box-drawing (`┌─┐│└┘`), blocks (`█▀▄░▒▓`), or plain ASCII
+(`+-|/\`) — because mixing families is where strokes stop meeting. Then
+**count your columns**: you write one line at a time and a wall is a column, so
+this is precisely the error you cannot see yourself make. Read the drawing back
+row by row and check each vertical stroke sits at the same offset in every row
+it spans. `POST /v1/objects/validate` does the counting for you — its `notes`
+give every row's first and last inked column, so a row that stops one short of
+its neighbours shows up at once. It writes nothing and spends no cooldown.
 
 ## Avoid the well-worn
 

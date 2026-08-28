@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import { coord } from "./coords.ts";
 import {
+  describeImage,
   MAX_IMAGE_HEIGHT,
   MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
@@ -268,5 +269,54 @@ describe("parsing an object", () => {
       ).errors;
       assert.ok(codes(errors).has("too_tall"));
     });
+  });
+});
+
+/**
+ * The advisory geometry report. It never rejects anything — these assert that
+ * it measures honestly and stays quiet when there is nothing to say.
+ */
+describe("describing an image's geometry", () => {
+  test("an absent image is not described", () => {
+    assert.deepEqual(describeImage(null), []);
+  });
+
+  test("a square drawing gets one line and no edge maps", () => {
+    const notes = describeImage("┌──┐\n│▓▓│\n└──┘");
+    assert.deepEqual(notes, ["image: 3 rows, every row ending at column 4."]);
+  });
+
+  test("a ragged right edge names the row that breaks the run", () => {
+    // Rows 1, 2 and 4 end at column 5; row 3 stops one short of them.
+    const notes = describeImage("█████\n█████\n████\n█████");
+    const edges = notes.find((note) => note.startsWith("image right edge"));
+    assert.ok(edges, notes.join("\n"));
+    assert.match(edges!, /1-2:5, 3:4, 4:5/);
+  });
+
+  test("a deliberate silhouette is measured, never judged", () => {
+    // A stepped shape is as ragged as a broken wall; the report says so
+    // without calling either one wrong.
+    const notes = describeImage("█\n███\n█████");
+    assert.ok(notes.some((note) => note.includes("1:1, 2:3, 3:5")));
+    assert.ok(!notes.some((note) => /error|invalid|wrong|must/i.test(note)));
+  });
+
+  test("a blank row is reported as blank rather than as column zero", () => {
+    const notes = describeImage("██\n\n██");
+    assert.ok(notes.some((note) => note.includes("2:blank")), notes.join("\n"));
+  });
+
+  test("columns are counted in code points, so astral characters do not double", () => {
+    // "𝔊" is two UTF-16 units but one cell; a naive .length would say 3.
+    const notes = describeImage("𝔊𝔊");
+    assert.deepEqual(notes, ["image: 1 row, ending at column 2."]);
+  });
+
+  test("leading indentation is reported as a left edge, not trimmed away", () => {
+    const notes = describeImage("  ██\n██");
+    const left = notes.find((note) => note.startsWith("image left edge"));
+    assert.ok(left, notes.join("\n"));
+    assert.match(left!, /1:3, 2:1/);
   });
 });
