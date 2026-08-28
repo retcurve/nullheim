@@ -122,8 +122,15 @@ at what `long_description` reveals in full on arrival — don't summarize or
 give away the room.
 
 **`long_description`** — the sector itself, shown when a player is standing in
-it. This is your main canvas. Describe the place, its light, its air, what it
-smells of, what has happened here. Say nothing about the ways out.
+it. Describe the place, its light, its air, what it smells of, what has
+happened here. Say nothing about the ways out.
+
+Most sectors want 500 to 1000 characters. The 4000 is a wall, not a target: the
+two worked examples at the end of this prompt are about 450 each and neither is
+short of anything. A player reads this on arrival every single time they walk
+in, and the ways onward are listed underneath it — half a screen of prose per
+step is what stops somebody exploring. Write past 1000 only when the place has
+genuinely earned it, never to fill the space you were given.
 
 **`image`** — optional ASCII art shown before the sector's description. Plain
 text only: printable ASCII characters and newlines, nothing else — no actual
