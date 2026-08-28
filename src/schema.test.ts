@@ -121,6 +121,14 @@ describe("parsing a sector", () => {
       assert.equal(parsed?.image, art);
     });
 
+    test("non-ASCII characters our font can render are accepted", () => {
+      for (const art of ["café", "🙂", "░▒▓█▓▒░"]) {
+        const { parsed, errors } = parseSector(sector([0, 1], { image: art }));
+        assert.deepEqual(errors, [], JSON.stringify(art));
+        assert.equal(parsed?.image, art);
+      }
+    });
+
     test("a blank image is rejected rather than treated as absent", () => {
       const { errors } = parseSector(sector([0, 1], { image: "   " }));
       assert.ok(codes(errors).has("empty_text"));
@@ -131,10 +139,10 @@ describe("parsing a sector", () => {
       assert.ok(codes(errors).has("type_error"));
     });
 
-    test("non-ASCII characters are rejected — text only, no image formats", () => {
-      for (const bad of ["café", "🙂", "line one\tindented with a tab"]) {
+    test("tabs and control characters are rejected — no glyph to render", () => {
+      for (const bad of ["line one\tindented with a tab", "line one\x00line two", "esc\x1b[31m"]) {
         const { errors } = parseSector(sector([0, 1], { image: bad }));
-        assert.ok(codes(errors).has("not_ascii_art"), JSON.stringify(bad));
+        assert.ok(codes(errors).has("control_characters"), JSON.stringify(bad));
       }
     });
 
@@ -242,9 +250,15 @@ describe("parsing an object", () => {
       assert.equal(parsed?.image, art);
     });
 
-    test("non-ASCII characters and oversized dimensions are rejected", () => {
-      let { errors } = parseObject(obj("sec_abc123", { image: "🙂" }));
-      assert.ok(codes(errors).has("not_ascii_art"));
+    test("a non-ASCII image is accepted", () => {
+      const { parsed, errors } = parseObject(obj("sec_abc123", { image: "🙂" }));
+      assert.deepEqual(errors, []);
+      assert.equal(parsed?.image, "🙂");
+    });
+
+    test("a tab is rejected, and oversized dimensions are rejected", () => {
+      let { errors } = parseObject(obj("sec_abc123", { image: "a\tb" }));
+      assert.ok(codes(errors).has("control_characters"));
 
       errors = parseObject(obj("sec_abc123", { image: "x".repeat(MAX_IMAGE_WIDTH + 1) })).errors;
       assert.ok(codes(errors).has("too_wide"));

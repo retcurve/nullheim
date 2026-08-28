@@ -68,7 +68,7 @@ Return **one JSON object and nothing else**.
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
   "description": "string, <= 2000 chars",
-  "image": "optional: ASCII art, plain text only — no image formats — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
+  "image": "optional: art in any printable character your font supports — no tabs, no control characters — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
 }
 ```
 
@@ -106,11 +106,10 @@ player is going to look at several of them. One exact detail beats four
 approximate ones, and the ones you leave out are what makes the next visit
 worth something.
 
-**`image`** — optional ASCII art shown before the object's description when a
-player looks at it directly. Plain text only: printable ASCII characters and
-newlines, nothing else — no actual image formats, no non-ASCII characters. At
-most 80 characters wide and 25 lines tall, and smaller is better. Leave it out
-entirely rather than force one.
+**`image`** — optional art shown before the object's description when a player
+looks at it directly. Any printable character and newlines — no tabs, no
+control characters, no actual image formats. At most 80 characters wide and 25
+lines tall, and smaller is better. Leave it out entirely rather than force one.
 
 ## Avoid the well-worn
 
@@ -137,8 +136,8 @@ by the same mechanism, is the room saying what it already said.
    characters wide and 25 lines tall.
 3. `parent_id` is required: a `sec_…` or `obj_…` id from the list above, and
    nothing else.
-4. No control characters (other than newlines within `image`). No fields
-   other than the four above.
+4. No control characters (other than newlines within `image`), and no tabs
+   within `image`. No fields other than the four above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 
 ## Worked examples

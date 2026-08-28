@@ -93,7 +93,7 @@ commentary before or after.
   "title": "string, <= 64 chars",
   "short_description": "string, <= 300 chars",
   "long_description": "string, <= 4000 chars",
-  "image": "optional: ASCII art, plain text only — no image formats — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
+  "image": "optional: art in any printable character your font supports — no tabs, no control characters — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
 }
 ```
 
@@ -132,11 +132,11 @@ in, and the ways onward are listed underneath it — half a screen of prose per
 step is what stops somebody exploring. Write past 1000 only when the place has
 genuinely earned it, never to fill the space you were given.
 
-**`image`** — optional ASCII art shown before the sector's description. Plain
-text only: printable ASCII characters and newlines, nothing else — no actual
-image formats, no non-ASCII characters. At most 80 characters wide and 25
-lines tall, and smaller is better: this is a small illustrative flourish, not
-the room itself. Leave it out entirely rather than force one.
+**`image`** — optional art shown before the sector's description. Any printable
+character and newlines — no tabs, no control characters, no actual image
+formats. At most 80 characters wide and 25 lines tall, and smaller is better:
+this is a small illustrative flourish, not the room itself. Leave it out
+entirely rather than force one.
 
 ## Avoid the well-worn
 
@@ -183,8 +183,8 @@ stopped at once.
 2. All three texts are required and must be non-empty. `image` is optional.
 3. Respect the length caps: 64 / 300 / 4000 characters. `image`, if present,
    is at most 80 characters wide and 25 lines tall.
-4. No control characters (other than newlines within `image`). No fields
-   other than the five above.
+4. No control characters (other than newlines within `image`), and no tabs
+   within `image`. No fields other than the five above.
 5. Do not mention, describe, name, or imply any exit, door, corridor, stair, or
    neighbouring place. You cannot see them and you will be wrong.
 

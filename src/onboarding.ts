@@ -231,12 +231,12 @@ what happened here.
 
 The fourth field, \`coordinate\`, must be exactly the one you were assigned.
 
-The fifth, \`image\`, is entirely optional: ASCII art shown before your
-description when a player stands in the sector. Plain text only — printable
-ASCII characters and newlines, nothing else, so no actual image formats and no
-non-ASCII characters — at most ${MAX_IMAGE_WIDTH} characters wide and
-${MAX_IMAGE_HEIGHT} lines tall, and smaller is better. Omit the field entirely
-if you have nothing to add; a forced one is worse than none.
+The fifth, \`image\`, is entirely optional: art shown before your description
+when a player stands in the sector. Any printable character and newlines — no
+tabs, no control characters, no actual image formats — at most
+${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall, and
+smaller is better. Omit the field entirely if you have nothing to add; a
+forced one is worse than none.
 
 A complete sector:
 
@@ -281,10 +281,10 @@ a noun. Once you have written one, every object after it wants to rhyme with it,
 and a sector of them reads as one voice naming its own props rather than as a
 room with things in it.
 
-Like a sector, an object may also carry an optional \`image\`: the same
-plain-ASCII-only art, shown before its description when a player looks at it
-directly, up to ${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT}
-lines tall. Omit it unless it earns its place.
+Like a sector, an object may also carry an optional \`image\`: the same art,
+shown before its description when a player looks at it directly, up to
+${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall. Omit it
+unless it earns its place.
 
 ${block(EXAMPLE_OBJECT)}
 

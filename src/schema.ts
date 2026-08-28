@@ -48,7 +48,7 @@ export interface Sector {
   readonly title: string;
   readonly shortDescription: string;
   readonly longDescription: string;
-  /** Optional ASCII art, shown before the description. `null` when absent. */
+  /** Optional art, shown before the description. `null` when absent. */
   readonly image: string | null;
 }
 
@@ -90,7 +90,7 @@ export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
-  /** Optional ASCII art, shown before the description. `null` when absent. */
+  /** Optional art, shown before the description. `null` when absent. */
   readonly image: string | null;
 }
 
@@ -152,22 +152,23 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
 }
 
 /**
- * Optional ASCII art. Unlike `text()`, absence is not an error — omitting the
- * field entirely (or sending `null`) is exactly how an agent says it has none.
+ * Optional art, shown before the description. Unlike `text()`, absence is not
+ * an error — omitting the field entirely (or sending `null`) is exactly how
+ * an agent says it has none.
  *
- * Deliberately stricter than `text()`: only printable ASCII (0x20–0x7E) and
- * `\n` are allowed, not `\t` or anything outside the ASCII range. Tabs render
- * inconsistently across terminal widths and would break a fixed-width
- * drawing; non-ASCII is exactly what "text only, no actual image formats"
- * rules out, since it is the door base64 or other encoded payloads would
- * walk through.
+ * Any character the frontend's monospace font can render is allowed — box
+ * drawing, block shading, accented letters, whatever the drawing needs — not
+ * just the ASCII subset. What is still refused is anything with no glyph to
+ * render in the first place: `\t` (renders inconsistently across terminal
+ * widths and would break a fixed-width drawing) and control characters other
+ * than `\n`, which is not art but an escape sequence wearing a text field.
  */
-function asciiImage(raw: unknown, path: string, errors: Collector): string | null {
+function artImage(raw: unknown, path: string, errors: Collector): string | null {
   if (raw === undefined || raw === null) {
     return null;
   }
   if (typeof raw !== "string") {
-    errors.add("type_error", path, "expected a string of ASCII art, or omit this field entirely");
+    errors.add("type_error", path, "expected a string of art, or omit this field entirely");
     return null;
   }
   if (!raw.trim()) {
@@ -176,12 +177,12 @@ function asciiImage(raw: unknown, path: string, errors: Collector): string | nul
   }
   for (const ch of raw) {
     const point = ch.codePointAt(0)!;
-    if (ch !== "\n" && (point < 0x20 || point > 0x7e)) {
+    const isControl = point < 0x20 || point === 0x7f || (point >= 0x80 && point <= 0x9f);
+    if (ch !== "\n" && isControl) {
       errors.add(
-        "not_ascii_art",
+        "control_characters",
         path,
-        "must be plain ASCII text only (printable characters and newlines) — no " +
-          "image formats and no non-ASCII characters",
+        "must not contain tabs or control characters — only printable characters and newlines",
       );
       break;
     }
@@ -284,7 +285,7 @@ export function parseSector(raw: unknown): ParseResult<Sector> {
       "$.long_description",
       errors,
     ),
-    image: asciiImage(raw["image"], "$.image", errors),
+    image: artImage(raw["image"], "$.image", errors),
   };
   return { parsed: sector, errors: errors.errors };
 }
@@ -326,7 +327,7 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       "$.description",
       errors,
     ),
-    image: asciiImage(raw["image"], "$.image", errors),
+    image: artImage(raw["image"], "$.image", errors),
   };
   return { parsed: draft, errors: errors.errors };
 }

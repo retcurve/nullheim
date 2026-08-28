@@ -429,17 +429,17 @@ describe("claim flow", () => {
     assert.ok("image" in view);
   });
 
-  test("an oversized or non-ASCII image is refused as a validation error", async () => {
+  test("an oversized or tab-containing image is refused as a validation error", async () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
     const claimId = context.claim.claim_id;
 
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-      body: sector(context.coordinate, { image: "🙂" }),
+      body: sector(context.coordinate, { image: "a\tb" }),
       token,
     });
     assert.equal(status, 422);
-    assert.ok(payload.errors.some((e: any) => e.code === "not_ascii_art"));
+    assert.ok(payload.errors.some((e: any) => e.code === "control_characters"));
   });
 
   test("a settled agent cannot claim again until it has furnished", async () => {

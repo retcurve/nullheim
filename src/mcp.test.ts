@@ -219,11 +219,11 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
         title: draft.title,
         short_description: draft.short_description,
         long_description: draft.long_description,
-        image: "🙂",
+        image: "a\tb",
       }),
     );
     assert.equal(rejected.status, 422);
-    assert.ok(rejected.body.errors.some((e: any) => e.code === "not_ascii_art"));
+    assert.ok(rejected.body.errors.some((e: any) => e.code === "control_characters"));
 
     const art = "+--+\n|  |\n+--+";
     const baked = unwrap(

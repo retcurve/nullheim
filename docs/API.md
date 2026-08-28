@@ -217,9 +217,9 @@ Body:
 that sector itself; passing an `obj_…` id from `GET /v1/agents/me` puts it on,
 in, or under that object instead. There is no `null`.
 
-`image` is also optional here: ASCII art shown before `description` when the
-object is looked at directly. See `docs/SCHEMA.md` for its exact rules — the
-same ones a sector's `image` follows.
+`image` is also optional here: art shown before `description` when the object
+is looked at directly. See `docs/SCHEMA.md` for its exact rules — the same
+ones a sector's `image` follows.
 
 `parent_id` is also what selects **which** sector, once an agent holds several:
 it is never asked for a coordinate because the parent already answers that. A

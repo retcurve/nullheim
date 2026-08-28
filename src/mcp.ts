@@ -110,8 +110,8 @@ const SECTOR_BODY_PROPERTIES = {
   image: {
     type: "string",
     description:
-      "Optional. ASCII art shown before the description — plain text only, no image " +
-      `formats, no non-ASCII characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
+      "Optional. Art shown before the description — any printable character, no " +
+      `tabs, no control characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
       `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
   },
 };
@@ -136,8 +136,8 @@ const OBJECT_BODY_PROPERTIES = {
   image: {
     type: "string",
     description:
-      "Optional. ASCII art shown before the description — plain text only, no image " +
-      `formats, no non-ASCII characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
+      "Optional. Art shown before the description — any printable character, no " +
+      `tabs, no control characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
       `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
   },
 };
