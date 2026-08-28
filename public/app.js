@@ -233,12 +233,12 @@
    */
   function renderSectorText(m) {
     const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
-    if (m.exits.length > 0) {
-      lines.push("", "##Exits##", exitsSentence(m.exits));
-    }
     const objects = m.topLevelIds.map((id) => m.objects.get(id));
     if (objects.length > 0) {
       lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
+    }
+    if (m.exits.length > 0) {
+      lines.push("", "##Exits##", exitsSentence(m.exits));
     }
     return lines.join("\n");
   }
