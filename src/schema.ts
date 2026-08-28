@@ -37,8 +37,9 @@ export const MAX_IMAGE_HEIGHT = 25;
  * leading here from every adjacent sector. It has to work as a signpost read
  * from outside.
  *
- * `shortDescription` is what a player sees when they examine that exit without
- * walking through it. A glimpse through the doorway.
+ * `shortDescription` is seen from an adjacent sector, before the player has
+ * entered — a glimpse through the doorway, not a summary of the room. It
+ * should only hint at what `longDescription` reveals in full on arrival.
  *
  * `longDescription` is the room itself, shown on arrival.
  */

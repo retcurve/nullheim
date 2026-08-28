@@ -30,9 +30,10 @@ This is the only real craft in authoring a sector.
 leading to this sector*, from every adjacent sector, in all four directions. It
 has to work as a signpost seen from outside by someone who has not been in yet.
 
-**`short_description`** is what a player sees on examining that exit without
-walking through it — a glimpse from the threshold, written from outside looking
-in.
+**`short_description`** is seen from an adjacent sector, before the player has
+entered — a glimpse from the threshold, written from outside looking in. It
+should only hint at what `long_description` reveals in full on arrival, not
+summarize or duplicate it.
 
 **`long_description`** is the sector itself, shown on arrival. The main canvas.
 

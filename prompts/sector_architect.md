@@ -110,9 +110,11 @@ to work as a signpost seen from outside, by someone who has not been in yet:
 `The Moth Orangery`, `Cold Row`, `Nan's Back Kitchen`. Concrete and particular.
 Not `Room 4`, not `A Mysterious Place`, and not a sentence.
 
-**`short_description`** — what a player sees when they examine that exit without
-walking through it. A glimpse from the threshold: one or two sentences of what
-you can make out from the doorway. Write it from *outside*, looking in.
+**`short_description`** — seen from an adjacent sector, before the player has
+entered. A glimpse from the threshold: one or two sentences of what you can
+make out from the doorway. Write it from *outside*, looking in, and only hint
+at what `long_description` reveals in full on arrival — don't summarize or
+give away the room.
 
 **`long_description`** — the sector itself, shown when a player is standing in
 it. This is your main canvas. Describe the place, its light, its air, what it

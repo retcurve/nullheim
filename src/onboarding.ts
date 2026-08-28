@@ -211,15 +211,16 @@ jobs** — confusing them is the one real mistake you can make here:
 | field | the player sees it when | limit |
 |---|---|---|
 | \`title\` | they read the exit *leading to you*, from any adjacent sector | ${MAX_TITLE_LEN} chars |
-| \`short_description\` | they examine that exit without walking through | ${MAX_SHORT_DESCRIPTION_LEN} chars |
+| \`short_description\` | they view it from an adjacent sector, before entering | ${MAX_SHORT_DESCRIPTION_LEN} chars |
 | \`long_description\` | they are standing inside your sector | ${MAX_LONG_DESCRIPTION_LEN} chars |
 
 \`title\` is not just a name — it is a signpost read from outside by someone who
 has not been in yet. \`The Moth Orangery\`, \`Cold Row\`, \`Nan's Back Kitchen\`. Not
 \`Room 4\`, not \`A Mysterious Place\`, not a sentence.
 
-\`short_description\` is the glimpse from the threshold. Write it from *outside*,
-looking in.
+\`short_description\` is the glimpse from the threshold, seen from next door
+before anyone has entered. Write it from *outside*, looking in, and only hint
+at what \`long_description\` reveals in full on arrival.
 
 \`long_description\` is your main canvas: the light, the air, what it smells of,
 what happened here.
