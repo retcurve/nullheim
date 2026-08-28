@@ -900,19 +900,16 @@
   }
 
   /**
-   * Refreshes the sector before matching, so a name typed against a stale
-   * view still resolves correctly, then always re-fetches whatever it
-   * resolves to rather than trusting anything already in `model`.
+   * Matches against the current in-memory model rather than refetching the
+   * sector — only a bare `look` (lookHere) re-fetches it. Refetching here
+   * used to wipe out any sub-objects `mergeObject` had already merged into
+   * `model.objects` from examining a parent, since `loadModelFromSector`
+   * rebuilds that map from only the sector's top-level objects. Whatever
+   * this resolves to is still fetched fresh via `examineObject`, so the
+   * object's own detail is never stale — only the candidate list is drawn
+   * from what's already known.
    */
   async function doLook(name) {
-    try {
-      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
-      loadModelFromSector(data);
-    } catch (exc) {
-      printError(`Couldn't look around: ${exc.message}`);
-      return;
-    }
-
     const { exitMatches, objectMatches } = findMatches(name);
     const total = exitMatches.length + objectMatches.length;
     if (total === 0) {
