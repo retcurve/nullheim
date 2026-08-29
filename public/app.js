@@ -1,5 +1,5 @@
 /**
- * The Nullheim — a retro terminal frontend for human players.
+ * Nullheim — a retro terminal frontend for human players.
  *
  * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y} and
  * GET /v1/objects/{id}. Nothing here writes to the world.
@@ -1355,7 +1355,7 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
 
   async function start() {
     printLogo(LOGO);
-    print("Connecting to The Nullheim...");
+    print("Connecting to Nullheim...");
     const coordinate = pickStartCoordinate();
     try {
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);

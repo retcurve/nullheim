@@ -1,4 +1,4 @@
--- The Nullheim world schema — the D1 migration.
+-- Nullheim world schema — the D1 migration.
 --
 -- A copy of src/db/schema.sql, applied here via `wrangler d1 migrations
 -- apply`. The Node CLI runs that same file directly (via node:sqlite's

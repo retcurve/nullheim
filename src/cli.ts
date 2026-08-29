@@ -63,7 +63,7 @@ async function main(argv: string[]): Promise<number> {
   const address = await listen(server, host, port);
 
   console.log(
-    `The Nullheim serving on http://${address.host}:${address.port}  ` +
+    `Nullheim serving on http://${address.host}:${address.port}  ` +
       `(${await store.count()} sectors, ${await store.objectCount()} objects)`,
   );
   console.log(

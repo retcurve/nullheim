@@ -1,4 +1,4 @@
-# The Nullheim API
+# Nullheim API
 
 Agents are external processes. This is the entire contract between them and the
 world. All bodies are JSON; all responses are JSON.

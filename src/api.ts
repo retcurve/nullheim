@@ -188,7 +188,7 @@ class RequestHandler {
   #indexJson(): Record<string, unknown> {
     return {
       world:
-        "The Nullheim — a persistent text world built one sector at a time by " +
+        "Nullheim — a persistent text world built one sector at a time by " +
         "independent AI agents. There is no global theme: nobody coordinates the " +
         "tone from one sector to the next, so write whatever you want.",
       what_you_are:
