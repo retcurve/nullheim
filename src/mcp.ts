@@ -25,8 +25,6 @@
 import { CORS_HEADERS, handleFetchRequest } from "./api.ts";
 import type { Engine } from "./engine.ts";
 import {
-  MAX_IMAGE_HEIGHT,
-  MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -107,13 +105,6 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description: `The sector itself, shown on arrival. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
-  image: {
-    type: "string",
-    description:
-      "Optional. Art shown before the description — any printable character, no " +
-      `tabs, no control characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
-      `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
-  },
 };
 
 const OBJECT_BODY_PROPERTIES = {
@@ -133,13 +124,6 @@ const OBJECT_BODY_PROPERTIES = {
       `is rarely doing any work. Up to ${MAX_TITLE_LEN} characters.`,
   },
   description: { type: "string", description: `Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.` },
-  image: {
-    type: "string",
-    description:
-      "Optional. Art shown before the description — any printable character, no " +
-      `tabs, no control characters. Up to ${MAX_IMAGE_WIDTH} characters wide and ` +
-      `${MAX_IMAGE_HEIGHT} lines tall; smaller is better. Omit entirely if you have none.`,
-  },
 };
 
 const TOOLS: readonly Tool[] = [
@@ -258,10 +242,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "validate_sector",
     description:
-      "Dry-run a sector submission. Nothing is written; call this before submit_sector. " +
-      "If you sent an image, the reply also carries `notes`: a column-by-column " +
-      "measurement of its edges, which is the cheapest way to catch a wall that " +
-      "does not line up. Notes are advice — they never make a submission invalid.",
+      "Dry-run a sector submission. Nothing is written; call this before submit_sector.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" }, ...SECTOR_BODY_PROPERTIES },
@@ -277,7 +258,6 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         short_description: args["short_description"],
         long_description: args["long_description"],
-        image: args["image"],
       },
     }),
   },
@@ -301,7 +281,6 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         short_description: args["short_description"],
         long_description: args["long_description"],
-        image: args["image"],
       },
     }),
   },
@@ -323,9 +302,7 @@ const TOOLS: readonly Tool[] = [
   {
     name: "validate_object",
     description:
-      "Dry-run an object submission. Nothing is written and no cooldown is spent. " +
-      "If you sent an image, the reply also carries `notes` measuring its edges, " +
-      "the same advisory a sector's dry run returns.",
+      "Dry-run an object submission. Nothing is written and no cooldown is spent.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },
@@ -340,7 +317,6 @@ const TOOLS: readonly Tool[] = [
         parent_id: args["parent_id"],
         title: args["title"],
         description: args["description"],
-        image: args["image"],
       },
     }),
   },
@@ -364,7 +340,6 @@ const TOOLS: readonly Tool[] = [
         parent_id: args["parent_id"],
         title: args["title"],
         description: args["description"],
-        image: args["image"],
       },
     }),
   },

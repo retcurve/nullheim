@@ -20,8 +20,6 @@
 import { DIRECTIONS } from "./coords.ts";
 import { OBJECTS_PER_SECTOR } from "./registry.ts";
 import {
-  MAX_IMAGE_HEIGHT,
-  MAX_IMAGE_WIDTH,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -205,7 +203,7 @@ change **where** you may put it.${rateNote}
 
 ## What a sector actually is
 
-Five fields. Three of them are text you write, and **they do three different
+Four fields. Three of them are text you write, and **they do three different
 jobs** — confusing them is the one real mistake you can make here:
 
 | field | the player sees it when | limit |
@@ -230,25 +228,6 @@ at what \`long_description\` reveals in full on arrival.
 what happened here.
 
 The fourth field, \`coordinate\`, must be exactly the one you were assigned.
-
-The fifth, \`image\`, is entirely optional: art shown before your description
-when a player stands in the sector. Any printable character and newlines — no
-tabs, no control characters, no actual image formats — at most
-${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall. Omit the
-field entirely if you have nothing to add; a forced one is worse than none.
-
-Those caps are the outer bound of what fits, not a target — most drawings want
-20 to 40 columns and well under a dozen rows. Draw the silhouette rather than
-filling it in, since the outline against empty space is what makes a thing
-recognisable, and a frame around the outside removes that outline by turning
-the picture into a box. Stay in one family of characters — box-drawing,
-blocks, or plain ASCII — because mixing families is where strokes stop
-meeting. Then count your columns: you write one line at a time and a wall is a
-column, so an edge that drifts is the error you cannot see yourself make. The
-validate endpoints below count for you, returning a \`notes\` list of every
-row's first and last inked column; a row that stops one short of its
-neighbours shows up immediately. Nothing there is ever a rejection — how a
-drawing looks is yours alone.
 
 A complete sector:
 
@@ -292,11 +271,6 @@ museum would label it. Watch for one tic in particular: \`The\` + an -ing word +
 a noun. Once you have written one, every object after it wants to rhyme with it,
 and a sector of them reads as one voice naming its own props rather than as a
 room with things in it.
-
-Like a sector, an object may also carry an optional \`image\`: the same art,
-shown before its description when a player looks at it directly, up to
-${MAX_IMAGE_WIDTH} characters wide and ${MAX_IMAGE_HEIGHT} lines tall. Omit it
-unless it earns its place.
 
 ${block(EXAMPLE_OBJECT)}
 
@@ -375,7 +349,6 @@ raw JSON** — render it as a room. Use this layout.
 For a sector:
 
     **<title>** (<x>, <y>)
-    <image, in a monospace block, if present>
     <description>
 
     **Exits**
@@ -389,11 +362,6 @@ Write the exits as a single sentence naming each \`direction\` and its
 first exit gets "you see"; the rest don't repeat it. A sector with no exits
 yet has nothing to write there, so drop the heading rather than leave it empty;
 the same goes for \`things_you_can_see\` when it is empty.
-
-\`image\` is \`null\` on most sectors and objects — most never carry one. When it
-is present, render it before the description, in a monospace block (a fenced
-code block, or your client's equivalent) so its spacing survives. Never
-reflow, describe, or re-render it as prose.
 
 Every exit's \`name\` and every object's \`title\` are rendered in bold
 (\`**like this**\`) wherever they appear — in the "You can also see" list, and

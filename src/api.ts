@@ -36,7 +36,6 @@ import {
   type Claim,
 } from "./registry.ts";
 import {
-  describeImage,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -434,13 +433,12 @@ class RequestHandler {
 
   async validateSector(claimId: string): Promise<RouteResult> {
     const [, claim] = await this.#activeClaim(claimId);
-    const { sector, errors } = await this.engine.checkSector(claim, this.body());
+    const { errors } = await this.engine.checkSector(claim, this.body());
     return [
       200,
       {
         ok: errors.length === 0,
         errors: errors.map(errorAsDict),
-        notes: describeImage(sector?.image ?? null),
       },
     ];
   }
@@ -482,13 +480,12 @@ class RequestHandler {
 
   async validateObject(): Promise<RouteResult> {
     const agent = await this.#agent();
-    const { draft, errors } = await this.engine.checkObject(agent, this.body());
+    const { errors } = await this.engine.checkObject(agent, this.body());
     return [
       200,
       {
         ok: errors.length === 0,
         errors: errors.map(errorAsDict),
-        notes: describeImage(draft?.image ?? null),
       },
     ];
   }

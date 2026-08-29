@@ -22,8 +22,6 @@ export const MAX_SHORT_DESCRIPTION_LEN = 300;
 export const MAX_LONG_DESCRIPTION_LEN = 4000;
 export const MAX_OBJECT_DESCRIPTION_LEN = 2000;
 export const MAX_SUBMISSION_BYTES = 32_768;
-export const MAX_IMAGE_WIDTH = 80;
-export const MAX_IMAGE_HEIGHT = 25;
 
 // --- Sector -----------------------------------------------------------------
 
@@ -48,8 +46,6 @@ export interface Sector {
   readonly title: string;
   readonly shortDescription: string;
   readonly longDescription: string;
-  /** Optional art, shown before the description. `null` when absent. */
-  readonly image: string | null;
 }
 
 /**
@@ -62,14 +58,12 @@ export const SECTOR_FIELDS = [
   "title",
   "short_description",
   "long_description",
-  "image",
 ] as const;
 
 export function sectorAsDict(sector: Sector): Record<string, unknown> {
   return {
     coordinate: coords.asList(sector.coordinate),
     title: sector.title,
-    image: sector.image,
     short_description: sector.shortDescription,
     long_description: sector.longDescription,
   };
@@ -90,17 +84,14 @@ export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
-  /** Optional art, shown before the description. `null` when absent. */
-  readonly image: string | null;
 }
 
-export const OBJECT_FIELDS = ["parent_id", "title", "description", "image"] as const;
+export const OBJECT_FIELDS = ["parent_id", "title", "description"] as const;
 
 export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
   return {
     parent_id: draft.parentId,
     title: draft.title,
-    image: draft.image,
     description: draft.description,
   };
 }
@@ -146,168 +137,6 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
     if (point < 32 && ch !== "\n" && ch !== "\t") {
       errors.add("control_characters", path, "must not contain control characters");
       break;
-    }
-  }
-  return raw;
-}
-
-/**
- * The rows an image actually occupies.
- *
- * A single trailing newline is how most editors and generators end a block of
- * text; counting it as an extra blank row would punish the common case for a
- * distinction no reader would notice.
- */
-export function imageRows(image: string): string[] {
-  const lines = image.split("\n");
-  return lines.length > 1 && lines.at(-1) === "" ? lines.slice(0, -1) : lines;
-}
-
-/** The 1-based columns of the first and last inked cell, or null for a blank row. */
-function inkEdges(row: string): { left: number | null; right: number | null } {
-  const cells = [...row];
-  let left: number | null = null;
-  let right: number | null = null;
-  for (let i = 0; i < cells.length; i++) {
-    if (cells[i] !== " ") {
-      left = i + 1;
-      break;
-    }
-  }
-  for (let i = cells.length - 1; i >= 0; i--) {
-    if (cells[i] !== " ") {
-      right = i + 1;
-      break;
-    }
-  }
-  return { left, right };
-}
-
-/** `[64,64,63,64]` reads as `1-2:64, 3:63, 4:64` — runs, so a stray row stands out. */
-function byRow(values: readonly (number | null)[]): string {
-  const parts: string[] = [];
-  let i = 0;
-  while (i < values.length) {
-    let last = i;
-    while (last + 1 < values.length && values[last + 1] === values[i]) {
-      last++;
-    }
-    const column = values[i] === null ? "blank" : String(values[i]);
-    parts.push(i === last ? `${i + 1}:${column}` : `${i + 1}-${last + 1}:${column}`);
-    i = last + 1;
-  }
-  return parts.join(", ");
-}
-
-/**
- * A measurement of an image's own geometry, returned by the validate
- * endpoints beside the errors.
- *
- * This exists because the agents drawing these are language models, and a
- * language model cannot see its own column arithmetic as it writes: it emits
- * tokens, not cells, so "row 8 stops one column short of row 9" is invisible
- * at the moment the mistake is made and obvious the moment anything counts.
- * Counting is the part the world can do for nothing.
- *
- * Deliberately advisory, and deliberately not a judgement. A ragged right
- * edge is a broken wall in one drawing and a stepped silhouette in the next,
- * and nothing here can tell which — so this reports what the rows measure and
- * leaves the reading of it to whoever drew them. No image is ever rejected
- * for how it looks; that would be the world steering content, which is the
- * one thing an agent's total creative freedom exists to prevent.
- */
-export function describeImage(image: string | null): string[] {
-  if (image === null) {
-    return [];
-  }
-  const rows = imageRows(image);
-  const edges = rows.map(inkEdges);
-  const rights = edges.map((edge) => edge.right);
-  const lefts = edges.map((edge) => edge.left);
-
-  const inked = rights.filter((column): column is number => column !== null);
-  if (inked.length === 0) {
-    // A blank image is already an `empty_text` error; nothing to measure.
-    return [];
-  }
-
-  const notes: string[] = [];
-  const narrowest = Math.min(...inked);
-  const widest = Math.max(...inked);
-  const count = rows.length === 1 ? "1 row" : `${rows.length} rows`;
-  notes.push(
-    narrowest !== widest
-      ? `image: ${count}, ending between columns ${narrowest} and ${widest}.`
-      : rows.length === 1
-        ? `image: 1 row, ending at column ${widest}.`
-        : `image: ${count}, every row ending at column ${widest}.`,
-  );
-
-  const ragged = (columns: readonly (number | null)[]) => new Set(columns).size > 1;
-  if (ragged(rights)) {
-    notes.push(`image right edge, by row — ${byRow(rights)}`);
-  }
-  if (ragged(lefts)) {
-    notes.push(`image left edge, by row — ${byRow(lefts)}`);
-  }
-  if (ragged(rights) || ragged(lefts)) {
-    notes.push(
-      "A stroke meant to read as one wall ends on the same column in every row " +
-        "it spans. An edge that shifts by a column or two is usually a miscount; " +
-        "one that shifts by more is usually the shape you meant.",
-    );
-  }
-  return notes;
-}
-
-/**
- * Optional art, shown before the description. Unlike `text()`, absence is not
- * an error — omitting the field entirely (or sending `null`) is exactly how
- * an agent says it has none.
- *
- * Any character the frontend's monospace font can render is allowed — box
- * drawing, block shading, accented letters, whatever the drawing needs — not
- * just the ASCII subset. What is still refused is anything with no glyph to
- * render in the first place: `\t` (renders inconsistently across terminal
- * widths and would break a fixed-width drawing) and control characters other
- * than `\n`, which is not art but an escape sequence wearing a text field.
- */
-function artImage(raw: unknown, path: string, errors: Collector): string | null {
-  if (raw === undefined || raw === null) {
-    return null;
-  }
-  if (typeof raw !== "string") {
-    errors.add("type_error", path, "expected a string of art, or omit this field entirely");
-    return null;
-  }
-  if (!raw.trim()) {
-    errors.add("empty_text", path, "must not be blank if present; omit the field instead");
-    return raw;
-  }
-  for (const ch of raw) {
-    const point = ch.codePointAt(0)!;
-    const isControl = point < 0x20 || point === 0x7f || (point >= 0x80 && point <= 0x9f);
-    if (ch !== "\n" && isControl) {
-      errors.add(
-        "control_characters",
-        path,
-        "must not contain tabs or control characters — only printable characters and newlines",
-      );
-      break;
-    }
-  }
-  const rows = imageRows(raw);
-  if (rows.length > MAX_IMAGE_HEIGHT) {
-    errors.add("too_tall", path, `must be at most ${MAX_IMAGE_HEIGHT} lines tall (got ${rows.length})`);
-  }
-  for (const [index, line] of rows.entries()) {
-    const width = codePointLength(line);
-    if (width > MAX_IMAGE_WIDTH) {
-      errors.add(
-        "too_wide",
-        `${path}[${index}]`,
-        `line ${index + 1} must be at most ${MAX_IMAGE_WIDTH} characters wide (got ${width})`,
-      );
     }
   }
   return raw;
@@ -390,7 +219,6 @@ export function parseSector(raw: unknown): ParseResult<Sector> {
       "$.long_description",
       errors,
     ),
-    image: artImage(raw["image"], "$.image", errors),
   };
   return { parsed: sector, errors: errors.errors };
 }
@@ -432,7 +260,6 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       "$.description",
       errors,
     ),
-    image: artImage(raw["image"], "$.image", errors),
   };
   return { parsed: draft, errors: errors.errors };
 }
