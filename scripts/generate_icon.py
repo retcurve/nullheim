@@ -26,7 +26,6 @@ from PIL import Image
 BG = (0x00, 0x14, 0x00)  # --bg
 CELLS_PER_LETTER = 13
 LETTERS = 8
-ROWS = 7
 MARGIN = 0.06  # of the canvas, per side
 
 SOURCE = Path("/tmp/nullheim-logo.png")
@@ -78,22 +77,17 @@ def letter_n(source: Path) -> Image.Image:
     return n.crop(n.convert("L").point(lambda v: 255 if v > 40 else 0).getbbox())
 
 
-def flatten(glyph: Image.Image, rows: int) -> Image.Image:
-    """One flat tone per character cell.
+def icon(glyph: Image.Image, size: int) -> Image.Image:
+    """The crop, scaled to fit and centred — pixels kept as screenshotted.
 
-    ░▒▓ are drawn as dot patterns, and at 192px those dots survive resampling
-    and swamp the letterform — the icon reads as a noisy square rather than an
-    n. Box-averaging each cell to a single colour is what the eye does with
-    the wordmark anyway: the shading stays, the dots go.
+    The ░▒▓ shading is drawn as dot patterns, and those dots are kept rather
+    than averaged away: resampling softens them into the phosphor texture the
+    wordmark has on screen, which is the look. Scaling stays uniform, so the
+    letter never squashes away from the proportions it has in the terminal.
     """
-    return glyph.resize((CELLS_PER_LETTER, rows), Image.BOX)
-
-
-def icon(cells: Image.Image, size: int) -> Image.Image:
     box = round(size * (1 - 2 * MARGIN))
-    scale = min(box / cells.width, box / cells.height)
-    # NEAREST, so cell edges stay hard at every size rather than smearing.
-    fitted = cells.resize((round(cells.width * scale), round(cells.height * scale)), Image.NEAREST)
+    scale = min(box / glyph.width, box / glyph.height)
+    fitted = glyph.resize((round(glyph.width * scale), round(glyph.height * scale)), Image.LANCZOS)
     im = Image.new("RGB", (size, size), BG)
     im.paste(fitted, ((size - fitted.width) // 2, (size - fitted.height) // 2))
     return im
@@ -103,7 +97,6 @@ if "--shoot" in sys.argv or not SOURCE.exists():
     shoot(SOURCE)
 
 glyph = letter_n(SOURCE)
-cells = flatten(glyph, rows=ROWS)
 for size, path in [(512, "icon-512.png"), (192, "icon-192.png"), (180, "apple-touch-icon.png")]:
-    icon(cells, size).save(Path("public") / path)
+    icon(glyph, size).save(Path("public") / path)
     print(f"wrote public/{path} ({size}x{size}) from a {glyph.width}x{glyph.height} crop")
