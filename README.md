@@ -100,7 +100,7 @@ an agent waits 15 minutes per object, so the world must not lie about that.
 ### Deploying to Cloudflare
 
 ```bash
-npx wrangler d1 create entropic                 # once — put the returned id in wrangler.toml
+npx wrangler d1 create nullheim                 # once — put the returned id in wrangler.toml
 npm run db:migrate:remote                     # apply db/schema.sql to it
 npm run deploy                                # publish the Worker
 npm run dev:worker                            # or run it locally against D1 first

@@ -1,17 +1,4 @@
-# Still "entropic", not "nullheim": Cloudflare has no in-place rename for a
-# Worker. Changing `name` here and deploying does not rename the live Worker —
-# it creates a brand new one under the new name, leaves the old one running
-# untouched at its existing routes, and orphans it. Renaming to nullheim is a
-# deliberate cutover, not a config edit:
-#   1. Deploy this config with name = "nullheim" — creates the new Worker.
-#   2. Point the custom domain/route (see the commented-out [[routes]] below)
-#      at the new Worker instead of the old one.
-#   3. Verify the new Worker serves correctly at that route.
-#   4. Delete the old "entropic" Worker (dashboard, or `wrangler delete
-#      --name entropic`).
-# Only then should `name` below actually change. Same story for the D1
-# databases further down — see their comments.
-name = "entropic"
+name = "nullheim"
 main = "src/worker.ts"
 compatibility_date = "2026-08-01"
 
@@ -46,18 +33,9 @@ run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
-# Cloudflare's own name for this D1 database is still "entropic" — D1 has no
-# rename operation, so database_name must match the resource's actual name
-# regardless of what the rest of this project now calls itself.
-database_name = "entropic"
-database_id = "565f3c83-456a-4f0c-b25f-aa0d367e61fd"
+database_name = "nullheim"
+database_id = "9c51fc64-dcd7-4ef5-8892-ca4febe981ec"
 migrations_dir = "migrations"
-# Renaming this to nullheim means the same kind of cutover as the Worker
-# above, not a config edit: D1 has no rename either. Create a new database
-# (`wrangler d1 create nullheim`), copy the data across (`wrangler d1 export`
-# / `import`, or Time Travel's copy/fork), point `database_name` and
-# `database_id` here at it, redeploy, verify, then delete the old "entropic"
-# database once nothing depends on it.
 
 # Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per
 # environment with `wrangler secret` or the dashboard, not by editing these.
@@ -81,12 +59,10 @@ enabled = true
 persist = true
 head_sampling_rate = 1
 
-# A single fixed hostname, not a subdomain wildcard: *.entropic.sector808.org
+# A single fixed hostname, not a subdomain wildcard: *.nullheim.sector808.org
 # needs Advanced Certificate Manager (a wildcard-on-a-subdomain is not covered
 # by the free Universal SSL cert, which only covers sector808.org and
 # *.sector808.org). This one hostname fits inside that free wildcard.
-# (Becomes *.nullheim.sector808.org as step 2 of the Worker cutover above,
-# once the new Worker exists and this route is repointed at it.)
 #
 # Disabled for now — reenable by uncommenting this and removing the
 # top-level `workers_dev = false` near the top of this file (which exists only
@@ -98,43 +74,39 @@ head_sampling_rate = 1
 # actually take the domain down or back up; editing this file alone changes
 # nothing live until deployed.
 # [[routes]]
-# pattern = "entropic.sector808.org/*"
+# pattern = "nullheim.sector808.org/*"
 # zone_name = "sector808.org"
 
 # Bindings for branch previews, which all share this one non-production D1
-# database — never the production `entropic` DB above.
+# database — never the production `nullheim` DB above.
 #
 # A preview is a *version* of the production Worker, uploaded by Cloudflare
 # Workers Builds' "version command" (`wrangler versions upload --env preview`)
 # and left at 0% traffic, reachable only at its own preview URL. It is not a
 # Worker of its own: Workers Builds sets WRANGLER_CI_OVERRIDE_NAME to the
 # connected Worker and wrangler applies it after `--name`, so `name` below is
-# overridden to `entropic` in CI and a per-branch Worker cannot be deployed
-# from a build. `wrangler deploy` must therefore never run on a branch — it
-# would publish that branch onto production.
+# overridden to whatever that dashboard setting says in CI and a per-branch
+# Worker cannot be deployed from a build. `wrangler deploy` must therefore
+# never run on a branch — it would publish that branch onto production.
 #
 # `routes` is an inheritable key, so without the empty list here this
 # environment would inherit the production route above and any deploy of it
-# would take entropic.sector808.org.
+# would take nullheim.sector808.org.
 #
 # `workers_dev` is also inheritable, and defaults to false once any `routes`
 # exist anywhere above unless an environment says otherwise — which is why
 # adding the production route silently took the preview URL down too. This
 # environment is only ever reachable at its preview URL, so it must say true.
 [env.preview]
-# Same cutover caveat as production `name` above — this stays "entropic-preview"
-# until the production Worker is actually renamed via the steps documented there.
-name = "entropic-preview"
+name = "nullheim-preview"
 routes = []
 workers_dev = true
 preview_urls = true
 
 [[env.preview.d1_databases]]
 binding = "DB"
-# Same as the production DB above: Cloudflare's own name for this resource is
-# still "entropic-preview".
-database_name = "entropic-preview"
-database_id = "11b879d4-dd94-4160-81f6-b5014d0af089"
+database_name = "nullheim-preview"
+database_id = "79a021ed-f7b8-44f3-95eb-58ca95846572"
 migrations_dir = "migrations"
 
 [env.preview.vars]
