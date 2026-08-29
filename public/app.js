@@ -936,6 +936,17 @@
       return;
     }
 
+    const direction = BARE_DIRECTIONS[name.toLowerCase()];
+    if (direction) {
+      const exit = model.exits.find((e) => e.direction === direction);
+      if (!exit) {
+        printError("You don't see that here.");
+        return;
+      }
+      print(renderExitText(exit));
+      return;
+    }
+
     const { exitMatches, objectMatches } = findMatches(name);
     const total = exitMatches.length + objectMatches.length;
     if (total === 0) {
