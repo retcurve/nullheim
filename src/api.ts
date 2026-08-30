@@ -117,7 +117,8 @@ class RequestHandler {
     try {
       return JSON.parse(new TextDecoder().decode(this.#rawBody));
     } catch (exc) {
-      throw new ApiError(400, "malformed_json", `body is not valid JSON: ${(exc as Error).message}`);
+      console.error(exc);
+      throw new ApiError(400, "malformed_json", "body is not valid JSON");
     }
   }
 
@@ -674,7 +675,8 @@ export async function dispatch(
       if (exc instanceof ApiError) {
         return [exc.status, exc.payload];
       }
-      return [500, { error: { code: "internal", message: (exc as Error).message } }];
+      console.error(exc);
+      return [500, { error: { code: "internal", message: "internal server error" } }];
     }
   }
   return [404, { error: { code: "no_such_route", message: `${method} ${path}` } }];

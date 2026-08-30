@@ -908,6 +908,31 @@ describe("malformed input", () => {
     assert.equal(status, 413);
     assert.equal(payload.error.code, "payload_too_large");
   });
+
+  test("a body without Content-Length is bounded", async () => {
+    const url = new URL("/v1/claims", ctx.base);
+    // Send a body with chunked transfer-encoding (no Content-Length
+    // header). The server must not let the chunks array grow without
+    // bound — the safety-net listener destroys the connection when the
+    // body exceeds MAX_BODY_BYTES.
+    const req = httpRequest(
+      {
+        method: "POST",
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+    req.on("error", () => {}); // connection reset is expected
+    req.write("x".repeat(200_000));
+    req.end();
+
+    // The server must still be alive.
+    const { status, payload } = await call(ctx, "GET", "/v1/health");
+    assert.equal(status, 200);
+    assert.equal(payload.status, "ok");
+  });
 });
 
 describe("keep-alive", () => {

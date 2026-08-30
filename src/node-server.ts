@@ -100,12 +100,27 @@ function readNodeBody(
       return;
     }
     if (length === 0) {
+      let received = 0;
+      req.on("data", (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > MAX_BODY_BYTES) {
+          req.destroy();
+        }
+      });
       resolve({ raw: new Uint8Array(0), tooLarge: false, badHeader: false });
-      req.resume();
       return;
     }
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let received = 0;
+    req.on("data", (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > MAX_BODY_BYTES) {
+        req.removeAllListeners();
+        resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () =>
       resolve({ raw: Buffer.concat(chunks), tooLarge: false, badHeader: false }),
     );
@@ -197,7 +212,7 @@ export function makeServer(engine: Engine, options: MakeServerOptions = {}): Ser
         console.error(exc);
       }
       if (!res.headersSent) {
-        const body = Buffer.from(JSON.stringify({ error: { code: "internal", message: String(exc) } }));
+        const body = Buffer.from(JSON.stringify({ error: { code: "internal", message: "internal server error" } }));
         res.writeHead(500, { "Content-Type": "application/json", "Content-Length": body.length });
         res.end(body);
       }
