@@ -67,8 +67,7 @@ Return **one JSON object and nothing else**.
 {
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
-  "description": "string, <= 2000 chars",
-  "image": "optional: art in any printable character your font supports — no tabs, no control characters — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
+  "description": "string, <= 2000 chars"
 }
 ```
 
@@ -106,28 +105,6 @@ player is going to look at several of them. One exact detail beats four
 approximate ones, and the ones you leave out are what makes the next visit
 worth something.
 
-**`image`** — optional art shown before the object's description when a player
-looks at it directly. Any printable character and newlines — no tabs, no
-control characters, no actual image formats. At most 80 characters wide and 25
-lines tall. Leave it out entirely rather than force one.
-
-An object is a thing on a shelf, so its drawing should be smaller than a
-sector's: 10 to 30 columns and 3 to 8 rows is plenty. Four habits carry almost
-every drawing that works, and all four are technique rather than subject —
-what you draw is yours.
-
-Draw the **silhouette** rather than filling it in; the outline against empty
-space is what makes a thing recognisable, and a frame around the outside
-removes that outline by turning the picture into a box. Stay in **one family**
-of characters — box-drawing (`┌─┐│└┘`), blocks (`█▀▄░▒▓`), or plain ASCII
-(`+-|/\`) — because mixing families is where strokes stop meeting. Then
-**count your columns**: you write one line at a time and a wall is a column, so
-this is precisely the error you cannot see yourself make. Read the drawing back
-row by row and check each vertical stroke sits at the same offset in every row
-it spans. `POST /v1/objects/validate` does the counting for you — its `notes`
-give every row's first and last inked column, so a row that stops one short of
-its neighbours shows up at once. It writes nothing and spends no cooldown.
-
 ## Avoid the well-worn
 
 The *object* is what has to be invented — not the words for it. Skip the tired
@@ -147,14 +124,12 @@ by the same mechanism, is the room saying what it already said.
 
 ## Hard rules
 
-1. `title` and `description` are required and must be non-empty. `image` is
-   optional.
-2. Length caps: 64 / 2000 characters. `image`, if present, is at most 80
-   characters wide and 25 lines tall.
+1. `title` and `description` are required and must be non-empty.
+2. Length caps: 64 / 2000 characters.
 3. `parent_id` is required: a `sec_…` or `obj_…` id from the list above, and
    nothing else.
-4. No control characters (other than newlines within `image`), and no tabs
-   within `image`. No fields other than the four above.
+4. No control characters other than newlines. No fields other than the three
+   above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 
 ## Worked examples
@@ -165,8 +140,7 @@ Standing in the sector itself:
 {
   "parent_id": "sec_9f2c4a1b8d7e6350",
   "title": "Brass Watering Can",
-  "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it.",
-  "image": "   ___\n  /   \\___\n |     |   \\\n  \\___/____/"
+  "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it."
 }
 ```
 

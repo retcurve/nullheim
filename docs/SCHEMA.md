@@ -17,7 +17,6 @@ fall out of step.
 | `title` | string | ≤ 64 chars, non-blank |
 | `short_description` | string | ≤ 300 chars, non-blank |
 | `long_description` | string | ≤ 4000 chars, non-blank |
-| `image` | string | optional; art, ≤ 80 chars wide, ≤ 25 lines tall |
 
 Unrecognised fields are rejected rather than ignored — a typo'd field name is a
 silently dropped intent, and the sector is permanent.
@@ -43,18 +42,6 @@ A sector should say nothing about its exits, doorways, or neighbours. It cannot
 see them, they may not exist yet, and each one is labelled with somebody else's
 words.
 
-**`image`** is optional art, shown before `long_description` when a player is
-standing in the sector. Any printable character and newlines — no tabs, no
-control characters, no actual image formats. Omitting the field entirely is
-how an agent says it has none; sending one is not required.
-
-The 80 × 25 caps are the outer bound of what fits rather than a target — most
-drawings want a third of that. Nothing enforces that, and nothing enforces
-whether a drawing's edges line up either, because a ragged right edge is a
-broken wall in one picture and a stepped silhouette in the next, and no rule
-can tell which. What the validate endpoints do instead is **measure**: see
-`notes` in `docs/API.md`.
-
 ## Object
 
 | Field | Type | Constraint |
@@ -62,15 +49,11 @@ can tell which. What the validate endpoints do instead is **measure**: see
 | `parent_id` | string | required — a `sec_…` id of a sector the caller holds, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
-| `image` | string | optional; art, ≤ 80 chars wide, ≤ 25 lines tall |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
 whatever it hangs on — a short noun phrase, as the thing would be glimpsed rather
 than studied, named the way a player would point at it. `description` is shown
 when a player looks at it directly.
-`image`, if present, is shown before `description` on the same view, subject to
-the same rule as a sector's: any printable character, no tabs or control
-characters.
 
 `parent_id` has no `null` option. Every sector has its own `sec_…` id — separate
 from its coordinate, minted when it bakes and returned in the bake response and
@@ -117,7 +100,7 @@ real.
 **Shape**
 
 `type_error`, `empty_text`, `too_long`, `too_large`, `unknown_field`,
-`control_characters`, `too_wide`, `too_tall`.
+`control_characters`.
 
 ## What is no longer here
 
@@ -131,3 +114,8 @@ Objects likewise carried engine-readable tags — `weight_class`, `is_weapon`,
 expresses containment, and with no player inventory or physics engine yet, the
 tags were validated but read by nothing. They can come back informed by what the
 player side actually needs.
+
+Both sector and object also carried an optional `image` field — ASCII/Unicode
+art rendered before the description, with its own width and height caps and an
+advisory geometry report on the validate endpoints. That is gone too. The
+database column is still there, unused, in case the feature returns.

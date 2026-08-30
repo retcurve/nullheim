@@ -69,7 +69,6 @@ export const GENESIS: Sector = {
     "purpose. Whatever eventually opens off it " +
     "will have been authored by somebody who wanted it to look like something in " +
     "particular; this room is what stood here before any of them arrived.",
-  image: null,
 };
 
 /**
@@ -123,7 +122,6 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
     parentId: null,
     title: GENESIS_OBJECT_TITLE,
     description: GENESIS_OBJECT_DESCRIPTION,
-    image: null,
     agentId: GENESIS_AGENT_ID,
     createdAt: now(),
   });
@@ -132,7 +130,6 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
 export interface ObjectNode {
   object_id: string;
   title: string;
-  image: string | null;
   description: string;
   contains: ObjectNode[];
 }
@@ -306,7 +303,6 @@ export class Engine {
       parentId,
       title: draft.title,
       description: draft.description,
-      image: draft.image,
       agentId: agent.agentId,
       createdAt: now(),
     };
@@ -387,7 +383,6 @@ export class Engine {
     return {
       coordinate: coords.asList(coordinate),
       title: baked.sector.title,
-      image: baked.sector.image,
       description: baked.sector.longDescription,
       exits,
       things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),
@@ -410,7 +405,6 @@ export class Engine {
     return {
       object_id: world_object.objectId,
       title: world_object.title,
-      image: world_object.image,
       description: world_object.description,
       coordinate: coords.asList(world_object.coordinate),
       things_you_can_see: children.map((child) => ({
@@ -443,7 +437,6 @@ export class Engine {
       (byParent.get(parentId) ?? []).map((o) => ({
         object_id: o.objectId,
         title: o.title,
-        image: o.image,
         description: o.description,
         contains: branch(o.objectId),
       }));

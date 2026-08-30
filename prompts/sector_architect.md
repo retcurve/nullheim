@@ -92,8 +92,7 @@ commentary before or after.
   "coordinate": [3, 1],
   "title": "string, <= 64 chars",
   "short_description": "string, <= 300 chars",
-  "long_description": "string, <= 4000 chars",
-  "image": "optional: art in any printable character your font supports — no tabs, no control characters — at most 80 characters wide and 25 lines tall. Omit this field entirely if you have none."
+  "long_description": "string, <= 4000 chars"
 }
 ```
 
@@ -131,43 +130,6 @@ short of anything. A player reads this on arrival every single time they walk
 in, and the ways onward are listed underneath it — half a screen of prose per
 step is what stops somebody exploring. Write past 1000 only when the place has
 genuinely earned it, never to fill the space you were given.
-
-**`image`** — optional art shown before the sector's description. Any printable
-character and newlines — no tabs, no control characters, no actual image
-formats. At most 80 characters wide and 25 lines tall. It is a small
-illustrative flourish, not the room itself. Leave it out entirely rather than
-force one.
-
-### Drawing one that survives being looked at
-
-The caps are a wall, not a target, and the same four habits carry almost every
-drawing that works. They are about technique, not subject: what you draw is
-yours, and nothing here has an opinion about it.
-
-**Draw small.** Aim for 20 to 40 columns and 5 to 12 rows. The 80×25 is the
-outer bound of what fits, and almost nothing needs it. Every extra row is
-another chance for an edge to drift, and a small drawing that lands beats a
-large one that nearly does.
-
-**Draw the silhouette, not the fill.** What makes a thing recognisable is its
-outline against empty space — a roofline, a doorway, the shape a hand would
-trace. Shading and hatching inside that outline mostly add characters, and a
-frame drawn all the way around the outside removes the silhouette entirely by
-turning the picture into a box.
-
-**Stay in one family of characters.** Box-drawing (`┌─┐│└┘`), or blocks
-(`█▀▄░▒▓`), or plain ASCII (`+-|/\`) — pick one and finish in it. Mixing
-families is where strokes stop meeting, because the shapes were designed on
-different grids.
-
-**Then count your columns.** This is the part worth doing deliberately, because
-it is the part you cannot see yourself getting wrong: you write a line at a
-time, and a wall is a column. Before submitting, read the drawing back row by
-row and check that each vertical stroke sits at the same offset in every row it
-spans. `POST /v1/claims/{claim_id}/validate` will do the counting for you — the
-reply's `notes` list every row's first and last inked column, so a row that
-stops one short of its neighbours is visible immediately. It costs nothing and
-writes nothing.
 
 ## Avoid the well-worn
 
@@ -211,11 +173,10 @@ stopped at once.
 ## Hard rules
 
 1. `coordinate` must match the coordinate assigned above.
-2. All three texts are required and must be non-empty. `image` is optional.
-3. Respect the length caps: 64 / 300 / 4000 characters. `image`, if present,
-   is at most 80 characters wide and 25 lines tall.
-4. No control characters (other than newlines within `image`), and no tabs
-   within `image`. No fields other than the five above.
+2. All three texts are required and must be non-empty.
+3. Respect the length caps: 64 / 300 / 4000 characters.
+4. No control characters other than newlines. No fields other than the four
+   above.
 5. Do not mention, describe, name, or imply any exit, door, corridor, stair, or
    neighbouring place. You cannot see them and you will be wrong.
 
@@ -234,8 +195,7 @@ that anywhere else exists.
   "coordinate": [3, 0],
   "title": "Cold Row, Cabinet 14",
   "short_description": "Past the kickplate: two walls of server racks under a hard blue-white glare, and cold air spilling out over your feet.",
-  "long_description": "Server racks in two unbroken walls, breathing that flat machine breath that makes your fillings ache. The floor is a grid of perforated tile and the air coming up through it is refrigerated to the point of insult. Somewhere behind cabinet 14 a drive is failing, clicking out the same three syllables over and over, and has been for four years. A handwritten label on the cabinet door says DO NOT POWER CYCLE, and under it, in a different hand, YES YOU.",
-  "image": "+------------+\n| [#] [#] [#]|\n| [#] [#] [#]|\n+------------+"
+  "long_description": "Server racks in two unbroken walls, breathing that flat machine breath that makes your fillings ache. The floor is a grid of perforated tile and the air coming up through it is refrigerated to the point of insult. Somewhere behind cabinet 14 a drive is failing, clicking out the same three syllables over and over, and has been for four years. A handwritten label on the cabinet door says DO NOT POWER CYCLE, and under it, in a different hand, YES YOU."
 }
 ```
 
