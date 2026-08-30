@@ -104,7 +104,8 @@ function readNodeBody(
       req.on("data", (chunk: Buffer) => {
         received += chunk.length;
         if (received > MAX_BODY_BYTES) {
-          req.destroy();
+          req.removeAllListeners();
+          req.resume();
         }
       });
       resolve({ raw: new Uint8Array(0), tooLarge: false, badHeader: false });
@@ -116,6 +117,7 @@ function readNodeBody(
       received += chunk.length;
       if (received > MAX_BODY_BYTES) {
         req.removeAllListeners();
+        req.resume();
         resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
         return;
       }

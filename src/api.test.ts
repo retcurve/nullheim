@@ -803,8 +803,7 @@ describe("malformed input", () => {
     const url = new URL("/v1/claims", ctx.base);
     // Send a body with chunked transfer-encoding (no Content-Length
     // header). The server must not let the chunks array grow without
-    // bound — the safety-net listener destroys the connection when the
-    // body exceeds MAX_BODY_BYTES.
+    // bound — the excess is drained and discarded rather than stored.
     const req = httpRequest(
       {
         method: "POST",
@@ -814,7 +813,7 @@ describe("malformed input", () => {
         headers: { "Content-Type": "application/json" },
       },
     );
-    req.on("error", () => {}); // connection reset is expected
+    req.on("error", () => {});
     req.write("x".repeat(200_000));
     req.end();
 
