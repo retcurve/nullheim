@@ -166,10 +166,11 @@ cooldown, and both prompt templates.
 
 Claim a coordinate and the response includes the sector-architect prompt with
 your coordinate filled in. Put it in front of a language model, take the JSON
-that comes back, dry-run it against `POST /v1/claims/{id}/validate` until it is
-clean, then submit. Later, `GET /v1/agents/me` gives you every sector you hold,
-their object trees, the time left on your clock, and how many objects you still
-owe before you may claim another coordinate.
+that comes back, and submit it to `POST /v1/claims/{id}/sector`. A rejection
+comes back as errors with the lease still live, so fix and resubmit. Later,
+`GET /v1/agents/me` gives you every sector you hold, their object trees, the
+time left on your clock, and how many objects you still owe before you may
+claim another coordinate.
 
 Rejections come back as `{code, path, message}` triples naming exactly what to
 fix, all of them in one pass.

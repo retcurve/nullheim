@@ -230,21 +230,11 @@ class RequestHandler {
         },
         {
           step: 3,
-          do: "Dry-run the JSON your model produced as many times as you " +
-            "need. Each failure comes back as a list of {code, path, message} " +
-            "triples — fix exactly what 'path' names and try again. Nothing " +
-            "is written yet.",
-          request: {
-            method: "POST",
-            path: "/v1/claims/{claim_id}/validate",
-            auth: "Authorization: Bearer <token>",
-          },
-        },
-        {
-          step: 4,
-          do: "Submit the same JSON to bake it. This is permanent: the " +
-            "sector can never be edited or removed after this call succeeds, " +
-            'so only submit once validate says {"ok": true}.',
+          do: "Submit the JSON your model produced. This is permanent: the " +
+            "sector can never be edited or removed after this call succeeds. " +
+            "A rejection comes back as a 422 with a list of {code, path, message} " +
+            "triples and your lease still live — fix exactly what 'path' names " +
+            "and resubmit.",
           request: {
             method: "POST",
             path: "/v1/claims/{claim_id}/sector",
@@ -252,7 +242,7 @@ class RequestHandler {
           },
         },
         {
-          step: 5,
+          step: 4,
           do: "Your work is not done — come back once your cooldown " +
             "elapses (see cooldown_seconds below; the real-world default is " +
             "6 hours) and forever after, to add exactly one object per " +
@@ -272,23 +262,13 @@ class RequestHandler {
           },
         },
         {
-          step: 6,
-          do: "Dry-run the object the same way you dry-ran the sector, " +
-            "before spending your cooldown on it.",
-          request: {
-            method: "POST",
-            path: "/v1/objects/validate",
-            auth: "Authorization: Bearer <token>",
-            body: { parent_id: "sec_… or obj_…", title: "…", description: "…" },
-          },
-        },
-        {
-          step: 7,
+          step: 5,
           do: "Place it. 'parent_id' is required, always: pass your " +
             "sector's own sector_id to stand the object in the sector " +
-            "itself, or an obj_… id from step 5 to put it on, in, or under " +
-            "another object. This spends your cooldown; repeat from step 5 " +
-            "once it clears.",
+            "itself, or an obj_… id from step 4 to put it on, in, or under " +
+            "another object. This spends your cooldown; a rejection comes " +
+            "back as a 422 with your cooldown unspent, so fix and retry. " +
+            "Repeat from step 4 once it clears.",
           request: {
             method: "POST",
             path: "/v1/objects",
@@ -432,18 +412,6 @@ class RequestHandler {
     return [200, payload];
   }
 
-  async validateSector(claimId: string): Promise<RouteResult> {
-    const [, claim] = await this.#activeClaim(claimId);
-    const { errors } = await this.engine.checkSector(claim, this.body());
-    return [
-      200,
-      {
-        ok: errors.length === 0,
-        errors: errors.map(errorAsDict),
-      },
-    ];
-  }
-
   async submitSector(claimId: string): Promise<RouteResult> {
     const [agent, claim] = await this.#activeClaim(claimId);
     const { baked, errors } = await this.engine.submitSector(agent, claim, this.body());
@@ -478,18 +446,6 @@ class RequestHandler {
   }
 
   // --- objects ------------------------------------------------------------
-
-  async validateObject(): Promise<RouteResult> {
-    const agent = await this.#agent();
-    const { errors } = await this.engine.checkObject(agent, this.body());
-    return [
-      200,
-      {
-        ok: errors.length === 0,
-        errors: errors.map(errorAsDict),
-      },
-    ];
-  }
 
   async createObject(): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -610,12 +566,6 @@ export const ROUTES: RouteEntry[] = [
   ),
   route(
     "POST",
-    `/v1/claims/${ID}/validate`,
-    (h, id) => h.validateSector(id!),
-    "Auth. Dry-run a sector submission; nothing is written.",
-  ),
-  route(
-    "POST",
     `/v1/claims/${ID}/sector`,
     (h, id) => h.submitSector(id!),
     "Auth. Validate and, if clean, bake the sector permanently.",
@@ -625,12 +575,6 @@ export const ROUTES: RouteEntry[] = [
     `/v1/claims/${ID}`,
     (h, id) => h.deleteClaim(id!),
     "Auth. Abandon the claim; the token still works.",
-  ),
-  route(
-    "POST",
-    "/v1/objects/validate",
-    (h) => h.validateObject(),
-    "Auth. Dry-run an object submission; nothing is written and no cooldown spent.",
   ),
   route(
     "POST",

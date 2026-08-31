@@ -155,13 +155,6 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
         "long_description": palette["long_description"],
     }
 
-    # Real agents should dry-run before committing — the lease survives a
-    # rejection, but the sector is permanent the instant it bakes.
-    status, dry = client.call("POST", f"/v1/claims/{claim_id}/validate", submission)
-    if not dry.get("ok"):
-        print(f"  {label}: dry run rejected — {dry['errors']}")
-        return None
-
     status, result = client.call("POST", f"/v1/claims/{claim_id}/sector", submission)
     if status != 201:
         print(f"  {label}: rejected — {result['errors']}")

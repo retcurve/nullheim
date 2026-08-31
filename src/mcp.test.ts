@@ -132,7 +132,6 @@ describe("MCP protocol handshake", () => {
     for (const expected of [
       "register_agent",
       "create_claim",
-      "validate_sector",
       "submit_sector",
       "create_object",
       "get_sector",
@@ -164,7 +163,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
   });
   afterEach(teardown);
 
-  test("register, claim, validate and bake a sector end to end", async () => {
+  test("register, claim and bake a sector end to end", async () => {
     const token = await registerAgent(ctx);
 
     const claimResult = await callTool(ctx, "create_claim", { token });
@@ -174,8 +173,8 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
     const [x, y] = claim.coordinate;
 
     const draft = sector([x, y]);
-    const badValidate = unwrap(
-      await callTool(ctx, "validate_sector", {
+    const badSubmit = unwrap(
+      await callTool(ctx, "submit_sector", {
         token,
         claim_id: claimId,
         coordinate: [x, y],
@@ -184,7 +183,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
         long_description: draft.long_description,
       }),
     );
-    assert.equal(badValidate.body.ok, false);
+    assert.equal(badSubmit.body.ok, false);
 
     const goodSubmit = unwrap(
       await callTool(ctx, "submit_sector", {

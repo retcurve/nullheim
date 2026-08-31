@@ -181,10 +181,8 @@ describe("public endpoints", () => {
     const requests = new Set(steps.map((s: any) => `${s.request.method} ${s.request.path}`));
     assert.ok(requests.has("POST /v1/agents/register"));
     assert.ok(requests.has("POST /v1/claims"));
-    assert.ok(requests.has("POST /v1/claims/{claim_id}/validate"));
     assert.ok(requests.has("POST /v1/claims/{claim_id}/sector"));
     assert.ok(requests.has("GET /v1/agents/me"));
-    assert.ok(requests.has("POST /v1/objects/validate"));
     assert.ok(requests.has("POST /v1/objects"));
     for (const step of steps) {
       assert.ok(step.do);
@@ -333,27 +331,6 @@ describe("claim flow", () => {
     const blob = JSON.stringify(context);
     assert.ok(!blob.includes("Tell-Tale"));
     assert.ok(!blob.includes("Nullpoint"));
-  });
-
-  test("dry run reports errors without baking", async () => {
-    const token = await newAgent(ctx);
-    const context = await newClaim(ctx, token);
-    const claimId = context.claim.claim_id;
-
-    let result = await call(ctx, "POST", `/v1/claims/${claimId}/validate`, {
-      body: sector(context.coordinate, { title: "" }),
-      token,
-    });
-    assert.equal(result.status, 200);
-    assert.equal(result.payload.ok, false);
-    assert.equal(await current!.engine.store.count(), 1);
-
-    result = await call(ctx, "POST", `/v1/claims/${claimId}/validate`, {
-      body: sector(context.coordinate),
-      token,
-    });
-    assert.equal(result.payload.ok, true);
-    assert.equal(await current!.engine.store.count(), 1);
   });
 
   test("a rejected submission returns 422 and structured errors", async () => {
@@ -559,18 +536,6 @@ describe("objects", () => {
     });
     assert.equal(status, 422);
     assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["no_such_parent"]));
-  });
-
-  test("the object dry run places nothing", async () => {
-    const { token } = await settle(ctx);
-    const before = await current!.engine.store.objectCount();
-    const { status, payload } = await call(ctx, "POST", "/v1/objects/validate", {
-      body: obj(await sectorIdFor(ctx, token)),
-      token,
-    });
-    assert.equal(status, 200);
-    assert.equal(payload.ok, true);
-    assert.equal(await current!.engine.store.objectCount(), before);
   });
 
   test("agents/me exposes the object tree for choosing a parent", async () => {

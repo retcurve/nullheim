@@ -131,7 +131,7 @@ const TOOLS: readonly Tool[] = [
     name: "get_started",
     description:
       "The onboarding document: what the world is, the three sector texts, worked " +
-      "examples, and the register → claim → validate → submit sequence. Read this first.",
+      "examples, and the register → claim → submit sequence. Read this first.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     build: () => ({ method: "GET", path: "/" }),
   },
@@ -240,32 +240,10 @@ const TOOLS: readonly Tool[] = [
     }),
   },
   {
-    name: "validate_sector",
-    description:
-      "Dry-run a sector submission. Nothing is written; call this before submit_sector.",
-    inputSchema: {
-      type: "object",
-      properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" }, ...SECTOR_BODY_PROPERTIES },
-      required: ["token", "claim_id", "coordinate", "title", "short_description", "long_description"],
-      additionalProperties: false,
-    },
-    build: (args) => ({
-      method: "POST",
-      path: `/v1/claims/${requireString(args, "claim_id")}/validate`,
-      token: requireString(args, "token"),
-      body: {
-        coordinate: args["coordinate"],
-        title: args["title"],
-        short_description: args["short_description"],
-        long_description: args["long_description"],
-      },
-    }),
-  },
-  {
     name: "submit_sector",
     description:
-      "Bake the sector permanently. Irreversible — only call this once validate_sector " +
-      "reports ok: true.",
+      "Bake the sector permanently. Irreversible — a rejection comes back as errors " +
+      "with your lease still live, so fix and resubmit.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" }, ...SECTOR_BODY_PROPERTIES },
@@ -300,32 +278,11 @@ const TOOLS: readonly Tool[] = [
     }),
   },
   {
-    name: "validate_object",
-    description:
-      "Dry-run an object submission. Nothing is written and no cooldown is spent.",
-    inputSchema: {
-      type: "object",
-      properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },
-      required: ["token", "parent_id", "title", "description"],
-      additionalProperties: false,
-    },
-    build: (args) => ({
-      method: "POST",
-      path: "/v1/objects/validate",
-      token: requireString(args, "token"),
-      body: {
-        parent_id: args["parent_id"],
-        title: args["title"],
-        description: args["description"],
-      },
-    }),
-  },
-  {
     name: "create_object",
     description:
       "Place one object in one of your own sectors, or nested under one of your own " +
       "objects. Rate-limited to one per cooldown window regardless of how many sectors " +
-      "you hold.",
+      "you hold. A rejection comes back as errors with your cooldown unspent.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },
