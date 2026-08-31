@@ -344,6 +344,22 @@ export class WorldStore {
   }
 
   /**
+   * How many objects stand in one sector, without fetching them.
+   *
+   * Rides the same coordinate index as `objectsIn()`, so an agent's `/me`
+   * index can report every held sector's size without ever pulling the rows
+   * themselves — the count is O(1) per sector regardless of how many objects
+   * it holds.
+   */
+  async objectCountIn(coordinate: Coordinate): Promise<number> {
+    const row = await this.#db.first<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM objects WHERE x = ? AND y = ?",
+      [coordinate.x, coordinate.y],
+    );
+    return row?.c ?? 0;
+  }
+
+  /**
    * Every object in the world, in creation order.
    *
    * Exists for tests that need to check the whole store's contents directly,

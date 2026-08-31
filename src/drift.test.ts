@@ -176,11 +176,13 @@ describe("placeholders", () => {
 
     const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
-    assert.ok(rendered.includes(placed!.objectId));
-    assert.ok(rendered.includes("Brass Can"));
-    // The index is lean: titles and ids, but no prose. The sector's long
-    // description and the objects' descriptions are not dragged into it; the
-    // pointed-to endpoint is where the full prose lives.
+    // The index is a count, not a tree: no object ids or titles at all, and
+    // no prose. The sector's long description and the objects' own
+    // descriptions are not dragged into it; the pointed-to endpoint is where
+    // all of that lives.
+    assert.ok(!rendered.includes(placed!.objectId));
+    assert.ok(!rendered.includes("Brass Can"));
+    assert.ok(rendered.includes("1 object"));
     assert.ok(rendered.includes("/v1/agents/sector/"));
     assert.ok(!rendered.includes("long leavened diorama of the seams"));
     assert.ok(!rendered.includes("grooved candid illustrated cagemate"));
@@ -208,7 +210,7 @@ describe("placeholders", () => {
 
     const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
-    assert.ok(rendered.includes("nothing here yet"));
+    assert.ok(rendered.includes("0 objects"));
   });
 
   test("the sector detail endpoint returns the full prose for an owned sector", async () => {

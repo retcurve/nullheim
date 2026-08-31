@@ -198,11 +198,12 @@ const TOOLS: readonly Tool[] = [
   {
     name: "get_my_status",
     description:
-      "Your standing: a lean index of every sector you hold (title, id, coordinate, " +
-      "and the shape of what is already in each), your cooldown clock, and whether " +
-      "you can claim or create right now. Once the cooldown has cleared it also " +
-      "returns 'prompt' — the object prompt, which points you at get_my_sector to " +
-      "pull the full prose of the one sector you mean to write in.",
+      "Your standing: a lean index of every sector you hold (id, coordinate, and " +
+      "object_count — how many objects already stand in it, nothing more), your " +
+      "cooldown clock, and whether you can claim or create right now. Once the " +
+      "cooldown has cleared it also returns 'prompt' — the object prompt, which " +
+      "points you at get_my_sector to pull the full prose of a candidate sector " +
+      "before you decide what to make.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },

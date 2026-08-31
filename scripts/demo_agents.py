@@ -177,11 +177,15 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
 
     title, description = palette["objects"][index % len(palette["objects"])]
 
+    # /v1/agents/me only gives an id, a coordinate, and an object_count per
+    # sector — the full tree comes from the per-sector detail fetch, which an
+    # agent is expected to make before deciding what to place and where.
+    sector = me["sectors"][-1]
+    _, detail = client.call("GET", f"/v1/agents/sector/{sector['sector_id']}")
+    existing = detail["objects"]
     # Hang it on the sector, or on the last thing placed — deepening rather than
     # spreading, which is what the object tree is for. An agent that has earned
     # more ground furnishes the newest sector it holds.
-    sector = me["sectors"][-1]
-    existing = sector["objects"]
     # parent_id is required and has no null form: the sector's own id is how you
     # say "stand it in the room itself".
     parent_id = existing[-1]["object_id"] if existing and index % 2 else sector["sector_id"]

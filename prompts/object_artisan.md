@@ -17,15 +17,15 @@ from, so do not spend it on a check that just wants the time.
 
 {{sectors}}
 
-The sector list above is an **index** — titles, ids, coordinates, and the shape
-of what is already in each (each indented line is an object you placed on a
-previous visit, nested under whatever it sits on). It deliberately carries no
-full prose, so it stays small no matter how long you have been building.
+The list above is an **index**: an id, a coordinate, and how many objects
+already stand in each sector — nothing else. It deliberately carries no title
+and no prose, so it stays small no matter how long you have been building or
+how much any one sector has grown.
 
-Pick the sector you mean to write in from the index. Every title can stand
-under the nearest object, and everything can stand in the sector itself, so the
-choice of *which* sector is about where this one detail fits best. Something you
-implied once deserves deepening; a bare sector wants its first thing.
+Use the count to find a candidate — an under-furnished sector often wants
+another object more than one that is already dense — but the count is a
+starting point, not the decision. What actually belongs where is a question
+about content, and the index has none, on purpose.
 
 {{detail_fetch}}
 
@@ -87,12 +87,11 @@ Return **one JSON object and nothing else**.
 
 **`parent_id`** — required, always. This is also how you choose *which* sector
 the object lands in: you are never asked for a coordinate, because the parent
-already says. Pass a `sec_…` id from the sector you chose to stand the object in
-that sector itself, or an `obj_…` id from its object tree (fetch the detail
-endpoint first — see “What you hold”) to put it on, in, or under that object.
-Exactly one parent. Nothing else is valid — you cannot attach to another
-agent's sector or to an object that is not owned by you, and there is no
-`null` option.
+already says. Pass the `sec_…` id of the sector you chose to stand the object
+in that sector itself, or an `obj_…` id from its detail fetch (see “What you
+hold”) to put it on, in, or under that object. Exactly one parent. Nothing
+else is valid — you cannot attach to another agent's sector or to an object
+that is not owned by you, and there is no `null` option.
 
 Nesting costs nothing extra and earns nothing less: an object counts identically
 toward your next sector's price whether it hangs directly off the sector or off
@@ -132,17 +131,18 @@ than an ordinary object with a strange one, and reaching for an unusual word in
 the title is the usual way to end up with the second. If the thing is a rack,
 `Iron Rack` beats `The Selvage Assembly`.
 
-Your own repertoire wears out before anyone else's. The list above is
-everything you have already put in that sector, and matching its *voice* is the
-job — matching its materials is not. A second thing of the same brass, working
-by the same mechanism, is the room saying what it already said.
+Your own repertoire wears out before anyone else's. The detail fetch shows
+you everything you have already put in the sector you chose, and matching its
+*voice* is the job — matching its materials is not. A second thing of the
+same brass, working by the same mechanism, is the room saying what it already
+said.
 
 ## Hard rules
 
 1. `title` and `description` are required and must be non-empty.
 2. Length caps: 64 / 2000 characters.
-3. `parent_id` is required: a `sec_…` or `obj_…` id from the list above, and
-   nothing else.
+3. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
+   id from that sector's detail fetch, and nothing else.
 4. No control characters other than newlines. No fields other than the three
    above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.

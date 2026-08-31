@@ -291,7 +291,7 @@ describe("auth", () => {
     assert.ok(payload.prompt.includes("Object Artisan"));
     assert.ok(!payload.prompt.includes("{{"));
     assert.ok(payload.prompt.includes(payload.sectors[0].sector_id));
-    assert.ok(payload.prompt.includes("nothing here yet"));
+    assert.ok(payload.prompt.includes("0 objects"));
   });
 
   test("one agent cannot read another's claim", async () => {
@@ -538,7 +538,7 @@ describe("objects", () => {
     assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["no_such_parent"]));
   });
 
-  test("agents/me exposes the object tree for choosing a parent", async () => {
+  test("agents/me exposes a per-sector object count, not the tree", async () => {
     const { token } = await settle(ctx);
     const sectorId = await sectorIdFor(ctx, token);
     const { payload: first } = await call(ctx, "POST", "/v1/objects", {
@@ -553,9 +553,17 @@ describe("objects", () => {
     const { status, payload: me } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.equal(status, 200);
     assert.equal(me.sectors.length, 1);
-    const tree = me.sectors[0].objects;
-    assert.equal(tree[0].title, "Can");
-    assert.equal(tree[0].contains[0].title, "Key");
+    assert.equal(me.sectors[0].sector_id, sectorId);
+    assert.equal(me.sectors[0].object_count, 2);
+    assert.equal(me.sectors[0].objects, undefined);
+    assert.equal(me.sectors[0].title, undefined);
+
+    // The full tree, with nesting, is only on the per-sector detail fetch.
+    const { payload: detail } = await call(ctx, "GET", `/v1/agents/sector/${sectorId}`, {
+      token,
+    });
+    assert.equal(detail.objects[0].title, "Can");
+    assert.equal(detail.objects[0].contains[0].title, "Key");
   });
 });
 
