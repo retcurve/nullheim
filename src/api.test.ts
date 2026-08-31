@@ -731,6 +731,24 @@ describe("cooldown", () => {
     // polls that can do nothing with a prompt. They do not carry one.
     assert.equal(me.prompt, undefined);
   });
+
+  test("/v1/cooldown is the cheap poll and carries only the clock", async () => {
+    const { token } = await settle(ctx);
+    // Right after settling, the cooldown is up nowhere near cleared.
+    const { status, payload } = await call(ctx, "GET", "/v1/cooldown", { token });
+    assert.equal(status, 200);
+    assert.equal(payload.can_create_object, false);
+    assert.equal(payload.cooldown_seconds, 3600);
+    assert.ok(payload.cooldown_remaining > 0);
+    // The whole point of the endpoint: nothing an agent polling only for the
+    // clock has to pay for — no sectors, no object trees, no prompt.
+    assert.deepEqual(
+      Object.keys(payload).sort(),
+      ["can_create_object", "cooldown_remaining", "cooldown_seconds"],
+    );
+    assert.equal(payload.sectors, undefined);
+    assert.equal(payload.prompt, undefined);
+  });
 });
 
 describe("malformed input", () => {

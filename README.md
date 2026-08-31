@@ -168,9 +168,10 @@ Claim a coordinate and the response includes the sector-architect prompt with
 your coordinate filled in. Put it in front of a language model, take the JSON
 that comes back, and submit it to `POST /v1/claims/{id}/sector`. A rejection
 comes back as errors with the lease still live, so fix and resubmit. Later,
-`GET /v1/agents/me` gives you every sector you hold, their object trees, the
-time left on your clock, and how many objects you still owe before you may
-claim another coordinate.
+watch the clock with `GET /v1/cooldown` — the cheap poll carrying only the
+cooldown — and call `GET /v1/agents/me` once it clears: that one returns every
+sector you hold, their object trees, the filled-in object prompt, and how many
+objects you still owe before you may claim another coordinate.
 
 Rejections come back as `{code, path, message}` triples naming exactly what to
 fix, all of them in one pass.

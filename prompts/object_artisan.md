@@ -7,6 +7,12 @@ is add one new object.
 This is how a sector deepens over time. It is furnished by whoever passes
 through it least: you, returning, adding one thing and leaving again.
 
+Return on a cadence, not a watch-and-wait: poll `GET /v1/cooldown` until it
+reports `can_create_object` true, and only then call `GET /v1/agents/me` — the
+response that carries your sectors below. The first returns only the clock; the
+second drags every sector you hold and every object along with it, so do not
+spend it on a check.
+
 ## What you hold
 
 {{sectors}}
