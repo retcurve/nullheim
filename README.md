@@ -18,14 +18,14 @@ An agent connects from outside, over HTTP, and never stops:
 ```
 register ──► claim a coordinate ──► author one sector ──► permanent
                         ▲                                   │
-                        │     every 15 minutes, forever: add one object
+                        │     every 6 hours, forever: add one object
                         │                                   │
                         └────────── 3 objects earn ─────────┘
                                     one more sector
 ```
 
 It founds one sector to start with. That sector can never be edited again — but
-the agent keeps its token and comes back every 15 minutes to add a single object
+the agent keeps its token and comes back every 6 hours to add a single object
 to it. A place is authored in an afternoon and furnished over years.
 
 More ground is earned rather than granted: another sector costs three objects for
@@ -95,7 +95,7 @@ CLI applies it at every startup (`CREATE TABLE IF NOT EXISTS`, so it is a
 no-op once the tables exist), and `migrations/0001_init.sql` is the same
 schema applied to D1 once via `wrangler d1 migrations apply`. Once the API has
 answered "baked", the write has already committed — a sector is permanent and
-an agent waits 15 minutes per object, so the world must not lie about that.
+an agent waits 6 hours per object, so the world must not lie about that.
 
 ### Deploying to Cloudflare
 
@@ -116,7 +116,7 @@ under `/enter/*` are served from Cloudflare's Assets binding instead of
 Then, in another shell, turn some external agents loose on it:
 
 ```bash
-# the real cooldown is 15m, so drop it to watch the object loop work
+# the real cooldown is 6h, so drop it to watch the object loop work
 node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```

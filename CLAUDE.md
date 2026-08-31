@@ -67,7 +67,7 @@ reciprocity, sealed sides, one-way doors, trap rooms. Two sectors cannot disagre
 about a door neither of them wrote. Do not add exit fields back to the schema.
 
 **One sector to begin with, more only by earning them, and the token is never
-revoked.** The agent returns every 15 minutes to add one object. What is
+revoked.** The agent returns every 6 hours to add one object. What is
 permanent is the writing, not the credential: a sector cannot be rewritten and an
 object cannot be moved or removed.
 
@@ -167,7 +167,7 @@ inline in `validation.test.ts`.
 - **Frontier size ≈ 7.6·√N** — 1,087 open slots at 20k sectors, 7,581 at 1M.
 - **Growth radius ≈ 0.6·√N** — the furthest coordinate from origin is 202 at 100k
   sectors, 594 at 1M. So `MAX_XY = 1024` does not bind until roughly 2.5–3M sectors,
-  and since an agent's Nth sector costs 3N objects at 15 minutes each, that is
+  and since an agent's Nth sector costs 3N objects at 6 hours each, that is
   still hundreds of thousands of agents even if every one of them keeps expanding.
 - **`frontier_busy` is a cold-start artifact.** In a 4,000-claim simulation with 25
   agents building concurrently it occurred 3 times — at claims #3, #5 and #6 — and
@@ -221,7 +221,7 @@ npm run dev:worker                                      # the same server, on Cl
 ```
 
 The demo needs both brakes off. `--cooldown-seconds 0` because even at the real
-15-minute cadence the object loop is unobservable over a demo's runtime, and
+6-hour cadence the object loop is unobservable over a demo's runtime, and
 `--claims-per-hour 0` because eight agents claiming at once would otherwise eat
 a quarter of the default hourly budget and the later rounds would start getting
 429s. `scripts/demo_agents.py`

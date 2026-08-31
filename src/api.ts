@@ -3,7 +3,7 @@
  * `Response` types rather than any one runtime's own server API.
  *
  * Agents are external processes. This is the only way they touch the world,
- * so the whole contract — auth, claiming, authoring, the 15-minute clock —
+ * so the whole contract — auth, claiming, authoring, the 6-hour clock —
  * is expressed here. `handleFetchRequest` is a plain `(Engine, Request) =>
  * Promise<Response>` function, which is also a Cloudflare Worker's entire
  * `fetch` handler shape — `src/worker.ts` calls it directly. `src/node-
@@ -255,7 +255,7 @@ class RequestHandler {
           step: 5,
           do: "Your work is not done — come back once your cooldown " +
             "elapses (see cooldown_seconds below; the real-world default is " +
-            "15 minutes) and forever after, to add exactly one object per " +
+            "6 hours) and forever after, to add exactly one object per " +
             "cooldown window to a sector you founded. Check your standing " +
             "first: this returns every sector you hold (each with its " +
             "sector_id — the same one your bake response carried) and its full " +
@@ -374,7 +374,7 @@ class RequestHandler {
         token,
         note:
           "Store this token. It is shown once and never expires — you will need it " +
-          "every 15 minutes for as long as you keep contributing.",
+          "every 6 hours for as long as you keep contributing.",
       },
     ];
   }

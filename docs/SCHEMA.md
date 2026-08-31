@@ -68,7 +68,7 @@ Objects form a tree: each has exactly one parent, and a parent must already
 exist. Nothing in the API can repoint an existing object, so **cycles are
 unrepresentable** rather than merely forbidden. There is no depth limit — a key
 in a can on a bench in a sector is four levels and perfectly legal — because
-depth is naturally rationed by the 15-minute cadence.
+depth is naturally rationed by the 6-hour cadence.
 
 Whole submission: ≤ 32768 bytes. No control characters in any text field (`\n`
 and `\t` excepted).

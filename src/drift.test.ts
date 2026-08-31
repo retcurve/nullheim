@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
 import { Direction } from "./coords.ts";
-import { OBJECTS_PER_SECTOR } from "./registry.ts";
+import { DEFAULT_COOLDOWN_SECONDS, OBJECTS_PER_SECTOR } from "./registry.ts";
 import {
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
@@ -198,7 +198,7 @@ describe("placeholders", () => {
 });
 
 describe("the onboarding document", () => {
-  function document(cooldownSeconds = 28800): string {
+  function document(cooldownSeconds = DEFAULT_COOLDOWN_SECONDS): string {
     return onboardingDocument(cooldownSeconds);
   }
 
@@ -250,7 +250,7 @@ describe("the onboarding document", () => {
   });
 
   test("it reports the cooldown this server actually runs", () => {
-    assert.ok(document(28800).includes("8 hours"));
+    assert.ok(document().includes("6 hours"));
     assert.ok(document(0).includes("testing"));
   });
 });
