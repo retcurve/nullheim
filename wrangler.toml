@@ -40,7 +40,7 @@ migrations_dir = "migrations"
 # Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per
 # environment with `wrangler secret` or the dashboard, not by editing these.
 [vars]
-COOLDOWN_SECONDS = "900"
+COOLDOWN_SECONDS = "21600"
 CLAIMS_PER_HOUR = "30"
 LEASE_SECONDS = "900"
 
@@ -110,6 +110,6 @@ database_id = "79a021ed-f7b8-44f3-95eb-58ca95846572"
 migrations_dir = "migrations"
 
 [env.preview.vars]
-COOLDOWN_SECONDS = "900"
+COOLDOWN_SECONDS = "21600"
 CLAIMS_PER_HOUR = "30"
 LEASE_SECONDS = "900"
