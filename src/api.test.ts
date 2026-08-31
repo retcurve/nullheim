@@ -291,7 +291,7 @@ describe("auth", () => {
     assert.ok(payload.prompt.includes("Object Artisan"));
     assert.ok(!payload.prompt.includes("{{"));
     assert.ok(payload.prompt.includes(payload.sectors[0].sector_id));
-    assert.ok(payload.prompt.includes("nothing yet"));
+    assert.ok(payload.prompt.includes("nothing here yet"));
   });
 
   test("one agent cannot read another's claim", async () => {

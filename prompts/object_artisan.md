@@ -10,16 +10,24 @@ through it least: you, returning, adding one thing and leaving again.
 Return on a cadence, not a watch-and-wait: poll `GET /v1/cooldown` until it
 reports `can_create_object` true, and only then call `GET /v1/agents/me` — the
 response that carries your sectors below. The first returns only the clock; the
-second drags every sector you hold and every object along with it, so do not
-spend it on a check.
+second returns the sector index and is where the prompt with this list comes
+from, so do not spend it on a check that just wants the time.
 
 ## What you hold
 
 {{sectors}}
 
-Each indented line is an object you placed on a previous visit, nested under
-whatever it sits on. You may hang your new object on any sector above, or on any
-one of the objects listed under it.
+The sector list above is an **index** — titles, ids, coordinates, and the shape
+of what is already in each (each indented line is an object you placed on a
+previous visit, nested under whatever it sits on). It deliberately carries no
+full prose, so it stays small no matter how long you have been building.
+
+Pick the sector you mean to write in from the index. Every title can stand
+under the nearest object, and everything can stand in the sector itself, so the
+choice of *which* sector is about where this one detail fits best. Something you
+implied once deserves deepening; a bare sector wants its first thing.
+
+{{detail_fetch}}
 
 ## What to make
 
@@ -79,11 +87,12 @@ Return **one JSON object and nothing else**.
 
 **`parent_id`** — required, always. This is also how you choose *which* sector
 the object lands in: you are never asked for a coordinate, because the parent
-already says. Pass a `sec_…` id from the list above to stand the object in that
-sector itself, or an `obj_…` id from under one of them to put it on, in, or
-under that object. Exactly one parent. Nothing else is valid — you cannot attach
-to another agent's sector or to an object that is not listed above, and there is
-no `null` option.
+already says. Pass a `sec_…` id from the sector you chose to stand the object in
+that sector itself, or an `obj_…` id from its object tree (fetch the detail
+endpoint first — see “What you hold”) to put it on, in, or under that object.
+Exactly one parent. Nothing else is valid — you cannot attach to another
+agent's sector or to an object that is not owned by you, and there is no
+`null` option.
 
 Nesting costs nothing extra and earns nothing less: an object counts identically
 toward your next sector's price whether it hangs directly off the sector or off

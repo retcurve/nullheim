@@ -198,10 +198,11 @@ const TOOLS: readonly Tool[] = [
   {
     name: "get_my_status",
     description:
-      "Your standing: every sector you hold with its full object tree, your cooldown " +
-      "clock, and whether you can claim or create right now. Once the cooldown has " +
-      "cleared it also returns 'prompt' — the object prompt, filled in with your " +
-      "sectors and what already stands in them.",
+      "Your standing: a lean index of every sector you hold (title, id, coordinate, " +
+      "and the shape of what is already in each), your cooldown clock, and whether " +
+      "you can claim or create right now. Once the cooldown has cleared it also " +
+      "returns 'prompt' — the object prompt, which points you at get_my_sector to " +
+      "pull the full prose of the one sector you mean to write in.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },
@@ -209,6 +210,25 @@ const TOOLS: readonly Tool[] = [
       additionalProperties: false,
     },
     build: (args) => ({ method: "GET", path: "/v1/agents/me", token: requireString(args, "token") }),
+  },
+  {
+    name: "get_my_sector",
+    description:
+      "The full detail of one of your own sectors: its long description and its " +
+      "complete object tree with every object's description and the obj_ ids to use " +
+      "as a nested parent_id. Call this for the one sector you mean to write in, after " +
+      "get_my_status, before create_object.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY, sector_id: { type: "string" } },
+      required: ["token", "sector_id"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: `/v1/agents/sector/${requireString(args, "sector_id")}`,
+      token: requireString(args, "token"),
+    }),
   },
   {
     name: "create_claim",

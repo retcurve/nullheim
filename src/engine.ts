@@ -421,8 +421,12 @@ export class Engine {
    * re-querying per node. An agent contributing every 6 hours for a year
    * has tens of thousands of objects here, and re-querying per node would
    * make walking them quadratic.
+   *
+   * `includeDescription` is false for the index-only callers that must stay
+   * cheap (the object prompt, the /me index): they need the tree's shape and
+   * titles, not the prose. The sector-detail fetch passes `true`.
    */
-  async objectTree(coordinate: Coordinate): Promise<ObjectNode[]> {
+  async objectTree(coordinate: Coordinate, includeDescription = true): Promise<ObjectNode[]> {
     const byParent = new Map<string | null, WorldObject[]>();
     for (const world_object of await this.store.objectsIn(coordinate)) {
       const bucket = byParent.get(world_object.parentId);
@@ -437,23 +441,59 @@ export class Engine {
       (byParent.get(parentId) ?? []).map((o) => ({
         object_id: o.objectId,
         title: o.title,
-        description: o.description,
+        description: includeDescription ? o.description : "",
         contains: branch(o.objectId),
       }));
 
     return branch(null);
   }
 
-  /** An agent's own standing: every sector it holds, their objects, its clock. */
+  /**
+   * The full detail of one of the agent's own sectors — the prose and object
+   * descriptions the slim object prompt deliberately leaves out.
+   *
+   * The object prompt now carries only an index (titles, ids, the tree's
+   * shape), so the model can pick a sector cheaply without dragging every
+   * sector's prose along. Once it has chosen, it fetches this one sector's
+   * full `long_description` and its complete object tree — descriptions
+   * included — to make an informed `parent_id` choice. Nothing about
+   * neighbouring sectors is returned, for the same reason the object prompt
+   * withholds neighbours: an agent must not be able to hedge toward them.
+   *
+   * Returns `null` when the sector does not exist or is not the agent's own —
+   * the caller turns that into the same shape as an unknown id, so an agent
+   * can never learn that a `sec_…` id it saw mentioned belongs to another
+   * agent.
+   */
+  async sectorContext(agent: Agent, sectorId: string): Promise<Record<string, unknown> | null> {
+    const baked = await this.store.getById(sectorId);
+    if (baked === null || baked.agentId !== agent.agentId) {
+      return null;
+    }
+    return {
+      ...sectorAsDict(baked.sector),
+      sector_id: baked.sectorId,
+      coordinate: coords.asList(baked.sector.coordinate),
+      objects: await this.objectTree(baked.sector.coordinate),
+    };
+  }
+
+  /** An agent's own standing: a lean index of its sectors plus its clock. */
   async agentView(agent: Agent): Promise<Record<string, unknown>> {
+    // The index is deliberately lean — title, id, coordinate and the shape of
+    // what is already there, but no long_description and no object
+    // descriptions. The full prose is served per-sector by sectorContext(),
+    // so /me (and the object prompt it carries) stays small no matter how
+    // long the agent has been building. See renderObjectPrompt.
     const sectors: Record<string, unknown>[] = [];
     for (const coordinate of agent.coordinates) {
       const baked = await this.store.get(coordinate);
       if (baked !== null) {
         sectors.push({
-          ...sectorAsDict(baked.sector),
+          title: baked.sector.title,
           sector_id: baked.sectorId,
-          objects: await this.objectTree(coordinate),
+          coordinate: coords.asList(baked.sector.coordinate),
+          objects: await this.objectTree(coordinate, false),
         });
       }
     }
@@ -535,11 +575,15 @@ export class Engine {
   }
 
   /**
-   * The object prompt, carrying every sector this agent holds.
+   * The object prompt — a lean index of every sector this agent holds.
    *
-   * An agent with one sector sees exactly what it always saw, one heading
-   * deeper. An agent with several is shown all of them and picks between them
-   * the same way it picks a shelf inside one: by naming a `parent_id`.
+   * Each sector appears once as a heading with its id, its coordinate, and the
+   * shape of what is already inside it (the id-and-title tree). No long
+   * descriptions, no object descriptions. The agent picks a sector from this
+   * index and then fetches that one sector's full prose via the endpoint named
+   * on its line (GET /v1/agents/sector/{sector_id}) before choosing a
+   * `parent_id`. This is what keeps the prompt at a bounded size no matter how
+   * long the agent has been building.
    *
    * `view` is an already-computed `agentView()` for this agent. The only
    * caller in production has just built one — this prompt is served from the
@@ -548,11 +592,17 @@ export class Engine {
    * an answer already in hand.
    */
   async renderObjectPrompt(agent: Agent, view?: Record<string, unknown>): Promise<string> {
+    // The index is deliberately lean: by title and id alone an agent can tell
+    // which sector to write in. Full sector prose and object descriptions are
+    // fetched per-sector via GET /v1/agents/sector/{sector_id} once a sector is
+    // chosen, precisely so this prompt does not drag every held sector's
+    // (potentially years-old, tens-of-thousands-object) contents along on
+    // every single contribution.
     const lines = (nodes: ObjectNode[], depth: number): string[] => {
       const out: string[] = [];
       for (const node of nodes) {
         const pad = "  ".repeat(depth);
-        out.push(`${pad}- \`${node.object_id}\` — **${node.title}**`);
+        out.push(`${pad}- \`${node.object_id}\` — ${node.title}`);
         out.push(...lines(node.contains, depth + 1));
       }
       return out;
@@ -567,18 +617,22 @@ export class Engine {
         "",
         `Sector id: \`${sector["sector_id"] as string}\``,
         "",
-        sector["long_description"] as string,
+        tree.join("\n") || "- (nothing here yet)",
         "",
-        "What is already here:",
-        "",
-        tree.join("\n") || "- (nothing yet — this sector is bare)",
+        `Full description and object details: GET /v1/agents/sector/${sector["sector_id"] as string}`,
       ].join("\n");
     });
 
-    return this.promptTemplate("object_artisan").replaceAll(
-      "{{sectors}}",
-      blocks.join("\n\n") || "- (you hold no sectors yet)",
-    );
+    return this.promptTemplate("object_artisan")
+      .replace("{{sectors}}", blocks.join("\n\n") || "- (you hold no sectors yet)")
+      .replace(
+        "{{detail_fetch}}",
+        `Once you have chosen a sector, call the detail endpoint named on its line — ` +
+          `GET /v1/agents/sector/{sector_id} — before you decide the parent or the ` +
+          `words. It returns that sector's full description and every object's full ` +
+          `description, so the drawer, the desk and the key under the stain all become ` +
+          `visible. Use it to match voice and to pick a parent_id.`,
+      );
   }
 }
 

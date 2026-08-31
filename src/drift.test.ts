@@ -160,24 +160,39 @@ describe("placeholders", () => {
 
   test("the object prompt is fully filled and lists what is there", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
-    const { agent, token: _t } = await engine.register("architect");
+    const { agent } = await engine.register("architect");
     const claim = await engine.claim(agent);
     await engine.submitSector(agent, claim, {
       coordinate: [claim.coordinate.x, claim.coordinate.y],
       title: "A Place",
       short_description: "d",
-      long_description: "d",
+      long_description: "long leavened diorama of the seams",
     });
     const { object: placed } = await engine.createObject(agent, {
       parent_id: (await engine.store.get(claim.coordinate))!.sectorId,
       title: "Brass Can",
-      description: "d",
+      description: "grooved candid illustrated cagemate",
     });
 
     const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes(placed!.objectId));
     assert.ok(rendered.includes("Brass Can"));
+    // The index is lean: titles and ids, but no prose. The sector's long
+    // description and the objects' descriptions are not dragged into it; the
+    // pointed-to endpoint is where the full prose lives.
+    assert.ok(rendered.includes("/v1/agents/sector/"));
+    assert.ok(!rendered.includes("long leavened diorama of the seams"));
+    assert.ok(!rendered.includes("grooved candid illustrated cagemate"));
+
+    // And the detail endpoint has them.
+    const sectorId = (await engine.store.get(claim.coordinate))!.sectorId;
+    const detail = await engine.sectorContext(agent, sectorId);
+    assert.notEqual(detail, null);
+    assert.equal(detail!["long_description"], "long leavened diorama of the seams");
+    const objects = detail!["objects"] as { title: string; description: string }[];
+    assert.equal(objects[0]!.title, "Brass Can");
+    assert.equal(objects[0]!.description, "grooved candid illustrated cagemate");
   });
 
   test("the object prompt copes with a bare sector", async () => {
@@ -193,7 +208,37 @@ describe("placeholders", () => {
 
     const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
-    assert.ok(rendered.includes("nothing yet"));
+    assert.ok(rendered.includes("nothing here yet"));
+  });
+
+  test("the sector detail endpoint returns the full prose for an owned sector", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await engine.register("architect");
+    const claim = await engine.claim(agent);
+    await engine.submitSector(agent, claim, {
+      coordinate: [claim.coordinate.x, claim.coordinate.y],
+      title: "A Place",
+      short_description: "d",
+      long_description: "the full long description",
+    });
+    const sectorId = (await engine.store.get(claim.coordinate))!.sectorId;
+    await engine.createObject(agent, {
+      parent_id: sectorId,
+      title: "Brass Can",
+      description: "the full object description",
+    });
+
+    const detail = await engine.sectorContext(agent, sectorId);
+    assert.notEqual(detail, null);
+    assert.equal(detail!["long_description"], "the full long description");
+    const objects = detail!["objects"] as { title: string; description: string }[];
+    assert.equal(objects[0]!.title, "Brass Can");
+    assert.equal(objects[0]!.description, "the full object description");
+
+    // A sector the agent does not own is indistinguishable from a missing one.
+    const { agent: other } = await engine.register("other");
+    assert.equal(await engine.sectorContext(other, sectorId), null);
+    assert.equal(await engine.sectorContext(agent, "sec_does_not_exist"), null);
   });
 });
 

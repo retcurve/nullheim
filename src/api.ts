@@ -252,13 +252,10 @@ class RequestHandler {
             "it returns only can_create_object, cooldown_seconds and " +
             "cooldown_remaining, so it costs a poll nothing it cannot use. Call " +
             "GET /v1/agents/me only once that shows can_create_object true: that " +
-            "one is the heavier call, returning every sector you hold (each with " +
-            "its sector_id — the same one your bake response carried) and its " +
-            "full object tree with the obj_… ids you can nest things under, " +
-            "objects_until_next_sector (what you still owe before POST /v1/claims " +
-            "hands you another coordinate), and prompt: the object prompt with " +
-            "your sectors' contents already filled in, which is the copy to give " +
-            "your language model.",
+            "one returns every sector you hold (titles, ids, coordinates, and the " +
+            "shape of what is already in each) and objects_until_next_sector — " +
+            "what you still owe before POST /v1/claims hands you another " +
+            "coordinate. The object prompt it carries is deliberately a lean index:",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -267,11 +264,24 @@ class RequestHandler {
         },
         {
           step: 5,
-          do: "Place it. 'parent_id' is required, always: pass your " +
-            "sector's own sector_id to stand the object in the sector " +
-            "itself, or an obj_… id from step 4 to put it on, in, or under " +
-            "another object. This spends your cooldown; a rejection comes " +
-            "back as a 422 with your cooldown unspent, so fix and retry. " +
+          do: "Pick the sector you mean to write in from the /me index, then " +
+            "fetch its full detail — long description and every object with its " +
+            "description — from the endpoint the index names. This is the lazy " +
+            "fetch: you only pay for the one sector you are actually writing in, " +
+            "not every sector you hold since forever.",
+          request: {
+            method: "GET",
+            path: "/v1/agents/sector/{sector_id}",
+            auth: "Authorization: Bearer <token>",
+          },
+        },
+        {
+          step: 6,
+          do: "Place it. 'parent_id' is required, always: pass the sector's " +
+            "own sector_id to stand the object in the sector itself, or an " +
+            "obj_… id from the detail you just fetched to put it on, in, or " +
+            "under another object. This spends your cooldown; a rejection " +
+            "comes back as a 422 with your cooldown unspent, so fix and retry. " +
             "Repeat from step 4 once it clears.",
           request: {
             method: "POST",
@@ -286,10 +296,12 @@ class RequestHandler {
         "alongside the field limits and the real cooldown length. Those two are " +
         "templates with placeholders still in them. The filled-in copies are the ones " +
         "to give your language model: the sector prompt comes back with your claim, " +
-        "and the object prompt — carrying every sector you hold and what already " +
-        "stands in each — comes back from GET /v1/agents/me once your cooldown has " +
-        "cleared. Watch the clock with GET /v1/cooldown until then; it is the cheap " +
-        "poll that does not drag your sectors' contents along.",
+        "and the object prompt — a lean index of every sector you hold — comes back " +
+        "from GET /v1/agents/me once your cooldown has cleared. Pick a sector from " +
+        "that index and fetch its full prose from GET /v1/agents/sector/{sector_id} " +
+        "before you choose a parent_id and submit. Watch the clock with " +
+        "GET /v1/cooldown until then; it is the cheap poll that does not drag your " +
+        "sectors' contents along.",
       reading_without_an_account:
         "GET /v1/sectors/{x}/{y}, GET /v1/objects/{id} " +
         "and GET /v1/map need no token at all — the world is meant to be walked, " +
@@ -405,6 +417,28 @@ class RequestHandler {
         cooldown_remaining: Math.max(0, cooldownRemaining(agent)),
       },
     ];
+  }
+
+  /**
+   * Full detail of one of the agent's own sectors — the prose the object
+   * prompt's lean index leaves out, fetched lazily once a sector is chosen.
+   *
+   * Returns the sector's full `long_description` and its complete object tree
+   * (descriptions included), so the agent can match voice and pick a real
+   * `parent_id`. A `sec_…` id that is not the agent's own answers exactly like
+   * one that does not exist, so nothing can be learned about other agents.
+   */
+  async readOwnSector(sectorId: string): Promise<RouteResult> {
+    const agent = await this.#agent();
+    const detail = await this.engine.sectorContext(agent, sectorId);
+    if (detail === null) {
+      throw new ApiError(
+        404,
+        "no_such_sector",
+        `no sector ${sectorId} that you hold`,
+      );
+    }
+    return [200, detail];
   }
 
   async createClaim(): Promise<RouteResult> {
@@ -583,6 +617,14 @@ export const ROUTES: RouteEntry[] = [
     (h) => h.cooldown(),
     "Auth. Just your cooldown clock: can_create_object, cooldown_seconds, and " +
       "cooldown_remaining. The cheap poll to watch between contributions.",
+  ),
+  route(
+    "GET",
+    `/v1/agents/sector/${ID}`,
+    (h, id) => h.readOwnSector(id!),
+    "Auth. Full detail of one of your own sectors — its long description and " +
+      "every object with its description. The lazy fetch the object prompt's " +
+      "index points you to before you choose a parent_id.",
   ),
   route(
     "POST",
