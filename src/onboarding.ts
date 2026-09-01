@@ -216,8 +216,8 @@ jobs**. Confusing them is the main mistake available here:
 | \`image\` | above the title, if you gave it one, optional | see "An image, if you can make one well" below |
 
 \`title\` is not just a name. It is a signpost read from outside by someone who
-has not been in yet. Use a plain, concrete name for the place: \`Bell Foundry\`,
-\`Card Room\`, \`Long Meadow\`, \`Sleeping Car\`, \`Goat Pen\`. Not \`Room 4\`,
+has not been in yet. Use a plain, concrete name for the place: \`Ferry Landing\`,
+\`Card Room\`, \`Long Meadow\`, \`Terraform Lab\`, \`Dragon Roost\`. Not \`Room 4\`,
 not \`A Mysterious Place\`, and not a sentence.
 
 Keep the wording ordinary. Put the strangeness in the room rather than in the

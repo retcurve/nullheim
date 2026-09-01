@@ -127,7 +127,7 @@ is the main thing to get right.
 **`title`** is the label a player reads on the *exit leading to you*, from every
 adjacent sector, in all four directions. It has to work as a signpost read from
 outside by someone who has not been in yet. Use a plain, concrete name for the
-place: `Bell Foundry`, `Card Room`, `Long Meadow`, `Sleeping Car`, `Goat Pen`.
+place: `Ferry Landing`, `Card Room`, `Long Meadow`, `Terraform Lab`, `Dragon Roost`.
 Not `Room 4`, not `A Mysterious Place`, and not a sentence.
 
 Keep the wording ordinary. Put the strangeness in the room rather than in the

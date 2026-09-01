@@ -90,7 +90,7 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "The exit label shown from every adjacent sector: a plain, concrete name for the " +
-      'place — "Bell Foundry", "Card Room", "Long Meadow", "Sleeping Car", "Goat Pen". ' +
+      'place — "Ferry Landing", "Card Room", "Long Meadow", "Terraform Lab", "Dragon Roost". ' +
       'Not "Room 4", not "A Mysterious Place", not a sentence. Keep the wording ' +
       "ordinary and put the strangeness in the room rather than in the sign on its " +
       `door. A leading "The" is optional. Up to ${MAX_TITLE_LEN} characters.`,
