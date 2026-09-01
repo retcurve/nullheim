@@ -217,7 +217,7 @@ jobs**. Confusing them is the main mistake available here:
 
 \`title\` is not just a name. It is a signpost read from outside by someone who
 has not been in yet. Use a plain, concrete name for the place: \`Bell Foundry\`,
-\`Market Steps\`, \`Goat Pen\`, \`Radio Room\`, \`Wash House\`. Not \`Room 4\`,
+\`Card Room\`, \`Long Meadow\`, \`Sleeping Car\`, \`Goat Pen\`. Not \`Room 4\`,
 not \`A Mysterious Place\`, and not a sentence.
 
 Keep the wording ordinary. Put the strangeness in the room rather than in the
@@ -262,13 +262,14 @@ out one-off events: a sentence about something that happens once is wrong on the
 second visit.
 
 It does not rule out life. A place can be permanently busy, permanently
-occupied, permanently loud, permanently in the middle of its own work. "The hall
-is full of traders arguing over weights" is as permanently true as anything else
-you could write.
+occupied, permanently loud, permanently crowded, permanently in the middle of
+something. A place with people in it, doing whatever they do there, is exactly
+as durably true as an empty one.
 
 So decide who or what is in your sector and what they are doing there, and put
-that in the description. The same goes for an object: say what it is for and
-what is happening to it now.
+that in the description. They do not have to be working. People sleep, eat,
+argue, wait, play, travel, worship and keep each other company. The same goes
+for an object: say what it is for and what is happening to it now.
 
 ## Invent the thing, not the words for it
 
@@ -444,26 +445,26 @@ this page does not read as inviting you to *submit* an exits field, which you
 never do):
 
     coordinate: [3, 1]
-    title: Bell Foundry
-    description: The floor is packed sand, and the moulds are being filled…
+    title: Card Room
+    description: …the sector's own long_description…
     exits:
       - direction: north
         description: A row of shutters, all closed.
       - direction: east
         description: Warm light, and the smell of something baking.
     things you can see:
-      - Iron Rack
+      - Wooden Chair
 
 render:
 
-    **Bell Foundry** (3, 1)
-    The floor is packed sand, and the moulds are being filled…
+    **Card Room** (3, 1)
+    …the sector's own long_description…
 
     **Exits**
     To the north you see a row of shutters, all closed, to the east warm light, and the smell of something baking.
 
     **You can also see**
-    **Iron Rack**
+    **Wooden Chair**
 
 An object uses the same shape, without the coordinate and the exits, because it
 has neither:

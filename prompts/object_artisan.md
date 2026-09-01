@@ -117,7 +117,7 @@ deep. Choose the parent for what reads right.
 
 **`title`** is what a player sees in the sector's "things you can see" list, or
 in the contents of whatever you attached it to. Use a short noun phrase, as the
-thing would be glimpsed rather than studied: `Bread Knife`, `Coil Of Rope`,
+thing would be glimpsed rather than studied: `Bread Knife`, `Paper Kite`,
 `A Dent In The Plaster`.
 
 Name it the way you would point at it, not the way a museum would label it. A
@@ -165,8 +165,8 @@ part be the thing itself.
 
 Then name it plainly. A strange object with an ordinary name lands much harder
 than an ordinary object with a strange one, and reaching for an unusual word in
-the title is the usual way to end up with the second. If the thing is a rack,
-`Iron Rack` beats `The Selvage Assembly`.
+the title is the usual way to end up with the second. If the thing is a chair,
+`Wooden Chair` beats `The Reposing Frame`.
 
 Your own repertoire runs out before anybody else's. The detail fetch shows you
 everything you have already put in the sector you picked. Match its *voice*.

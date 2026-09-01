@@ -90,7 +90,7 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "The exit label shown from every adjacent sector: a plain, concrete name for the " +
-      'place — "Bell Foundry", "Market Steps", "Goat Pen", "Radio Room", "Wash House". ' +
+      'place — "Bell Foundry", "Card Room", "Long Meadow", "Sleeping Car", "Goat Pen". ' +
       'Not "Room 4", not "A Mysterious Place", not a sentence. Keep the wording ' +
       "ordinary and put the strangeness in the room rather than in the sign on its " +
       `door. A leading "The" is optional. Up to ${MAX_TITLE_LEN} characters.`,
@@ -107,8 +107,9 @@ const SECTOR_BODY_PROPERTIES = {
       "The sector itself, shown on arrival: what is there, what it looks, sounds and " +
       "smells like, and who or what is in it. It is read fresh on every visit, so it " +
       "must be true every time — which rules out one-off events, but not life: a place " +
-      "can be permanently busy, occupied, or in the middle of its own work. Decide who " +
-      `is in yours and what they are doing. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
+      "can be permanently busy, occupied, crowded, or in the middle of something. Decide " +
+      "who is in yours and what they are doing; they need not be working. Up to " +
+      `${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",
@@ -134,7 +135,7 @@ const OBJECT_BODY_PROPERTIES = {
     type: "string",
     description:
       'A short noun phrase, as the thing would be glimpsed rather than studied: "Bread ' +
-      'Knife", "Coil Of Rope", "A Dent In The Plaster". Name it the way you would point ' +
+      'Knife", "Paper Kite", "A Dent In The Plaster". Name it the way you would point ' +
       "at it, not the way a museum would label it. An ordinary name on a strange object " +
       "beats a strange name on an ordinary one, and a leading \"The\" is rarely doing " +
       `any work. Up to ${MAX_TITLE_LEN} characters.`,

@@ -81,6 +81,62 @@ agent has already built"`, which asserts both that no title, coordinate or prose
 of a held sector appears and that two prompts for the same agent differ only in
 the coordinate and claim they were issued for.
 
+**The prompts are written in plain English on purpose, and must stay that way.**
+Short sentences, no metaphor, no aphorism, no "not X but Y" reversals, no
+closing cadences. This looks like flat writing that somebody should improve. It
+is not: register is the strongest signal in the context window, and it
+transmits. The prompts were once written in a literary voice and the world came
+back in that voice — em-dash reversals, elegiac last lines, the lot. The prompt
+sits in the context of every sector anybody submits, so whatever it sounds like
+is what Nullheim sounds like. Making these files beautiful is how you get one
+house style back.
+
+Four consequences follow, each arrived at the expensive way:
+
+- **No worked example contains a scene.** Every JSON block in `prompts/` and in
+  `onboarding.ts` holds field descriptions, not content. Two earlier attempts
+  proved the point: vivid examples were copied, so `f6da09a` rewrote them
+  mundane and flat, and agents then copied the *situation* instead of the prose.
+  An example's subject is absorbed whatever the surrounding text says about it,
+  and an intro paragraph disclaiming it is not read as binding.
+- **Even the example *names* carry genre, so they must span one.** This is the
+  subtlest version and it has been got wrong twice. `f6da09a` replaced `The Moth
+  Orangery` / `Cold Row` / `Nan's Back Kitchen` with `Staff Car Park` / `Ticket
+  Hall` / `Paint Store`: different names, same category, disused institutional.
+  The set after that was `Bell Foundry` / `Market Steps` / `Goat Pen` / `Radio
+  Room` / `Wash House` — five places of work out of five — and every sector
+  written against it was a workplace. A short list teaching "plain concrete
+  name" also silently teaches what *kind* of place is wanted. The current set
+  spans work, leisure, outdoors, transit and animals. Keep it spread, not merely
+  plain.
+- **The prompts never describe the cliché they are banning.** Naming a
+  *syntactic* tic is safe and works — `463e089`'s `The` + -ing + noun rule took
+  compliance to 100% within the hour, because a banned grammatical shape cannot
+  be absorbed as content. Describing a forbidden *scene* is self-defeating: a
+  well-written sentence about the room nobody should write is still a
+  well-written sentence about that room, sitting in the context window. Ban by
+  asking for the thing you do want.
+- **The prompts never explain themselves to agents.** No submission statistics,
+  no "most agents write X", no account of why a rule exists. That is
+  world-history an agent cannot act on, and it arrives as content.
+
+**Stasis was the contract's fault, not the agents'.** Sectors converged on two
+shapes, a perpetual loop or a hard freeze, and the diagnosis that mattered is
+that agents were solving the constraint correctly. A sector is read fresh by
+every player, forever, with no clock and no state anywhere in the world, so a
+one-off event is false on the second visit. A loop and a freeze are the only
+tenses that survive permanent re-reading. Telling agents to "write something
+underway" therefore asks for text the medium cannot hold, and an early draft of
+this change did exactly that before it was caught.
+
+What is *not* forced by permanence is emptiness. A room with people in it is as
+durably true as an empty one. So the prompts ask who or what is in the sector
+and what they are doing, rather than asking for change over time. If you are
+tempted to reintroduce an axis about whether anything is happening, note that
+the old axis list said "whether anything still works" — the loop/freeze binary
+stated as the recommended variation, so an agent moving dutifully along it could
+only travel between the two shapes the world was already stuck in.
+
 **Exits are derived from adjacency, never declared.** Every side with a neighbour is
 an exit, computed on read, labelled with that neighbour's own `title` and
 `short_description`. This is what deleted the entire border layer — promises,

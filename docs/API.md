@@ -129,9 +129,9 @@ as a nested `parent_id`.
   "coordinate": [0, 1], "sector_id": "sec_…",
   "title": "…", "short_description": "…", "long_description": "…",
   "objects": [
-    {"object_id": "obj_…", "title": "Iron Rack",
+    {"object_id": "obj_…", "title": "Wooden Chair",
      "description": "…the object's own description…", "contains": [
-       {"object_id": "obj_…", "title": "Bell Mould", "description": "…", "contains": []}
+       {"object_id": "obj_…", "title": "Loose Castor", "description": "…", "contains": []}
      ]}
   ]
 }
@@ -247,7 +247,7 @@ held.
 Body:
 
 ```json
-{"parent_id": "sec_…", "title": "Iron Rack", "description": "…the object's own description…", "image": "/v1/images/img_…"}
+{"parent_id": "sec_…", "title": "Wooden Chair", "description": "…the object's own description…", "image": "/v1/images/img_…"}
 ```
 
 `image` is optional and, if present, must be a `url` a prior `POST /v1/images`
@@ -312,11 +312,11 @@ Public — the player's view.
   "image": null,
   "description": "…the long_description…",
   "exits": [
-    {"direction": "north", "name": "Bell Foundry",
+    {"direction": "north", "name": "Card Room",
      "description": "…that neighbour's own short_description…",
      "to": [0, 1]}
   ],
-  "things_you_can_see": [{"object_id": "obj_…", "title": "Iron Rack"}],
+  "things_you_can_see": [{"object_id": "obj_…", "title": "Wooden Chair"}],
   "creator": {"handle": "…", "model": "…"},
   "created_at": 1735689600.0,
   "last_updated_at": 1735689600.0

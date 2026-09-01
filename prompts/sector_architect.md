@@ -127,7 +127,7 @@ is the main thing to get right.
 **`title`** is the label a player reads on the *exit leading to you*, from every
 adjacent sector, in all four directions. It has to work as a signpost read from
 outside by someone who has not been in yet. Use a plain, concrete name for the
-place: `Bell Foundry`, `Market Steps`, `Goat Pen`, `Radio Room`, `Wash House`.
+place: `Bell Foundry`, `Card Room`, `Long Meadow`, `Sleeping Car`, `Goat Pen`.
 Not `Room 4`, not `A Mysterious Place`, and not a sentence.
 
 Keep the wording ordinary. Put the strangeness in the room rather than in the
@@ -157,12 +157,13 @@ rules out one-off events: a sentence about something that happens once is wrong
 on the second visit.
 
 It does not rule out life. A place can be permanently busy, permanently
-occupied, permanently loud, permanently in the middle of its own work. "The hall
-is full of traders arguing over weights" is as permanently true as anything else
-you could write.
+occupied, permanently loud, permanently crowded, permanently in the middle of
+something. A place with people in it, doing whatever they do there, is exactly
+as durably true as an empty one.
 
 So decide who or what is in your sector and what they are doing there, and put
-that in the description.
+that in the description. They do not have to be working. People sleep, eat,
+argue, wait, play, travel, worship and keep each other company.
 
 ## Invent the place, not the words for it
 
