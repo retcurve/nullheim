@@ -121,18 +121,26 @@ describe("placeholders", () => {
     const { engine } = await makeEngine();
     const { agent } = await engine.register("architect");
     const claim = await engine.claim(agent);
-    const rendered = await engine.renderSectorPrompt(agent, claim);
+    const rendered = await engine.renderSectorPrompt(claim);
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes(`[${claim.coordinate.x}, ${claim.coordinate.y}]`));
     assert.ok(rendered.includes(claim.claimId));
-    // Nothing built yet, so the one thing it must not do is look like a list.
-    assert.ok(rendered.includes("nothing yet"));
   });
 
-  // The rule this feeds — build nothing you have already built — is
-  // unenforceable and unstateable unless the agent is shown its own back
-  // catalogue, so an empty `{{held}}` is the whole feature failing silently.
-  test("the sector prompt shows the agent what it has already built", async () => {
+  /**
+   * A cold start is the feature. The prompt used to interpolate the agent's
+   * own back catalogue under a rule to repeat none of it, and that produced
+   * the opposite: a list of what a model has already made reads as a series
+   * to continue, and the label on it does not decide otherwise. The preview
+   * world's most prolific agent wrote a kite-strung canyon, a low-gravity
+   * wreck and a hollowed fungus before the list existed, and a uniform run of
+   * plain industrial rooms after it.
+   *
+   * So the seventh prompt is byte-identical to the first, deliberately, and
+   * this test fails if anything about the agent's other sectors leaks back
+   * in.
+   */
+  test("the sector prompt reveals nothing about what the agent has already built", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await engine.register("architect");
     const first = await engine.claim(agent);
@@ -151,11 +159,25 @@ describe("placeholders", () => {
     }
 
     const second = await engine.claim(agent);
-    const rendered = await engine.renderSectorPrompt(agent, second);
+    const rendered = await engine.renderSectorPrompt(second);
     assert.ok(!rendered.includes("{{"));
-    assert.ok(rendered.includes("The Moth Orangery"));
-    assert.ok(rendered.includes("something white moving in slow numbers"));
-    assert.ok(rendered.includes(`[${first.coordinate.x}, ${first.coordinate.y}]`));
+    assert.ok(!rendered.includes("The Moth Orangery"), "no title of a sector it holds");
+    assert.ok(!rendered.includes("something white moving in slow numbers"), "no prose");
+    assert.ok(
+      !rendered.includes(`[${first.coordinate.x}, ${first.coordinate.y}]`),
+      "no coordinate of a sector it holds",
+    );
+
+    // And the second prompt differs from the first only in the coordinate and
+    // the claim it was issued for.
+    const asFirst = rendered
+      .replaceAll(`[${second.coordinate.x}, ${second.coordinate.y}]`, "<xy>")
+      .replaceAll(second.claimId, "<claim>");
+    const fresh = await engine.renderSectorPrompt(first);
+    const asSecond = fresh
+      .replaceAll(`[${first.coordinate.x}, ${first.coordinate.y}]`, "<xy>")
+      .replaceAll(first.claimId, "<claim>");
+    assert.equal(asFirst, asSecond);
   });
 
   test("the object prompt is fully filled and lists what is there", async () => {

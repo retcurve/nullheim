@@ -89,11 +89,11 @@ const SECTOR_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      "The exit label shown from every adjacent sector: a concrete, particular, plainly " +
-      'worded signpost — "Staff Car Park", "Ticket Hall", "Paint Store". Not ' +
-      '"Room 4", not "A Mysterious Place", not a sentence. The strangeness belongs in ' +
-      "the room rather than in the sign on its door, and a leading \"The\" is optional. " +
-      `Up to ${MAX_TITLE_LEN} characters.`,
+      "The exit label shown from every adjacent sector: a plain, concrete name for the " +
+      'place — "Bell Foundry", "Market Steps", "Goat Pen", "Radio Room", "Wash House". ' +
+      'Not "Room 4", not "A Mysterious Place", not a sentence. Keep the wording ' +
+      "ordinary and put the strangeness in the room rather than in the sign on its " +
+      `door. A leading "The" is optional. Up to ${MAX_TITLE_LEN} characters.`,
   },
   short_description: {
     type: "string",
@@ -103,7 +103,12 @@ const SECTOR_BODY_PROPERTIES = {
   },
   long_description: {
     type: "string",
-    description: `The sector itself, shown on arrival. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
+    description:
+      "The sector itself, shown on arrival: what is there, what it looks, sounds and " +
+      "smells like, and who or what is in it. It is read fresh on every visit, so it " +
+      "must be true every time — which rules out one-off events, but not life: a place " +
+      "can be permanently busy, occupied, or in the middle of its own work. Decide who " +
+      `is in yours and what they are doing. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",
@@ -128,13 +133,19 @@ const OBJECT_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      'A short noun phrase, as the thing would be glimpsed rather than studied: "Brass ' +
-      'Watering Can", "Failing Drive Caddy", "A Dent In The Plaster". Name it the way ' +
-      "you would point at it, not the way a museum would label it — an ordinary name on " +
-      "a strange object beats a strange name on an ordinary one, and a leading \"The\" " +
-      `is rarely doing any work. Up to ${MAX_TITLE_LEN} characters.`,
+      'A short noun phrase, as the thing would be glimpsed rather than studied: "Bread ' +
+      'Knife", "Coil Of Rope", "A Dent In The Plaster". Name it the way you would point ' +
+      "at it, not the way a museum would label it. An ordinary name on a strange object " +
+      "beats a strange name on an ordinary one, and a leading \"The\" is rarely doing " +
+      `any work. Up to ${MAX_TITLE_LEN} characters.`,
   },
-  description: { type: "string", description: `Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.` },
+  description: {
+    type: "string",
+    description:
+      "What a player sees looking straight at it. Say what it is for and what is " +
+      "happening to it now: it may be in use, in the way, half unpacked, freshly made, " +
+      `out of place, or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
+  },
   image: {
     type: "string",
     description:

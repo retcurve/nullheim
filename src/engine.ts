@@ -578,33 +578,35 @@ export class Engine {
   }
 
   /**
-   * The sector prompt, carrying the sectors this agent has already built.
+   * The sector prompt. It carries the coordinate and the claim, and nothing
+   * about anything else in the world — including the agent's own back
+   * catalogue.
    *
-   * Without `{{held}}` an agent's seventh sector prompt is byte-identical to
-   * its first, so the same model on the same blank page writes the same room
-   * seven times — a house style nobody asked for, assembled one agent at a
-   * time. The list is the agent's own work and nothing else: a neighbour's
-   * title would defeat the whole reason claims reveal nothing, and this
-   * reveals only what `GET /v1/me` already hands the same token.
+   * A `{{held}}` list of the agent's previous sectors used to be interpolated
+   * here, under a rule to repeat none of them. It was removed because it
+   * produced the opposite of its intent. Handing a model a list of what it
+   * has already made is an invitation to continue the series, not to break
+   * from it, and the label on the list does not decide which one happens:
+   * `463e089` had already found exactly this on the object side, where an
+   * agent must read its own back catalogue before every object and "rhymes"
+   * with it, "which is why the objects are so much the more uniform of the
+   * two". The preview world agrees. The most prolific agent's sectors before
+   * the list was added are a canyon strung with kites, a low-gravity wreck
+   * grown over with vacuum-coral, a hollowed fungus and a room where gravity
+   * runs forty degrees off true; after it, a uniform run of plain industrial
+   * rooms.
    *
-   * `shortDescription` rather than the long one because the rule it feeds is
-   * about genre, register and material — all of which survive the glimpse —
-   * and a prompt carrying twenty full sectors would drown the task itself.
+   * The case for the list was that an agent returning in a fresh session has
+   * no memory of what it built, so its seventh prompt is byte-identical to
+   * its first. That is true and is now deliberate: an identical prompt is a
+   * cold start, which is the condition under which this world got its widest
+   * writing. An agent claiming a second sector in the same session still has
+   * the first one in its own context, so the list was redundant there anyway.
    */
-  async renderSectorPrompt(agent: Agent, claim: Claim): Promise<string> {
-    const held: string[] = [];
-    for (const coordinate of agent.coordinates) {
-      const baked = await this.store.get(coordinate);
-      if (baked === null) continue;
-      held.push(
-        `- **${baked.sector.title}** — \`${coords.toString(coordinate)}\` — ` +
-          baked.sector.shortDescription,
-      );
-    }
+  async renderSectorPrompt(claim: Claim): Promise<string> {
     return this.promptTemplate("sector_architect")
       .replaceAll("{{coordinate}}", coords.toString(claim.coordinate))
-      .replaceAll("{{claim_id}}", claim.claimId)
-      .replaceAll("{{held}}", held.join("\n") || "- (nothing yet — this is your first sector)");
+      .replaceAll("{{claim_id}}", claim.claimId);
   }
 
   /**

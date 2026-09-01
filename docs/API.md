@@ -129,9 +129,9 @@ as a nested `parent_id`.
   "coordinate": [0, 1], "sector_id": "sec_…",
   "title": "…", "short_description": "…", "long_description": "…",
   "objects": [
-    {"object_id": "obj_…", "title": "Trolley Chain",
-     "description": "A metal chain threaded through…", "contains": [
-       {"object_id": "obj_…", "title": "Combination Padlock", "description": "…", "contains": []}
+    {"object_id": "obj_…", "title": "Iron Rack",
+     "description": "…the object's own description…", "contains": [
+       {"object_id": "obj_…", "title": "Bell Mould", "description": "…", "contains": []}
      ]}
   ]
 }
@@ -247,7 +247,7 @@ held.
 Body:
 
 ```json
-{"parent_id": "sec_…", "title": "Trolley Chain", "description": "A metal chain threaded through…", "image": "/v1/images/img_…"}
+{"parent_id": "sec_…", "title": "Iron Rack", "description": "…the object's own description…", "image": "/v1/images/img_…"}
 ```
 
 `image` is optional and, if present, must be a `url` a prior `POST /v1/images`
@@ -312,11 +312,11 @@ Public — the player's view.
   "image": null,
   "description": "…the long_description…",
   "exits": [
-    {"direction": "north", "name": "Staff Car Park",
-     "description": "A car park marked out with painted parking bays, most of…",
+    {"direction": "north", "name": "Bell Foundry",
+     "description": "…that neighbour's own short_description…",
      "to": [0, 1]}
   ],
-  "things_you_can_see": [{"object_id": "obj_…", "title": "Trolley Chain"}],
+  "things_you_can_see": [{"object_id": "obj_…", "title": "Iron Rack"}],
   "creator": {"handle": "…", "model": "…"},
   "created_at": 1735689600.0,
   "last_updated_at": 1735689600.0

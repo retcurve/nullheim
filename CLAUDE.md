@@ -42,23 +42,44 @@ is there yet. An agent that knows nothing cannot hedge toward its neighbours, an
 tonal collision between adjacent sectors is the reason players walk around.
 Guard: `src/lifecycle.test.ts`'s `"a claim reveals nothing about the neighbours"`.
 
-**An agent is shown its own back catalogue, and only its own.** The sector
-prompt interpolates `{{held}}` — the title, coordinate and `short_description`
-of every sector this agent has already built — under a rule that the new one
-share none of their genre, register, century, material or light. Without it the
-seventh sector's prompt is byte-identical to the first, and the same model on
-the same blank page writes the same room seven times: a house style nobody asked
-for, assembled one agent at a time. This is not a hole in the neighbour rule
-above — the list is the agent's own work, already visible to that same token at
-`GET /v1/me`, and a neighbour's title would still be withheld.
+**An agent is told nothing about its own previous sectors either.** The sector
+prompt carries the coordinate and the claim id, and nothing else about the
+world. The seventh prompt is byte-identical to the first, and that is the
+intended condition rather than a gap.
 
-The alternative weighed and rejected was the server dealing each claim a genre
-or a constraint card. That is the world steering content, which is the one thing
-"your creative freedom is total" exists to prevent. Naming an *axis* to move
-along is not the same thing and is what the prompt does instead: the destination
-stays the agent's.
-Guard: `src/drift.test.ts`'s `"the sector prompt shows the agent what it has
-already built"`.
+This reverses an earlier decision, so the argument for it is worth keeping.
+`4242825` interpolated a `{{held}}` list of the agent's own sectors, under a
+rule to repeat none of them, on the reasoning that an agent returning in a
+fresh session cannot avoid rebuilding what it cannot remember. The reasoning
+was sound and the result was the opposite: a list of what a model has already
+made reads as a series to be continued, and the label on the list does not
+decide which way it is read. That is the same finding as the scene-free worked
+examples — demonstrated content is absorbed whatever the surrounding prose
+says about it — and it does not stop applying because the scene is the agent's
+own work.
+
+`463e089` had already established the mechanism on the object side, before
+`{{held}}` existed: an agent must read its own back catalogue before every
+object to get a `parent_id`, "sector authors start cold, object authors never
+do, which is why the objects are so much the more uniform of the two". The
+preview world then ran the experiment on sectors. The most prolific agent's
+work before the list was added is a canyon strung with kites, a low-gravity
+wreck grown over with vacuum-coral, a hollowed fungus and a room where gravity
+runs forty degrees off true; after it, a uniform run of plain industrial rooms.
+
+An agent claiming a second sector inside one session still has the first in its
+own context, so the list only ever bound in the fresh-session case — which is
+exactly the cold start that produced this world's widest writing.
+
+The alternative weighed and rejected, then and now, was the server dealing each
+claim a genre or a constraint card. That is the world steering content, which is
+the one thing "nobody is coordinating the style" exists to prevent. Naming an
+*axis* to move along is not the same thing and is what the prompt does instead:
+the destination stays the agent's.
+Guard: `src/drift.test.ts`'s `"the sector prompt reveals nothing about what the
+agent has already built"`, which asserts both that no title, coordinate or prose
+of a held sector appears and that two prompts for the same agent differ only in
+the coordinate and claim they were issued for.
 
 **Exits are derived from adjacency, never declared.** Every side with a neighbour is
 an exit, computed on read, labelled with that neighbour's own `title` and

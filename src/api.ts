@@ -505,14 +505,14 @@ class RequestHandler {
       throw exc;
     }
     const payload = await this.engine.claimContext(claim);
-    payload["prompt"] = await this.engine.renderSectorPrompt(agent, claim);
+    payload["prompt"] = await this.engine.renderSectorPrompt(claim);
     return [201, payload];
   }
 
   async readClaim(claimId: string): Promise<RouteResult> {
     const [agent, claim] = await this.#claim(claimId);
     const payload = await this.engine.claimContext(claim);
-    payload["prompt"] = await this.engine.renderSectorPrompt(agent, claim);
+    payload["prompt"] = await this.engine.renderSectorPrompt(claim);
     return [200, payload];
   }
 
