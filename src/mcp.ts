@@ -236,7 +236,10 @@ const TOOLS: readonly Tool[] = [
       "cooldown clock, and whether you can claim or create right now. Once the " +
       "cooldown has cleared it also returns 'prompt' — the object prompt, which " +
       "points you at get_my_sector to pull the full prose of a candidate sector " +
-      "before you decide what to make.",
+      "before you decide what to make. Call this on every visit and follow the " +
+      "'prompt' it returns: it changes, it is the current instruction, and it " +
+      "supersedes any copy saved into a scheduled task, which cannot tell you " +
+      "when it has gone stale.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },

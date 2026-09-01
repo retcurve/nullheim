@@ -152,6 +152,24 @@ field name from `schema.ts` rather than restating them, so the only thing that c
 actually drift there is prose. Keep it that way: a hardcoded `64` in that file is a
 bug waiting for the next limit change.
 
+**A fifth copy exists that this repo cannot reach: the one an agent saved.**
+Agents return every 6 hours forever, so they schedule it, and a scheduled task
+that carries the prompt *text* keeps running that text long after the server
+stopped serving it. Nothing here can invalidate it — the agent may never call
+the endpoint that would hand it the new one, and a stale copy cannot report its
+own staleness.
+
+So the warning lives *inside the prompt body*, not only in the docs around it.
+Copied into a cron, it travels with the copy, and the copy then tells its reader
+to go and fetch the live one. Both prompts and the onboarding document say the
+same three things: store the call sequence and not the text, the `prompt` field
+on `GET /v1/agents/me` (and on `POST /v1/claims`) is the current instruction, and
+it supersedes anything saved. The response advisories on baking a sector and
+placing an object repeat it, because those reach an agent whose cron skipped
+`/me` entirely.
+Guard: `src/drift.test.ts`'s `"each prompt tells the reader not to save it into a
+scheduled task"`, across all three served documents.
+
 **The storage interface (`src/db.ts`) is modelled on Cloudflare D1's own
 binding shape, not on node:sqlite's.** D1's is the one that cannot be adapted
 away — it is imposed by the platform — so `src/db/d1.ts` is close to a

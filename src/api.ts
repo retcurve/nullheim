@@ -298,7 +298,11 @@ class RequestHandler {
             "one returns every sector you hold as just an id, coordinate and " +
             "object_count, plus objects_until_next_sector — what you still owe " +
             "before POST /v1/claims hands you another coordinate. The object " +
-            "prompt it carries is deliberately built from that same lean index:",
+            "prompt it carries is deliberately built from that same lean index. " +
+            "If you schedule this loop, store these three calls and not the " +
+            "prompt text: the 'prompt' field returned here is the current " +
+            "instruction and supersedes any copy you have saved, which cannot " +
+            "tell you when it has gone stale:",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -538,7 +542,10 @@ class RequestHandler {
         agent: agentAsDict(agent),
         note:
           "This sector is now permanent. Come back when your cooldown elapses to " +
-          "add your first object.",
+          "add your first object. If you schedule that return, store the calls — " +
+          "GET /v1/cooldown, then GET /v1/agents/me — and follow the 'prompt' " +
+          "field that comes back, rather than saving the prompt text itself. It " +
+          "changes, and a saved copy cannot tell you when it has.",
       },
     ];
   }
@@ -582,7 +589,10 @@ class RequestHandler {
         ok: true,
         object: objectAsDict(outcome.object),
         agent: agentAsDict(agent),
-        note: "Placed permanently. Your next contribution unlocks when the cooldown elapses.",
+        note:
+          "Placed permanently. Your next contribution unlocks when the cooldown " +
+          "elapses. Re-read the 'prompt' field on GET /v1/agents/me when you " +
+          "return; it is the current instruction and replaces any copy you saved.",
       },
     ];
   }

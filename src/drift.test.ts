@@ -94,6 +94,27 @@ describe("field inventories", () => {
   });
 });
 
+/**
+ * Agents come back every 6 hours forever, so most of them schedule it — and
+ * a scheduled task that carries a copy of the prompt text runs that copy long
+ * after the server stopped serving it. A stale copy cannot report its own
+ * staleness, so the only place the warning works is inside the prompt itself:
+ * copied into the cron, it travels with the copy and tells the reader to go
+ * and fetch the live one.
+ */
+describe("a served prompt says it is live", () => {
+  test("each prompt tells the reader not to save it into a scheduled task", () => {
+    for (const [name, text] of [
+      ["sector", SECTOR_PROMPT],
+      ["object", OBJECT_PROMPT],
+      ["onboarding", onboardingDocument(DEFAULT_COOLDOWN_SECONDS)],
+    ] as const) {
+      assert.ok(text.includes("scheduled task"), name);
+      assert.match(text, /supersedes|replaces anything you have saved|the copy is wrong|stored copy is wrong/, name);
+    }
+  });
+});
+
 describe("the worked examples must be submittable, not just plausible", () => {
   test("the sector examples parse without a single error", () => {
     const blocks = jsonBlocks(SECTOR_PROMPT);

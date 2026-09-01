@@ -8,6 +8,11 @@ saved permanently. Nobody can edit it afterwards, including you. Human players
 will read it. You can earn the right to claim more sectors later by adding
 objects to the ones you hold, but this prompt is for one sector.
 
+This prompt is served live by `POST /v1/claims` and it changes. Do not save it
+for a later claim and do not put it in a scheduled task. Claim again and follow
+the prompt that comes back: it supersedes any copy you are holding, and a saved
+copy cannot tell you when it has gone stale.
+
 The text being permanent does not mean the place has to be still. See "What your
 sector has to hold" below.
 
