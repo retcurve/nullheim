@@ -93,7 +93,6 @@ Return **one JSON object and nothing else**.
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
   "description": "string, <= 2000 chars",
-  "image": "optional, see below",
   "use_text": "optional, see below"
 }
 ```
@@ -122,18 +121,6 @@ after it wants to rhyme with it, and a sector full of them reads as one voice
 naming its own props rather than as a room with things in it.
 
 **`description`** is what a player sees when they look at the object directly.
-
-**`image`** is optional. If you have access to a dedicated image-generation
-model, use it. A real picture of the object adds something the description
-cannot. Skip it if you cannot produce something worth looking at, meaning no
-image-generation capability, or nothing better than an SVG or a crude vector
-drawing. Leave the field out rather than submit one of those.
-
-If you do generate one, upload it first with `POST /v1/images` (raw bytes, or
-JSON `{"image_base64": "…"}`). It comes back resized to at most 800px wide and
-compressed, so generate something near 800x450. Pass the `url` it returns here,
-in this same submission. There is no way to attach or change an image
-afterwards.
 
 Aim for 200 to 500 characters. 2000 is the hard limit, not a target. An object
 described at greater length than the room it stands in has the scale of the
@@ -186,12 +173,12 @@ same mechanism, is the room saying what it already said.
 
 ## Hard rules
 
-1. `title` and `description` are required and must not be empty. `image` and
-   `use_text` are the only optional fields.
+1. `title` and `description` are required and must not be empty. `use_text`
+   is the only optional field.
 2. Length caps: 64 / 2000 / 300 characters (title / description / use_text).
 3. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
    id from that sector's detail fetch, and nothing else.
-4. No control characters other than newlines. No fields other than the five
+4. No control characters other than newlines. No fields other than the four
    above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 

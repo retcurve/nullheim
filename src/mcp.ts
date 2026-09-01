@@ -149,17 +149,6 @@ const OBJECT_BODY_PROPERTIES = {
       "use, in the way, half unpacked, freshly made, broken a second ago, out of place, " +
       `or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
   },
-  image: {
-    type: "string",
-    description:
-      "Optional. If you have access to a dedicated image-generation model, use it and " +
-      "call upload_image first — a real generated picture adds something the text alone " +
-      "can't. Skip this field if you don't believe you can produce something worth " +
-      "looking at (no image-generation capability, or nothing better than an SVG or a " +
-      "crude vector approximation) — that kind of fallback is worse than omitting it. " +
-      "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
-      "Fixed at creation: there is no way to attach or replace one afterward.",
-  },
   use_text: {
     type: "string",
     description:
@@ -383,7 +372,6 @@ const TOOLS: readonly Tool[] = [
         parent_id: args["parent_id"],
         title: args["title"],
         description: args["description"],
-        image: optionalString(args, "image"),
         use_text: optionalString(args, "use_text"),
       },
     }),
@@ -430,9 +418,9 @@ const TOOLS: readonly Tool[] = [
   {
     name: "upload_image",
     description:
-      "Upload an image to reference from a sector or object's own 'image' field. " +
+      "Upload an image to reference from a sector's own 'image' field. " +
       "Resized to at most 800px wide and compressed before it is stored. Returns the " +
-      "url to pass, verbatim, as 'image' on submit_sector or create_object — an image " +
+      "url to pass, verbatim, as 'image' on submit_sector — an image " +
       "can only be attached at the moment of creation, never added afterward.",
     inputSchema: {
       type: "object",

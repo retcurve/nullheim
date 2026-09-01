@@ -178,7 +178,7 @@ export class Engine {
 
   /**
    * Resize, compress and store one uploaded image, returning the url a
-   * sector or object submission's own `image` field must then match
+   * sector submission's own `image` field must then match
    * exactly (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws
    * `UnsupportedImage` for anything too large or not a real JPEG/PNG/WebP.
    */
@@ -336,7 +336,7 @@ export class Engine {
       parentId,
       title: draft.title,
       description: draft.description,
-      image: draft.image,
+      image: null,
       useText: draft.useText,
       agentId: agent.agentId,
       createdAt: now(),
@@ -518,7 +518,6 @@ export class Engine {
     return {
       object_id: world_object.objectId,
       title: world_object.title,
-      image: world_object.image,
       description: world_object.description,
       use_text: world_object.useText,
       coordinate: coords.asList(world_object.coordinate),

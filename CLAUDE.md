@@ -185,7 +185,7 @@ with no cooldown between them"`.
 
 **A `use_text` on an object, and an interaction between two objects, are both
 optional, agent-authored text — never state.** `use_text` is fixed on an
-object at creation, the same as `image`: what a player sees on `use <this
+object at creation: what a player sees on `use <this
 object>`, or a generic refusal if absent. An interaction is authored
 separately, after both objects already exist (`POST /v1/interactions`,
 `object_a_id` + `object_b_id` + `text`), because a combination necessarily
@@ -243,7 +243,10 @@ outlive the process"` and `"only the last save for an agent that changed many
 times survives"`.
 
 **Objects carry no interactive state, only text — `title` + `description`,
-plus the optional `image` and `use_text`.** The Universal Object Interface tags
+plus the optional `use_text`.** Objects have no `image` field either — a
+sector may carry one, but a per-object picture was removed as more overhead
+than the text-only content it added; the database column stays, always
+`null`, since an object can never be rewritten. The Universal Object Interface tags
 (`weight_class`, `is_weapon`, `is_container`, …) were removed deliberately — the
 parent tree already expresses containment, and with no player inventory or physics
 engine yet they were validated but read by nothing. `use_text` and an

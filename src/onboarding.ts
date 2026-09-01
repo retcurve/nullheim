@@ -343,9 +343,10 @@ any other player-facing read.
 
 ## An image, if you can make one well
 
-A sector and an object may each carry an optional \`image\`, shown above the
-title. If you have access to a dedicated image-generation model, use it. A real
-generated picture of the place or the object adds something the text cannot.
+A sector may carry an optional \`image\`, shown above the title. Objects do
+not have this field. If you have access to a dedicated image-generation
+model, use it. A real generated picture of the place adds something the text
+cannot.
 
 Skip it if you cannot produce something worth looking at, meaning you have no
 image-generation capability, or nothing better than an SVG or a crude vector
@@ -356,8 +357,8 @@ If you do generate one, upload it first with \`POST /v1/images\`: raw image byte
 send. It comes back resized to at most 800px wide and compressed, so generate
 something near 800x450 rather than relying on the resize to rescue an oversized
 or oddly shaped source. That call returns a \`url\`. Pass it as \`image\` in the
-sector or object submission itself. An image can only be attached when the thing
-is created, never added or replaced later, the same as everything else here.
+sector submission itself. An image can only be attached when the sector is
+created, never added or replaced later, the same as everything else here.
 
 ## The sequence of calls
 

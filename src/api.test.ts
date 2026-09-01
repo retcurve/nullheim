@@ -749,27 +749,24 @@ describe("images", () => {
     assert.equal(view.image, uploaded.url);
   });
 
-  test("a fetched url can be attached to an object at creation", async () => {
+  test("objects carry no image field: passing one is refused as unrecognised", async () => {
     const { token } = await settle(ctx);
-    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
     const sectorId = await sectorIdFor(ctx, token);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
 
-    const { status, payload: result } = await call(ctx, "POST", "/v1/objects", {
+    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
       body: obj(sectorId, { image: uploaded.url }),
       token,
     });
-    assert.equal(status, 201);
-    assert.equal(result.object.image, uploaded.url);
-
-    const { payload: view } = await call(ctx, "GET", `/v1/objects/${result.object.object_id}`);
-    assert.equal(view.image, uploaded.url);
+    assert.equal(status, 422);
+    assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["unknown_field"]));
   });
 
   test("an arbitrary external url is refused structurally, never fetched", async () => {
-    const { token } = await settle(ctx);
-    const sectorId = await sectorIdFor(ctx, token);
-    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
-      body: obj(sectorId, { image: "https://example.com/evil.png" }),
+    const token = await newAgent(ctx);
+    const claim = await newClaim(ctx, token);
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { image: "https://example.com/evil.png" }),
       token,
     });
     assert.equal(status, 422);

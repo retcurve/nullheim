@@ -704,8 +704,8 @@ class RequestHandler {
       {
         ...outcome,
         note:
-          "Pass this url exactly, in the 'image' field of a sector or object submission, " +
-          "before you claim or found it — an image can only be attached at creation, never " +
+          "Pass this url exactly, in the 'image' field of a sector submission, " +
+          "before you claim it — an image can only be attached at creation, never " +
           "added or replaced afterward.",
       },
     ];
@@ -854,8 +854,8 @@ export const ROUTES: RouteEntry[] = [
     "/v1/images",
     (h) => h.createImage(),
     "Auth. Upload an image (raw bytes, or JSON {image_base64}); resized to " +
-      "at most 800px wide and compressed. Returns the url to pass as a sector " +
-      "or object's own 'image' field.",
+      "at most 800px wide and compressed. Returns the url to pass as a sector's " +
+      "own 'image' field.",
   ),
   route(
     "GET",

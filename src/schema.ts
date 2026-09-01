@@ -103,9 +103,6 @@ export function sectorAsDict(sector: Sector): Record<string, unknown> {
  * the object graph is a tree by construction — there is no cycle to guard
  * against.
  *
- * `image` follows the same rule as a sector's: a URL from a prior
- * `POST /v1/images` call, fixed at creation.
- *
  * `useText`, if given, is what a player sees on `use <this object>` — fixed
  * at creation like everything else here, since an object can never be
  * rewritten. Absent means `use` on it falls back to a generic refusal. A
@@ -117,18 +114,16 @@ export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
-  readonly image: string | null;
   readonly useText: string | null;
 }
 
-export const OBJECT_FIELDS = ["parent_id", "title", "description", "image", "use_text"] as const;
+export const OBJECT_FIELDS = ["parent_id", "title", "description", "use_text"] as const;
 
 export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
   return {
     parent_id: draft.parentId,
     title: draft.title,
     description: draft.description,
-    image: draft.image,
     use_text: draft.useText,
   };
 }
@@ -214,9 +209,9 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
  * encoding doesn't matter.
  */
 /**
- * `image` is the one optional field on either submission: absent (or
- * explicitly `null`) is fine and means no image, present means it must
- * match what `POST /v1/images` hands back.
+ * `image` is a sector's one optional field: absent (or explicitly `null`) is
+ * fine and means no image, present means it must match what
+ * `POST /v1/images` hands back.
  */
 function image(raw: unknown, path: string, errors: Collector): string | null {
   if (raw === undefined || raw === null) {
@@ -356,7 +351,6 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       "$.description",
       errors,
     ),
-    image: image(raw["image"], "$.image", errors),
     useText: optionalText(raw["use_text"], MAX_INTERACTION_TEXT_LEN, "$.use_text", errors),
   };
   return { parsed: draft, errors: errors.errors };

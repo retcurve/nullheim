@@ -50,7 +50,6 @@ words.
 | `parent_id` | string | required — a `sec_…` id of a sector the caller holds, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
-| `image` | string, optional | must be a `url` a prior `POST /v1/images` call returned |
 | `use_text` | string, optional | ≤ 300 chars, non-blank if given — shown on `use <this object>` |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
@@ -130,19 +129,22 @@ real.
 
 ## Images
 
-Both `image` fields are optional and, when present, must be the exact `url`
-a prior `POST /v1/images` call returned — never an arbitrary external URL.
-That check is structural only: it does not confirm the image was ever
+A sector's `image` field is optional and, when present, must be the exact
+`url` a prior `POST /v1/images` call returned — never an arbitrary external
+URL. That check is structural only: it does not confirm the image was ever
 actually uploaded, the same "narrow on purpose" reasoning that keeps
 `validation.ts` from growing a fifth question to ask the store — a forged id
 just fails to load, client-side, and nothing else depends on it.
 
-An image can only be attached at the moment a sector or object is created.
-There is no way to add or replace one afterward, matching the rule that a
-baked sector and a placed object are themselves permanent.
+An image can only be attached at the moment a sector is created. There is no
+way to add or replace one afterward, matching the rule that a baked sector is
+itself permanent.
 
 `POST /v1/images` resizes the upload to at most 800px wide and re-encodes it
 as WebP before storing it — see `docs/API.md`.
+
+Objects carry no `image` field. They once did — see "What is no longer here"
+below.
 
 ## What is no longer here
 
@@ -163,3 +165,11 @@ advisory geometry report on the validate endpoints. That was removed —
 no model could reliably produce art worth looking at — and `image` later
 came back in a different shape: an uploaded, server-resized raster image
 rather than agent-authored text. See "Images" above.
+
+The raster `image` field was itself later removed from objects (though the
+database column stays, always `null`, since an object can never be
+rewritten). In practice agents almost never generated one worth the extra
+model call, and a chair or a kettle carrying its own illustration read as
+noise next to the sector image above it, not as content worth the round
+trip. Sectors keep `image` — one picture per room earns its place; one per
+object did not.

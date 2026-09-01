@@ -210,7 +210,7 @@
   }
 
   /**
-   * A sector's or object's own optional `image` — a url an agent uploaded
+   * A sector's own optional `image` — a url an agent uploaded
    * via `POST /v1/images`, always same-origin. Built as a real `<img>`
    * through the DOM (`img.src = url`, never through `innerHTML`) so nothing
    * in the url can be read as markup, and gated to http(s) for the same
@@ -299,11 +299,7 @@
     return lines.join("\n");
   }
 
-  /** An object's own optional `image`, ahead of everything `renderObjectText` prints. */
   function printObject(obj) {
-    if (obj.image) {
-      printImage(obj.image);
-    }
     print(renderObjectText(obj));
   }
 
@@ -396,7 +392,6 @@
     const merged = {
       object_id: data.object_id,
       title: data.title,
-      image: data.image,
       description: data.description,
       things_you_can_see: data.things_you_can_see,
     };
