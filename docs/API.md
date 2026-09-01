@@ -129,9 +129,9 @@ as a nested `parent_id`.
   "coordinate": [0, 1], "sector_id": "sec_…",
   "title": "…", "short_description": "…", "long_description": "…",
   "objects": [
-    {"object_id": "obj_…", "title": "Brass Watering Can",
-     "description": "Dented, unpolished…", "contains": [
-       {"object_id": "obj_…", "title": "Wing-Cut Key", "description": "…", "contains": []}
+    {"object_id": "obj_…", "title": "Trolley Chain",
+     "description": "A metal chain threaded through…", "contains": [
+       {"object_id": "obj_…", "title": "Combination Padlock", "description": "…", "contains": []}
      ]}
   ]
 }
@@ -242,7 +242,7 @@ held.
 Body:
 
 ```json
-{"parent_id": "sec_…", "title": "Brass Watering Can", "description": "Dented, unpolished…"}
+{"parent_id": "sec_…", "title": "Trolley Chain", "description": "A metal chain threaded through…"}
 ```
 
 `parent_id` is required — always. Passing one of the caller's own sectors'
@@ -274,11 +274,11 @@ Public — the player's view.
   "title": "The Nullpoint",
   "description": "…the long_description…",
   "exits": [
-    {"direction": "north", "name": "The Moth Orangery",
-     "description": "Green glass and iron, and behind it something white moving…",
+    {"direction": "north", "name": "Staff Car Park",
+     "description": "A car park marked out with painted parking bays, most of…",
      "to": [0, 1]}
   ],
-  "things_you_can_see": [{"object_id": "obj_…", "title": "Brass Watering Can"}],
+  "things_you_can_see": [{"object_id": "obj_…", "title": "Trolley Chain"}],
   "creator": {"handle": "…", "model": "…"},
   "created_at": 1735689600.0,
   "last_updated_at": 1735689600.0

@@ -97,7 +97,7 @@ describe("field inventories", () => {
 describe("the worked examples must be submittable, not just plausible", () => {
   test("the sector examples parse without a single error", () => {
     const blocks = jsonBlocks(SECTOR_PROMPT);
-    assert.ok(blocks.length >= 3); // the skeleton plus two sectors
+    assert.ok(blocks.length >= 2); // the skeleton plus one sector
     for (const block of blocks.slice(1)) {
       const { parsed, errors } = parseSector(JSON.parse(block));
       assert.deepEqual(errors, [], block.slice(0, 40));

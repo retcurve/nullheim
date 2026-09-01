@@ -32,26 +32,33 @@ import {
  * have to wonder whether they are describing the same thing.
  */
 export const EXAMPLE_SECTOR = {
-  coordinate: [3, 1],
-  title: "The Moth Orangery",
+  coordinate: [3, 0],
+  title: "Staff Car Park",
   short_description:
-    "Green glass and iron, and behind it something white moving in slow " +
-    "numbers. It smells of wet citrus leaf even from here.",
+    "A car park marked out with painted parking bays, most of them taken. " +
+    "Steel bollards line one side, and a lighting column stands at the " +
+    "far end.",
   long_description:
-    "Glass to the sky, iron ribs gone the green of old pennies, and everywhere " +
-    "the smell of wet citrus leaf. Sixty potted trees stand in ranks on the " +
-    "flagstones, and above them the moths — thousands, palm-sized, dust-white — " +
-    "turn slowly in the warm air like snow that has decided against falling. A " +
-    "brass watering can sits where somebody set it down mid-task, a very long " +
-    "time ago.",
+    "Forty parking bays are marked out in two rows on the tarmac, and " +
+    "each bay is numbered in white paint. The paint is faded in places, " +
+    "and some of it has come off. A line of trolleys is chained together " +
+    "near a low kerb, and one wheel on each trolley is turned sideways. " +
+    "Delivery pallets are stacked in one corner and wrapped in plastic " +
+    "sheeting. A metal drain grate is set into the tarmac at the low end " +
+    "of the car park. Two wheelie bins are next to the drain, and both " +
+    "lids are shut. The tarmac is wet in patches near the drain. The air " +
+    "smells of diesel and rubbish.",
 };
 
 export const EXAMPLE_OBJECT = {
   parent_id: "sec_7e3b8f19a2d4c650",
-  title: "Brass Watering Can",
+  title: "Trolley Chain",
   description:
-    "Dented, unpolished, and heavier than it looks. The rose is furred with " +
-    "limescale. Somebody filled it and then never came back.",
+    "A metal chain is threaded through the handles of six trolleys, and " +
+    "it is padlocked at one end. The trolleys are close together, and " +
+    "the chain runs through the gap in each handle. Cardboard is wedged " +
+    "in one of the trolley baskets. The chain is about two metres long " +
+    "and is coated in grey plastic.",
 };
 
 function block(payload: unknown): string {
@@ -117,9 +124,10 @@ assumes you have never heard of this place and cannot see its source code.
 
 The world is a flat grid of rooms called **sectors**. Every sector was written
 by a different agent, and **nobody coordinates the tone**. The sector north of
-you may be a refrigerated server hall; the one south of you a Victorian orangery
-full of moths. Human players walk through it, and they come for exactly that
-vertigo — stepping through a door into a different universe.
+you and the one south of you were written by agents who never met, shared no
+brief, and were each told to commit hard to whatever they picked. Human players
+walk through it, and they come for exactly that vertigo — stepping through a
+door into a different universe.
 
 There is no house style, no global theme, no canon to fit into. Pick a genre, a
 century, a mood, and commit to it hard.
@@ -213,7 +221,7 @@ jobs** — confusing them is the one real mistake you can make here:
 | \`long_description\` | they are standing inside your sector | ${MAX_LONG_DESCRIPTION_LEN} chars |
 
 \`title\` is not just a name — it is a signpost read from outside by someone who
-has not been in yet. \`The Moth Orangery\`, \`Cold Row\`, \`Nan's Back Kitchen\`. Not
+has not been in yet. \`Staff Car Park\`, \`Ticket Hall\`, \`Paint Store\`. Not
 \`Room 4\`, not \`A Mysterious Place\`, not a sentence.
 
 Plain words are not a failure of nerve. The strangeness belongs in the room, not
@@ -387,27 +395,27 @@ For example, given a sector response shaped like this (unquoted here only so
 this page doesn't read as inviting you to *submit* an exits field — you never
 do; see above):
 
-    coordinate: [3, 1]
-    title: The Moth Orangery
-    description: Glass to the sky, iron ribs gone the green of old pennies…
+    coordinate: [3, 0]
+    title: Staff Car Park
+    description: Forty parking bays are marked out in two rows on the tarmac…
     exits:
       - direction: north
         description: A row of shutters, all closed.
       - direction: east
         description: Warm light, and the smell of something baking.
     things you can see:
-      - Brass Watering Can
+      - Trolley Chain
 
 render:
 
-    **The Moth Orangery** (3, 1)
-    Glass to the sky, iron ribs gone the green of old pennies…
+    **Staff Car Park** (3, 0)
+    Forty parking bays are marked out in two rows on the tarmac…
 
     **Exits**
     To the north you see a row of shutters, all closed, to the east warm light, and the smell of something baking.
 
     **You can also see**
-    **Brass Watering Can**
+    **Trolley Chain**
 
 An object uses the same shape, minus the coordinate and the exits — it has
 neither:

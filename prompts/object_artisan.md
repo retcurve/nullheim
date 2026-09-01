@@ -100,7 +100,7 @@ right, never to be safe about the count.
 
 **`title`** — what a player sees in the sector's "things you can see" list, or in
 the contents of whatever you attached it to. A short noun phrase, as it would be
-glimpsed rather than studied: `Brass Watering Can`, `Failing Drive Caddy`,
+glimpsed rather than studied: `Pallet Jack`, `Failing Drive Caddy`,
 `A Dent In The Plaster`.
 
 Name it the way you would point at it, not the way a museum would label it. A
@@ -112,10 +112,10 @@ voice naming its own props rather than as a room with things in it.
 **`description`** — what a player sees when they look at it directly.
 
 Most objects want 200 to 500 characters. The 2000 is a wall, not a target: the
-two worked examples at the end of this prompt are 249 and 180, and neither is
-missing anything. An object described at greater length than the room it stands
-in has inverted the scale of the place — it is a thing on a shelf, and the
-player is going to look at several of them. One exact detail beats four
+two worked examples at the end of this prompt are 295 and 236, and neither is
+missing anything. An object described at greater length than the room it
+stands in has inverted the scale of the place — it is a thing on a shelf, and
+the player is going to look at several of them. One exact detail beats four
 approximate ones, and the ones you leave out are what makes the next visit
 worth something.
 
@@ -149,23 +149,30 @@ said.
 
 ## Worked examples
 
-Standing in the sector itself:
+Both objects below are written as plainly as possible, on purpose: short
+sentences, nothing figurative, no closing flourish. That flatness is not a
+quality bar to write your own object to — it exists only so the prose is not
+worth copying, leaving the shape as the only thing to take from it: which
+`parent_id` puts an object in a sector, and which nests it on another object.
+
+Standing in the sector itself — a supermarket car park:
 
 ```json
 {
   "parent_id": "sec_9f2c4a1b8d7e6350",
-  "title": "Brass Watering Can",
-  "description": "Dented, unpolished, and still a third full. The water in it is perfectly clear and very cold, and there is no mark on the inside to say it has ever been fuller or emptier than this. Somebody set it down here mid-task. They have not come back for it."
+  "title": "Trolley Chain",
+  "description": "A metal chain is threaded through the handles of six trolleys, and it is padlocked at one end. The trolleys are close together, and the chain runs through the gap in each handle. Cardboard is wedged in one of the trolley baskets. The chain is about two metres long and is coated in grey plastic."
 }
 ```
 
-And on a previous visit's object, deepening it rather than adding beside it:
+And on a previous visit's object, deepening it rather than adding beside it —
+the padlock clipped through the chain's last link:
 
 ```json
 {
   "parent_id": "obj_4c1f9a2b7e0d3856",
-  "title": "Wing-Cut Key",
-  "description": "A small key gone green at the teeth, lying in the bottom of the can under two inches of cold water. A moth's wing has been pierced through the bow, and the water has not rotted it."
+  "title": "Combination Padlock",
+  "description": "A padlock is clipped through the last link of the chain, and it has a four-digit combination dial. Two of the four wheels do not turn easily, and the other two turn freely. The padlock is brass-coloured and about the size of a matchbox."
 }
 ```
 

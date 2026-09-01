@@ -106,7 +106,7 @@ is the only real craft in the task.
 **`title`** — this is not just a name. It is the label a player reads on the
 *exit leading to you* from every adjacent sector, in all four directions. It has
 to work as a signpost seen from outside, by someone who has not been in yet:
-`The Moth Orangery`, `Cold Row`, `Nan's Back Kitchen`. Concrete and particular.
+`Staff Car Park`, `Ticket Hall`, `Paint Store`. Concrete and particular.
 Not `Room 4`, not `A Mysterious Place`, and not a sentence.
 
 Plain words are not a failure of nerve here. The strangeness belongs in the room,
@@ -124,8 +124,8 @@ give away the room.
 it. Describe the place, its light, its air, what it smells of, what has
 happened here. Say nothing about the ways out.
 
-Most sectors want 500 to 1000 characters. The 4000 is a wall, not a target: the
-two worked examples at the end of this prompt are about 450 each and neither is
+Most sectors want 500 to 1000 characters. The 4000 is a wall, not a target:
+the worked example at the end of this prompt is 564 characters, and it is not
 short of anything. A player reads this on arrival every single time they walk
 in, and the ways onward are listed underneath it — half a screen of prose per
 step is what stops somebody exploring. Write past 1000 only when the place has
@@ -183,30 +183,24 @@ stopped at once.
 If a submission is rejected you receive a list of `{code, path, message}`
 errors. Fix exactly what they name and resubmit.
 
-## Worked examples
+## Worked example
 
-Two sectors that agree on nothing whatsoever. Note that neither one acknowledges
-that anywhere else exists.
+One sector, deliberately mundane in what it is about and, on purpose, just
+as flat in how it is written: short plain sentences, nothing figurative,
+nothing lingered on. That flatness is not a quality bar — do not write your
+own sector this plainly — it exists only to keep the writing itself from
+being worth copying, so what is left to notice is the shape: three fields
+doing three different jobs. Note also that it does not acknowledge anywhere
+else exists.
 
-**Example A** — assigned `[3, 0]`
+**Example** — assigned `[3, 0]`
 
 ```json
 {
   "coordinate": [3, 0],
-  "title": "Cold Row, Cabinet 14",
-  "short_description": "Past the kickplate: two walls of server racks under a hard blue-white glare, and cold air spilling out over your feet.",
-  "long_description": "Server racks in two unbroken walls, breathing that flat machine breath that makes your fillings ache. The floor is a grid of perforated tile and the air coming up through it is refrigerated to the point of insult. Somewhere behind cabinet 14 a drive is failing, clicking out the same three syllables over and over, and has been for four years. A handwritten label on the cabinet door says DO NOT POWER CYCLE, and under it, in a different hand, YES YOU."
-}
-```
-
-**Example B** — assigned `[3, 1]`
-
-```json
-{
-  "coordinate": [3, 1],
-  "title": "The Moth Orangery",
-  "short_description": "Green glass and iron, and behind it something white moving in slow numbers. It smells of wet citrus leaf even from here.",
-  "long_description": "Glass to the sky, iron ribs gone the green of old pennies, and everywhere the smell of wet citrus leaf. Sixty potted trees stand in ranks on the flagstones, and above them the moths — thousands, palm-sized, dust-white — turn slowly in the warm air like snow that has decided against falling. A brass watering can sits where somebody set it down mid-task, a very long time ago. The glass holds the heat long after there is any sun to hold."
+  "title": "Staff Car Park",
+  "short_description": "A car park marked out with painted parking bays, most of them taken. Steel bollards line one side, and a lighting column stands at the far end.",
+  "long_description": "Forty parking bays are marked out in two rows on the tarmac, and each bay is numbered in white paint. The paint is faded in places, and some of it has come off. A line of trolleys is chained together near a low kerb, and one wheel on each trolley is turned sideways. Delivery pallets are stacked in one corner and wrapped in plastic sheeting. A metal drain grate is set into the tarmac at the low end of the car park. Two wheelie bins are next to the drain, and both lids are shut. The tarmac is wet in patches near the drain. The air smells of diesel and rubbish."
 }
 ```
 

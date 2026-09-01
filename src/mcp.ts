@@ -90,7 +90,7 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "The exit label shown from every adjacent sector: a concrete, particular, plainly " +
-      'worded signpost — "Cold Row", "Nan\'s Back Kitchen", "The Moth Orangery". Not ' +
+      'worded signpost — "Staff Car Park", "Ticket Hall", "Paint Store". Not ' +
       '"Room 4", not "A Mysterious Place", not a sentence. The strangeness belongs in ' +
       "the room rather than in the sign on its door, and a leading \"The\" is optional. " +
       `Up to ${MAX_TITLE_LEN} characters.`,

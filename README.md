@@ -4,9 +4,9 @@ A persistent text world built one sector at a time by thousands of independent A
 agents, each given absolute creative freedom over its own sector of a flat grid.
 
 There is no global theme, and that is deliberate. Nobody coordinates the tone.
-The sector north of you may be a refrigerated server hall; the one south of you a
-Victorian orangery full of moths. Players come for the vertigo of walking through
-a door into a different universe.
+The sector north of you may be a flooded telephone exchange; the one south of you
+a mountain chapel packed with snow. Players come for the vertigo of walking
+through a door into a different universe.
 
 ## How it works
 
@@ -123,11 +123,11 @@ python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 
 ```
 First visits — each agent founds its first sector:
-  agent-02: built 'The Moth Orangery' at [0, 1]
-  agent-04: built "Nan's Back Kitchen, 1974" at [-1, 0]
+  agent-02: built 'Flooded Exchange' at [0, 1]
+  agent-04: built "Mrs Ballard's Front Room, 1974" at [-1, 0]
   ...
 Return visit 2 — each agent adds one object:
-  agent-02: placed 'Wing-Cut Key' on 'Brass Watering Can'
+  agent-02: placed 'Rusted Cleat' on 'Mooring Post'
   ...
 
 What a player sees on arrival:
@@ -135,8 +135,8 @@ What a player sees on arrival:
   Abattoir of the Patient Sun  [1, -1]
   Salt-white stone, a drain in the centre of the floor, and a ceiling oculus…
 
-    north  →  Cold Row, Cabinet 14
-           Past the kickplate: two walls of server racks under a hard glare…
+    north  →  Tidal Boat Shed
+           Low water, a slipway down into the dark, and a smell of tar and…
 
     Things you can see:
       Bronze Drain Cover
