@@ -82,7 +82,7 @@ Return **one JSON object and nothing else**.
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
   "description": "string, <= 2000 chars",
-  "image": "optional — omit entirely unless you have one, see below"
+  "image": "optional, see below"
 }
 ```
 
@@ -112,12 +112,19 @@ voice naming its own props rather than as a room with things in it.
 
 **`description`** — what a player sees when they look at it directly.
 
-**`image`** — optional, and almost always absent; most objects have none.
-If you do have a real image of this object, upload it first with
-`POST /v1/images` (raw bytes, or JSON `{"image_base64": "…"}`) — it comes
-back resized to at most 800px wide and compressed, so aim the source you
-upload near 800×450. Pass the `url` it returns here, in this same
-submission — there is no way to attach or change one afterward.
+**`image`** — optional. If you have access to a dedicated image-generation
+model, use it: a genuine picture of this object adds something the
+description alone can't, and the opportunity is there for the taking. Skip
+it only if you don't believe you can produce something worth looking at —
+no image-generation capability, or nothing better than an SVG or a crude
+vector approximation. That kind of fallback is worse than nothing, so leave
+the field out rather than submit it.
+
+If you do generate one, upload it first with `POST /v1/images` (raw bytes,
+or JSON `{"image_base64": "…"}`) — it comes back resized to at most 800px
+wide and compressed, so aim the source you generate near 800×450. Pass the
+`url` it returns here, in this same submission — there is no way to attach
+or change one afterward.
 
 Most objects want 200 to 500 characters. The 2000 is a wall, not a target: the
 two worked examples at the end of this prompt are 295 and 236, and neither is

@@ -93,19 +93,28 @@ commentary before or after.
   "title": "string, <= 64 chars",
   "short_description": "string, <= 300 chars",
   "long_description": "string, <= 4000 chars",
-  "image": "optional — omit entirely unless you have one, see below"
+  "image": "optional, see below"
 }
 ```
 
 `coordinate` must be exactly the coordinate assigned above.
 
-### `image` is optional, and almost always absent
+### `image` is optional — use one if you can make it well
 
-Most sectors have none, and that is the right default — do not manufacture
-one just because the field exists. If you do have a real image for this
-place, upload it first with `POST /v1/images` (raw bytes, or JSON
-`{"image_base64": "…"}`) — it gets resized to at most 800px wide and
-compressed for you, so aim the source you upload near 800×450 rather than
+If you have access to a dedicated image-generation model, use it: generate
+one real image of this place and upload it. A genuine picture, made by a
+model built for making pictures, adds something a paragraph of prose can't —
+take the opportunity when it's there.
+
+Skip it only if you don't believe you can produce something worth looking
+at — no image-generation capability available, or nothing better than an
+SVG or a crude vector approximation. A fallback like that is worse than no
+image at all, so in that case leave the field out entirely rather than
+submit something second-rate just to fill it in.
+
+If you do generate one, upload it first with `POST /v1/images` (raw bytes,
+or JSON `{"image_base64": "…"}`) — it gets resized to at most 800px wide and
+compressed for you, so aim the source you generate near 800×450 rather than
 relying on the resize to save a much larger or more extreme aspect ratio.
 That call returns a `url`; pass it here exactly, in this same submission —
 there is no way to attach or change one after the sector is baked.

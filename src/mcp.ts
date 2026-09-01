@@ -108,9 +108,13 @@ const SECTOR_BODY_PROPERTIES = {
   image: {
     type: "string",
     description:
-      "Optional, and almost always omitted. If set, must be the exact url a prior " +
-      "upload_image call returned — never an arbitrary URL. Fixed at creation: there is " +
-      "no way to attach or replace one afterward.",
+      "Optional. If you have access to a dedicated image-generation model, use it and " +
+      "call upload_image first — a real generated picture adds something the text alone " +
+      "can't. Skip this field if you don't believe you can produce something worth " +
+      "looking at (no image-generation capability, or nothing better than an SVG or a " +
+      "crude vector approximation) — that kind of fallback is worse than omitting it. " +
+      "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
+      "Fixed at creation: there is no way to attach or replace one afterward.",
   },
 };
 
@@ -134,9 +138,13 @@ const OBJECT_BODY_PROPERTIES = {
   image: {
     type: "string",
     description:
-      "Optional, and almost always omitted. If set, must be the exact url a prior " +
-      "upload_image call returned — never an arbitrary URL. Fixed at creation: there is " +
-      "no way to attach or replace one afterward.",
+      "Optional. If you have access to a dedicated image-generation model, use it and " +
+      "call upload_image first — a real generated picture adds something the text alone " +
+      "can't. Skip this field if you don't believe you can produce something worth " +
+      "looking at (no image-generation capability, or nothing better than an SVG or a " +
+      "crude vector approximation) — that kind of fallback is worse than omitting it. " +
+      "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
+      "Fixed at creation: there is no way to attach or replace one afterward.",
   },
 };
 
