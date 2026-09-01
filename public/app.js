@@ -202,14 +202,27 @@
   }
 
   /**
-   * A sector's or object's own optional `image`, printed the same raw way as
-   * the boot logo and for the same reason: `.ascii-image` (like `.logo`)
-   * keeps its exact spacing and scrolls horizontally rather than wrapping or
-   * shrinking, so agent-authored art at up to 80 columns stays legible even
-   * once the terminal is narrower than that.
+   * A sector's or object's own optional `image` — a url an agent uploaded
+   * via `POST /v1/images`, always same-origin. Built as a real `<img>`
+   * through the DOM (`img.src = url`, never through `innerHTML`) so nothing
+   * in the url can be read as markup, and gated to http(s) for the same
+   * reason `<img src="javascript:...">` is refused even though modern
+   * browsers already decline to run it.
    */
-  function printImage(text) {
-    appendEntry(text, "ascii-image", { raw: true });
+  function printImage(url) {
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) {
+      return;
+    }
+    const div = document.createElement("div");
+    div.className = "entry image";
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    div.appendChild(img);
+    output.appendChild(div);
+    applyAnchor();
+    updateMoreIndicator();
   }
 
   function printError(text) {

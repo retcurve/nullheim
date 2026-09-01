@@ -22,6 +22,7 @@
 import { asDict as errorAsDict } from "./errors.ts";
 import { Direction } from "./coords.ts";
 import type { Engine } from "./engine.ts";
+import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
   ClaimRateLimited,
@@ -62,6 +63,17 @@ export class TextResponse {
   }
 }
 
+/** A binary body — the resized image bytes `GET /v1/images/{id}` streams back. */
+export class BinaryResponse {
+  readonly bytes: Uint8Array;
+  readonly contentType: string;
+
+  constructor(bytes: Uint8Array, contentType: string) {
+    this.bytes = bytes;
+    this.contentType = contentType;
+  }
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly payload: Record<string, unknown>;
@@ -73,7 +85,7 @@ export class ApiError extends Error {
   }
 }
 
-type RoutePayload = Record<string, unknown> | TextResponse;
+type RoutePayload = Record<string, unknown> | TextResponse | BinaryResponse;
 type RouteResult = readonly [number, RoutePayload];
 type Handler = (h: RequestHandler, ...args: string[]) => RouteResult | Promise<RouteResult>;
 
@@ -121,6 +133,37 @@ class RequestHandler {
       console.error(exc);
       throw new ApiError(400, "malformed_json", "body is not valid JSON");
     }
+  }
+
+  /**
+   * The bytes of an image upload — either the raw request body (a plain
+   * HTTP caller sending image bytes directly, `Content-Type` naming the
+   * source format), or `{ "image_base64": "..." }` in a JSON body. The
+   * second form exists only so `mcp.ts`'s `upload_image` tool — whose
+   * arguments are necessarily JSON, never raw bytes — can reach this same
+   * endpoint rather than needing a binary transport of its own.
+   */
+  imageBytes(): Uint8Array {
+    if (this.#bodyError !== null) {
+      throw this.#bodyError;
+    }
+    const contentType = (this.headers.get("content-type") ?? "").toLowerCase();
+    if (contentType.includes("application/json")) {
+      const parsed = this.body() as Record<string, unknown>;
+      const encoded = parsed["image_base64"];
+      if (typeof encoded !== "string" || !encoded) {
+        throw new ApiError(400, "type_error", "image_base64 must be a non-empty base64 string");
+      }
+      try {
+        return Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+      } catch {
+        throw new ApiError(400, "type_error", "image_base64 is not valid base64");
+      }
+    }
+    if (this.#rawBody.length === 0) {
+      throw new ApiError(400, "empty_body", "no image bytes in the request body");
+    }
+    return this.#rawBody;
   }
 
   async #agent(): Promise<Agent> {
@@ -544,6 +587,46 @@ class RequestHandler {
     ];
   }
 
+  // --- images ---------------------------------------------------------------
+
+  /**
+   * Auth required — same minimal bar as every other write — but the agent's
+   * identity itself is not carried any further: an image is anonymous,
+   * content-addressed data, not something owned the way a sector is.
+   */
+  async createImage(): Promise<RouteResult> {
+    await this.#agent();
+    const bytes = this.imageBytes();
+    let outcome: { url: string };
+    try {
+      outcome = await this.engine.uploadImage(bytes);
+    } catch (exc) {
+      if (exc instanceof UnsupportedImage) {
+        throw new ApiError(422, "unsupported_image", exc.message);
+      }
+      throw exc;
+    }
+    return [
+      201,
+      {
+        ...outcome,
+        note:
+          "Pass this url exactly, in the 'image' field of a sector or object submission, " +
+          "before you claim or found it — an image can only be attached at creation, never " +
+          "added or replaced afterward.",
+      },
+    ];
+  }
+
+  /** Unauthenticated, like every other player-facing read — never rate limited. */
+  async readImage(id: string): Promise<RouteResult> {
+    const stored = await this.engine.images.get(id);
+    if (stored === null) {
+      throw new ApiError(404, "no_such_image", `no image ${id}`);
+    }
+    return [200, new BinaryResponse(stored.bytes, stored.contentType)];
+  }
+
   // --- the player-facing world ---------------------------------------------
 
   async readSector(x: string, y: string): Promise<RouteResult> {
@@ -658,6 +741,20 @@ export const ROUTES: RouteEntry[] = [
     (h) => h.createObject(),
     "Auth. Place one object in your own sector, rate-limited by the cooldown.",
   ),
+  route(
+    "POST",
+    "/v1/images",
+    (h) => h.createImage(),
+    "Auth. Upload an image (raw bytes, or JSON {image_base64}); resized to " +
+      "at most 800px wide and compressed. Returns the url to pass as a sector " +
+      "or object's own 'image' field.",
+  ),
+  route(
+    "GET",
+    `/v1/images/${ID}`,
+    (h, id) => h.readImage(id!),
+    "One previously uploaded image's bytes.",
+  ),
 ];
 
 function route(method: string, source: string, handler: Handler, summary: string): RouteEntry {
@@ -718,26 +815,48 @@ export const CORS_HEADERS: Record<string, string> = {
 };
 
 function toResponse(status: number, payload: RoutePayload): Response {
-  let body: string;
+  let body: string | Uint8Array;
   let contentType: string;
+  const extraHeaders: Record<string, string> = {};
   if (payload instanceof TextResponse) {
     body = payload.text;
     contentType = payload.contentType;
+  } else if (payload instanceof BinaryResponse) {
+    body = payload.bytes;
+    contentType = payload.contentType;
+    // Content-addressed and never rewritten once uploaded — safe to cache forever.
+    extraHeaders["Cache-Control"] = "public, max-age=31536000, immutable";
   } else {
     body = JSON.stringify(payload, null, 2);
     contentType = "application/json";
   }
-  return new Response(body, { status, headers: { "Content-Type": contentType, ...CORS_HEADERS } });
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": contentType, ...extraHeaders, ...CORS_HEADERS },
+  });
 }
 
 /**
- * Read a request body up to `MAX_BODY_BYTES`, refusing anything declared
- * larger without reading it. Shared by every transport: a `Request`'s body
- * may already be fully buffered (the Node bridge does this) or may still be
- * a live stream (a Worker's), and `arrayBuffer()` is the one call that works
+ * The one route whose body is not a text submission — raw image bytes, not
+ * JSON — so it gets its own, much larger cap (`MAX_UPLOAD_BYTES`, from
+ * `image-processing.ts`) rather than `MAX_BODY_BYTES`, which is sized for
+ * sector/object text.
+ */
+export function maxBodyBytesFor(method: string, path: string): number {
+  return method === "POST" && path === "/v1/images" ? MAX_UPLOAD_BYTES : MAX_BODY_BYTES;
+}
+
+/**
+ * Read a request body up to `maxBytes`, refusing anything declared larger
+ * without reading it. Shared by every transport: a `Request`'s body may
+ * already be fully buffered (the Node bridge does this) or may still be a
+ * live stream (a Worker's), and `arrayBuffer()` is the one call that works
  * either way.
  */
-async function readBody(request: Request): Promise<{ raw: Uint8Array; error: ApiError | null }> {
+async function readBody(
+  request: Request,
+  maxBytes: number,
+): Promise<{ raw: Uint8Array; error: ApiError | null }> {
   const method = request.method;
   if (method === "GET" || method === "HEAD") {
     return { raw: new Uint8Array(0), error: null };
@@ -751,10 +870,10 @@ async function readBody(request: Request): Promise<{ raw: Uint8Array; error: Api
     return { raw: new Uint8Array(0), error: new ApiError(400, "bad_header", "Content-Length is not a number") };
   }
   const length = declared === null ? 0 : Number(declared);
-  if (length > MAX_BODY_BYTES) {
+  if (length > maxBytes) {
     return {
       raw: new Uint8Array(0),
-      error: new ApiError(413, "payload_too_large", `body exceeds ${MAX_BODY_BYTES} bytes`),
+      error: new ApiError(413, "payload_too_large", `body exceeds ${maxBytes} bytes`),
     };
   }
   if (length === 0) {
@@ -788,7 +907,7 @@ export async function handleFetchRequest(engine: Engine, request: Request): Prom
     return handleMcpRequest(engine, request);
   }
 
-  const { raw, error } = await readBody(request);
+  const { raw, error } = await readBody(request, maxBodyBytesFor(request.method, path));
   const handler = new RequestHandler(engine, request.headers);
   handler.setBody(raw);
   if (error !== null) {

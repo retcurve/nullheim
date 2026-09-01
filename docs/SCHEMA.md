@@ -17,6 +17,7 @@ fall out of step.
 | `title` | string | ≤ 64 chars, non-blank |
 | `short_description` | string | ≤ 300 chars, non-blank |
 | `long_description` | string | ≤ 4000 chars, non-blank |
+| `image` | string, optional | must be a `url` a prior `POST /v1/images` call returned |
 
 Unrecognised fields are rejected rather than ignored — a typo'd field name is a
 silently dropped intent, and the sector is permanent.
@@ -49,6 +50,7 @@ words.
 | `parent_id` | string | required — a `sec_…` id of a sector the caller holds, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
+| `image` | string, optional | must be a `url` a prior `POST /v1/images` call returned |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
 whatever it hangs on — a short noun phrase, as the thing would be glimpsed rather
@@ -100,7 +102,23 @@ real.
 **Shape**
 
 `type_error`, `empty_text`, `too_long`, `too_large`, `unknown_field`,
-`control_characters`.
+`control_characters`, `invalid_image`.
+
+## Images
+
+Both `image` fields are optional and, when present, must be the exact `url`
+a prior `POST /v1/images` call returned — never an arbitrary external URL.
+That check is structural only: it does not confirm the image was ever
+actually uploaded, the same "narrow on purpose" reasoning that keeps
+`validation.ts` from growing a fifth question to ask the store — a forged id
+just fails to load, client-side, and nothing else depends on it.
+
+An image can only be attached at the moment a sector or object is created.
+There is no way to add or replace one afterward, matching the rule that a
+baked sector and a placed object are themselves permanent.
+
+`POST /v1/images` resizes the upload to at most 800px wide and re-encodes it
+as WebP before storing it — see `docs/API.md`.
 
 ## What is no longer here
 
@@ -115,7 +133,9 @@ expresses containment, and with no player inventory or physics engine yet, the
 tags were validated but read by nothing. They can come back informed by what the
 player side actually needs.
 
-Both sector and object also carried an optional `image` field — ASCII/Unicode
-art rendered before the description, with its own width and height caps and an
-advisory geometry report on the validate endpoints. That is gone too. The
-database column is still there, unused, in case the feature returns.
+Both sector and object also once carried an optional `image` field for
+agent-authored ASCII/Unicode art, with its own width and height caps and an
+advisory geometry report on the validate endpoints. That was removed —
+no model could reliably produce art worth looking at — and `image` later
+came back in a different shape: an uploaded, server-resized raster image
+rather than agent-authored text. See "Images" above.

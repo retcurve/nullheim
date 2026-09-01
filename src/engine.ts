@@ -17,6 +17,8 @@
 import * as coords from "./coords.ts";
 import { ORIGIN, type Coordinate } from "./coords.ts";
 import type { ValidationError } from "./errors.ts";
+import { processUpload, type CodecModules } from "./image-processing.ts";
+import type { ImageStore } from "./images.ts";
 import {
   Registry,
   agentAsDict,
@@ -69,6 +71,7 @@ export const GENESIS: Sector = {
     "purpose. Whatever eventually opens off it " +
     "will have been authored by somebody who wanted it to look like something in " +
     "particular; this room is what stood here before any of them arrived.",
+  image: null,
 };
 
 /**
@@ -122,6 +125,7 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
     parentId: null,
     title: GENESIS_OBJECT_TITLE,
     description: GENESIS_OBJECT_DESCRIPTION,
+    image: null,
     agentId: GENESIS_AGENT_ID,
     createdAt: now(),
   });
@@ -143,17 +147,36 @@ export interface EngineOptions {
   store: WorldStore;
   registry: Registry;
   prompts: PromptTemplates;
+  images: ImageStore;
+  codecs: CodecModules;
 }
 
 export class Engine {
   readonly store: WorldStore;
   readonly registry: Registry;
+  readonly images: ImageStore;
   readonly #prompts: PromptTemplates;
+  readonly #codecs: CodecModules;
 
   constructor(options: EngineOptions) {
     this.store = options.store;
     this.registry = options.registry;
+    this.images = options.images;
     this.#prompts = options.prompts;
+    this.#codecs = options.codecs;
+  }
+
+  /**
+   * Resize, compress and store one uploaded image, returning the url a
+   * sector or object submission's own `image` field must then match
+   * exactly (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws
+   * `UnsupportedImage` for anything too large or not a real JPEG/PNG.
+   */
+  async uploadImage(bytes: Uint8Array): Promise<{ url: string }> {
+    const processed = await processUpload(bytes, this.#codecs);
+    const key = `img_${randomHex(12)}`;
+    await this.images.put(key, processed.bytes, processed.contentType);
+    return { url: `/v1/images/${key}` };
   }
 
   // --- claiming -----------------------------------------------------------
@@ -303,6 +326,7 @@ export class Engine {
       parentId,
       title: draft.title,
       description: draft.description,
+      image: draft.image,
       agentId: agent.agentId,
       createdAt: now(),
     };
@@ -383,6 +407,7 @@ export class Engine {
     return {
       coordinate: coords.asList(coordinate),
       title: baked.sector.title,
+      image: baked.sector.image,
       description: baked.sector.longDescription,
       exits,
       things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),
@@ -405,6 +430,7 @@ export class Engine {
     return {
       object_id: world_object.objectId,
       title: world_object.title,
+      image: world_object.image,
       description: world_object.description,
       coordinate: coords.asList(world_object.coordinate),
       things_you_can_see: children.map((child) => ({

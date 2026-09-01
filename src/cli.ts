@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 import { SCHEMA_SQL } from "./db/schema.node.ts";
 import { openSqlite } from "./db/sqlite.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
+import { openFsImages } from "./images/fs.ts";
 import { listen, makeServer } from "./node-server.ts";
 import { loadPrompts } from "./prompts.node.ts";
 import {
@@ -15,6 +16,7 @@ import {
   Registry,
 } from "./registry.ts";
 import { WorldStore } from "./store.ts";
+import { loadCodecs } from "./wasm.node.ts";
 
 function usage(): never {
   process.stderr.write(
@@ -57,7 +59,16 @@ async function main(argv: string[]): Promise<number> {
   const store = new WorldStore(db);
   const registry = new Registry(db, { leaseSeconds, cooldownSeconds, claimsPerHour });
   await ensureGenesis(store);
-  const engine = new Engine({ store, registry, prompts: loadPrompts() });
+  // Nothing durable to write images alongside an in-memory world either —
+  // see images/fs.ts.
+  const imagesDir = dbPath === ":memory:" ? null : `${dbPath}.images`;
+  const engine = new Engine({
+    store,
+    registry,
+    prompts: loadPrompts(),
+    images: openFsImages(imagesDir),
+    codecs: loadCodecs(),
+  });
 
   const server = makeServer(engine);
   const address = await listen(server, host, port);

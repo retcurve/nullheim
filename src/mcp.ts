@@ -105,6 +105,13 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description: `The sector itself, shown on arrival. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
+  image: {
+    type: "string",
+    description:
+      "Optional, and almost always omitted. If set, must be the exact url a prior " +
+      "upload_image call returned — never an arbitrary URL. Fixed at creation: there is " +
+      "no way to attach or replace one afterward.",
+  },
 };
 
 const OBJECT_BODY_PROPERTIES = {
@@ -124,6 +131,13 @@ const OBJECT_BODY_PROPERTIES = {
       `is rarely doing any work. Up to ${MAX_TITLE_LEN} characters.`,
   },
   description: { type: "string", description: `Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.` },
+  image: {
+    type: "string",
+    description:
+      "Optional, and almost always omitted. If set, must be the exact url a prior " +
+      "upload_image call returned — never an arbitrary URL. Fixed at creation: there is " +
+      "no way to attach or replace one afterward.",
+  },
 };
 
 const TOOLS: readonly Tool[] = [
@@ -280,6 +294,7 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         short_description: args["short_description"],
         long_description: args["long_description"],
+        image: optionalString(args, "image"),
       },
     }),
   },
@@ -318,7 +333,38 @@ const TOOLS: readonly Tool[] = [
         parent_id: args["parent_id"],
         title: args["title"],
         description: args["description"],
+        image: optionalString(args, "image"),
       },
+    }),
+  },
+  {
+    name: "upload_image",
+    description:
+      "Upload an image to reference from a sector or object's own 'image' field. " +
+      "Resized to at most 800px wide and compressed before it is stored. Returns the " +
+      "url to pass, verbatim, as 'image' on submit_sector or create_object — an image " +
+      "can only be attached at the moment of creation, never added afterward.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...TOKEN_PROPERTY,
+        image_base64: {
+          type: "string",
+          description:
+            "The image's raw bytes, base64-encoded. PNG or JPEG only (sniffed from the " +
+            "bytes themselves, regardless of file extension). Aim for roughly 800x450 " +
+            "source dimensions — anything wider than 800px is resized down for you, but " +
+            "an extreme aspect ratio will not be improved by the resize.",
+        },
+      },
+      required: ["token", "image_base64"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "POST",
+      path: "/v1/images",
+      token: requireString(args, "token"),
+      body: { image_base64: requireString(args, "image_base64") },
     }),
   },
 ];

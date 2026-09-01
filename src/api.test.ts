@@ -7,7 +7,7 @@ import { request as httpRequest, Agent as HttpAgent, type Server } from "node:ht
 import type { SqliteDb } from "./db/sqlite.ts";
 import type { Engine } from "./engine.ts";
 import { listen, makeServer } from "./node-server.ts";
-import { makeEngine, sector, obj } from "./testing.ts";
+import { makeEngine, makePng, sector, obj } from "./testing.ts";
 
 interface Ctx {
   base: string;
@@ -56,6 +56,26 @@ async function callText(
   const response = await fetch(`${ctx.base}${path}`, { method, headers: { Accept: accept } });
   const text = await response.text();
   return { status: response.status, contentType: response.headers.get("content-type") ?? "", text };
+}
+
+/** Posts a raw binary body directly — for `POST /v1/images`, never JSON-encoded. */
+async function callBinary(
+  ctx: Ctx,
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+  token?: string,
+): Promise<{ status: number; contentType: string; payload: any }> {
+  const headers: Record<string, string> = { "Content-Type": contentType };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const response = await fetch(`${ctx.base}${path}`, { method: "POST", headers, body: bytes });
+  const responseContentType = response.headers.get("content-type") ?? "";
+  const payload = responseContentType.includes("application/json")
+    ? await response.json()
+    : new Uint8Array(await response.arrayBuffer());
+  return { status: response.status, contentType: responseContentType, payload };
 }
 
 async function newAgent(ctx: Ctx, handle = "tester"): Promise<string> {
@@ -564,6 +584,114 @@ describe("objects", () => {
     });
     assert.equal(detail.objects[0].title, "Can");
     assert.equal(detail.objects[0].contains[0].title, "Key");
+  });
+});
+
+describe("images", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  test("uploading requires auth", async () => {
+    const { status } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png");
+    assert.equal(status, 401);
+  });
+
+  test("a wide upload comes back resized, compressed, and fetchable", async () => {
+    const token = await newAgent(ctx);
+    const { status, payload: uploaded } = await callBinary(
+      ctx,
+      "/v1/images",
+      makePng(1600, 900),
+      "image/png",
+      token,
+    );
+    assert.equal(status, 201);
+    assert.match(uploaded.url, /^\/v1\/images\/[\w-]+$/);
+
+    const response = await fetch(`${ctx.base}${uploaded.url}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/webp");
+    assert.ok(response.headers.get("cache-control")?.includes("immutable"));
+    const body = new Uint8Array(await response.arrayBuffer());
+    assert.ok(body.length > 0);
+  });
+
+  test("the json body shape works too, for callers that can only send JSON", async () => {
+    const token = await newAgent(ctx);
+    const png = makePng(10, 10);
+    const { status, payload } = await call(ctx, "POST", "/v1/images", {
+      body: { image_base64: Buffer.from(png).toString("base64") },
+      token,
+    });
+    assert.equal(status, 201);
+    assert.match(payload.url, /^\/v1\/images\/[\w-]+$/);
+  });
+
+  test("not actually an image is refused regardless of the declared type", async () => {
+    const token = await newAgent(ctx);
+    const { status, payload } = await callBinary(
+      ctx,
+      "/v1/images",
+      new TextEncoder().encode("not an image"),
+      "image/png",
+      token,
+    );
+    assert.equal(status, 422);
+    assert.equal(payload.error.code, "unsupported_image");
+  });
+
+  test("an upload past the size cap is refused before it is processed", async () => {
+    const token = await newAgent(ctx);
+    const tooLarge = new Uint8Array(5_000_001);
+    const { status, payload } = await callBinary(ctx, "/v1/images", tooLarge, "image/png", token);
+    assert.equal(status, 413);
+    assert.equal(payload.error.code, "payload_too_large");
+  });
+
+  test("a fetched url can be attached to a sector at creation", async () => {
+    const token = await newAgent(ctx);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
+    const claim = await newClaim(ctx, token);
+
+    const { status, payload: result } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { image: uploaded.url }),
+      token,
+    });
+    assert.equal(status, 201);
+    assert.equal(result.sector.sector.image, uploaded.url);
+
+    const { payload: view } = await call(ctx, "GET", `/v1/sectors/${claim.coordinate[0]}/${claim.coordinate[1]}`);
+    assert.equal(view.image, uploaded.url);
+  });
+
+  test("a fetched url can be attached to an object at creation", async () => {
+    const { token } = await settle(ctx);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
+    const sectorId = await sectorIdFor(ctx, token);
+
+    const { status, payload: result } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { image: uploaded.url }),
+      token,
+    });
+    assert.equal(status, 201);
+    assert.equal(result.object.image, uploaded.url);
+
+    const { payload: view } = await call(ctx, "GET", `/v1/objects/${result.object.object_id}`);
+    assert.equal(view.image, uploaded.url);
+  });
+
+  test("an arbitrary external url is refused structurally, never fetched", async () => {
+    const { token } = await settle(ctx);
+    const sectorId = await sectorIdFor(ctx, token);
+    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { image: "https://example.com/evil.png" }),
+      token,
+    });
+    assert.equal(status, 422);
+    assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["invalid_image"]));
   });
 });
 

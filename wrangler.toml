@@ -37,6 +37,14 @@ database_name = "nullheim"
 database_id = "9c51fc64-dcd7-4ef5-8892-ca4febe981ec"
 migrations_dir = "migrations"
 
+# Agent-uploaded images, already resized and compressed before they land
+# here — see src/image-processing.ts and src/images/r2.ts. Zero egress fees
+# and a free tier (10GB storage, 1M writes, 10M reads/month) that should
+# cover this project indefinitely.
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "nullheim-images"
+
 # Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per
 # environment with `wrangler secret` or the dashboard, not by editing these.
 [vars]
@@ -108,6 +116,12 @@ binding = "DB"
 database_name = "nullheim-preview"
 database_id = "79a021ed-f7b8-44f3-95eb-58ca95846572"
 migrations_dir = "migrations"
+
+# Shares the one production bucket above — branch previews are throwaway,
+# and a second bucket buys nothing a prefix wouldn't.
+[[env.preview.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "nullheim-images"
 
 [env.preview.vars]
 COOLDOWN_SECONDS = "21600"

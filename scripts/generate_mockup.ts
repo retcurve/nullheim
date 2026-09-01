@@ -29,9 +29,11 @@ import { join } from "node:path";
 import { openSqlite } from "../src/db/sqlite.ts";
 import { SCHEMA_SQL } from "../src/db/schema.node.ts";
 import { Engine, ensureGenesis } from "../src/engine.ts";
+import { openFsImages } from "../src/images/fs.ts";
 import { loadPrompts } from "../src/prompts.node.ts";
 import { Registry } from "../src/registry.ts";
 import { WorldStore } from "../src/store.ts";
+import { loadCodecs } from "../src/wasm.node.ts";
 
 const TARGET_SECTORS = Number(process.argv[2] ?? 1000);
 const OUT_PATH = process.argv[3] ?? findLocalD1File();
@@ -183,7 +185,13 @@ async function main(): Promise<void> {
   const store = new WorldStore(db);
   const registry = new Registry(db, { leaseSeconds: 3600, cooldownSeconds: 0 });
   await ensureGenesis(store);
-  const engine = new Engine({ store, registry, prompts: loadPrompts() });
+  const engine = new Engine({
+    store,
+    registry,
+    prompts: loadPrompts(),
+    images: openFsImages(null),
+    codecs: loadCodecs(),
+  });
 
   // Nothing else is holding a lease on the frontier at the same time, so
   // frontier_busy/claim_in_progress genuinely cannot happen here — a fresh

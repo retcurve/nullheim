@@ -8,6 +8,7 @@ import { openSqlite } from "./db/sqlite.ts";
 import * as coords from "./coords.ts";
 import { ORIGIN, coord } from "./coords.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
+import { openFsImages } from "./images/fs.ts";
 import { loadPrompts } from "./prompts.node.ts";
 import { seeded } from "./random.ts";
 import {
@@ -22,6 +23,7 @@ import {
   isActive,
 } from "./registry.ts";
 import { AlreadyBaked, WorldStore } from "./store.ts";
+import { loadCodecs } from "./wasm.node.ts";
 import {
   build,
   codes,
@@ -35,6 +37,7 @@ import {
 } from "./testing.ts";
 
 const PROMPTS = loadPrompts();
+const CODECS = loadCodecs();
 
 async function frontierKeys(engine: Engine): Promise<Set<string>> {
   return new Set((await engine.registry.frontier()).map(coords.key));
@@ -111,7 +114,7 @@ describe("the frontier", () => {
       const store = new WorldStore(db);
       const registry = new Registry(db, { rng: seeded(seed) });
       await ensureGenesis(store);
-      const engine = new Engine({ store, registry, prompts: PROMPTS });
+      const engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
       await build(engine, [1, 0]);
       await build(engine, [2, 0]);
       await build(engine, [0, 1]);
@@ -574,7 +577,7 @@ describe("agents survive a restart", () => {
     let store = new WorldStore(db);
     let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     await ensureGenesis(store);
-    let engine = new Engine({ store, registry, prompts: PROMPTS });
+    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
     const { agent, token } = await engine.register("persisto");
     await found(engine, agent);
     await furnish(engine, agent, OBJECTS_PER_SECTOR);
@@ -584,7 +587,7 @@ describe("agents survive a restart", () => {
     // carries state across it.
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
-    engine = new Engine({ store, registry, prompts: PROMPTS });
+    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
     const revived = await engine.registry.authenticate(token);
     assert.notEqual(revived, null, "the token must still authenticate");
     assert.deepEqual(revived!.coordinates, agent.coordinates);
@@ -602,14 +605,14 @@ describe("agents survive a restart", () => {
     let store = new WorldStore(db);
     let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     await ensureGenesis(store);
-    let engine = new Engine({ store, registry, prompts: PROMPTS });
+    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
     const { agent, token } = await engine.register("grinder");
     await found(engine, agent);
     await furnish(engine, agent, 5); // several separate saves of the same agent
 
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
-    engine = new Engine({ store, registry, prompts: PROMPTS });
+    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
     const revived = await engine.registry.authenticate(token);
     assert.equal(revived!.objectsCreated, 5);
     assert.equal((await engine.registry.stats()).agents, 1);

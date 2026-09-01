@@ -81,7 +81,8 @@ Return **one JSON object and nothing else**.
 {
   "parent_id": "sec_… or obj_…",
   "title": "string, <= 64 chars",
-  "description": "string, <= 2000 chars"
+  "description": "string, <= 2000 chars",
+  "image": "optional — omit entirely unless you have one, see below"
 }
 ```
 
@@ -111,6 +112,13 @@ voice naming its own props rather than as a room with things in it.
 
 **`description`** — what a player sees when they look at it directly.
 
+**`image`** — optional, and almost always absent; most objects have none.
+If you do have a real image of this object, upload it first with
+`POST /v1/images` (raw bytes, or JSON `{"image_base64": "…"}`) — it comes
+back resized to at most 800px wide and compressed, so aim the source you
+upload near 800×450. Pass the `url` it returns here, in this same
+submission — there is no way to attach or change one afterward.
+
 Most objects want 200 to 500 characters. The 2000 is a wall, not a target: the
 two worked examples at the end of this prompt are 295 and 236, and neither is
 missing anything. An object described at greater length than the room it
@@ -139,11 +147,12 @@ said.
 
 ## Hard rules
 
-1. `title` and `description` are required and must be non-empty.
+1. `title` and `description` are required and must be non-empty. `image` is
+   the only optional field.
 2. Length caps: 64 / 2000 characters.
 3. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
    id from that sector's detail fetch, and nothing else.
-4. No control characters other than newlines. No fields other than the three
+4. No control characters other than newlines. No fields other than the four
    above.
 5. Do not mention exits, doorways, or neighbouring places. You cannot see them.
 

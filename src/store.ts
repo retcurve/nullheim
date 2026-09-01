@@ -43,6 +43,7 @@ export interface WorldObject {
   readonly parentId: string | null;
   readonly title: string;
   readonly description: string;
+  readonly image: string | null;
   readonly agentId: string;
   readonly createdAt: number;
 }
@@ -54,6 +55,7 @@ export function objectAsDict(o: WorldObject): Record<string, unknown> {
     parent_id: o.parentId,
     title: o.title,
     description: o.description,
+    image: o.image,
     agent_id: o.agentId,
     created_at: o.createdAt,
   };
@@ -80,6 +82,7 @@ interface SectorRow {
   title: string;
   short_description: string;
   long_description: string;
+  image: string | null;
   baked_at: number;
 }
 
@@ -90,6 +93,7 @@ function rowToBaked(row: SectorRow): BakedSector {
       title: row.title,
       shortDescription: row.short_description,
       longDescription: row.long_description,
+      image: row.image,
     },
     sectorId: row.sector_id,
     agentId: row.agent_id,
@@ -104,6 +108,7 @@ interface ObjectRow {
   parent_id: string | null;
   title: string;
   description: string;
+  image: string | null;
   agent_id: string;
   created_at: number;
 }
@@ -115,6 +120,7 @@ function rowToObject(row: ObjectRow): WorldObject {
     parentId: row.parent_id,
     title: row.title,
     description: row.description,
+    image: row.image,
     agentId: row.agent_id,
     createdAt: row.created_at,
   };
@@ -176,7 +182,7 @@ export class WorldStore {
           baked.sector.title,
           baked.sector.shortDescription,
           baked.sector.longDescription,
-          null, // `image` — column kept for now, no longer written by the app.
+          baked.sector.image,
           baked.bakedAt,
         ],
       },
@@ -300,7 +306,7 @@ export class WorldStore {
           o.parentId,
           o.title,
           o.description,
-          null, // `image` — column kept for now, no longer written by the app.
+          o.image,
           o.agentId,
           o.createdAt,
         ],

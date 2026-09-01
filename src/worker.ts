@@ -13,8 +13,10 @@
  */
 
 import { openD1 } from "./db/d1.ts";
+import { openR2 } from "./images/r2.ts";
 import { handleFetchRequest } from "./api.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
+import type { CodecModules } from "./image-processing.ts";
 import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
@@ -28,9 +30,29 @@ import objectArtisan from "../prompts/object_artisan.md";
 
 const PROMPTS = { sector_architect: sectorArchitect, object_artisan: objectArtisan };
 
+// Cloudflare's bundler resolves a bare `.wasm` import to a compiled
+// `WebAssembly.Module` at build time — there is no filesystem, and no
+// request-time fetch of the worker's own source, to load these from
+// otherwise. `wasm.node.ts` gets the same four modules the other way, by
+// compiling the bytes off disk at startup — see `image-processing.ts`'s
+// module comment for why both runtimes need a pre-compiled Module rather
+// than letting each codec package fetch its own.
+import pngWasm from "../node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm";
+import jpegWasm from "../node_modules/@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm";
+import resizeWasm from "../node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm";
+import webpEncodeWasm from "../node_modules/@jsquash/webp/codec/enc/webp_enc.wasm";
+
+const CODECS: CodecModules = {
+  png: pngWasm,
+  jpeg: jpegWasm,
+  resize: resizeWasm,
+  webpEncode: webpEncodeWasm,
+};
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  IMAGES: R2Bucket;
   LEASE_SECONDS?: string;
   COOLDOWN_SECONDS?: string;
   CLAIMS_PER_HOUR?: string;
@@ -114,6 +136,12 @@ async function routeRequest(request: Request, url: URL, env: Env): Promise<Respo
     await ensureGenesis(store);
     genesisChecked = true;
   }
-  const engine = new Engine({ store, registry, prompts: PROMPTS });
+  const engine = new Engine({
+    store,
+    registry,
+    prompts: PROMPTS,
+    images: openR2(env.IMAGES),
+    codecs: CODECS,
+  });
   return handleFetchRequest(engine, request);
 }

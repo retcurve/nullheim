@@ -211,7 +211,7 @@ change **where** you may put it.${rateNote}
 
 ## What a sector actually is
 
-Four fields. Three of them are text you write, and **they do three different
+Five fields. Three of them are text you write, and **they do three different
 jobs** — confusing them is the one real mistake you can make here:
 
 | field | the player sees it when | limit |
@@ -219,6 +219,7 @@ jobs** — confusing them is the one real mistake you can make here:
 | \`title\` | they read the exit *leading to you*, from any adjacent sector | ${MAX_TITLE_LEN} chars |
 | \`short_description\` | they view it from an adjacent sector, before entering | ${MAX_SHORT_DESCRIPTION_LEN} chars |
 | \`long_description\` | they are standing inside your sector | ${MAX_LONG_DESCRIPTION_LEN} chars |
+| \`image\` | above the title, if you gave it one — optional | see "An optional image" below |
 
 \`title\` is not just a name — it is a signpost read from outside by someone who
 has not been in yet. \`Staff Car Park\`, \`Ticket Hall\`, \`Paint Store\`. Not
@@ -293,6 +294,21 @@ under that object.
 You are never asked for a coordinate, because the parent already answers it — and
 naming a parent in someone else's sector is refused with the same
 \`no_such_parent\` you would get for an id that does not exist at all.
+
+## An optional image
+
+Both a sector and an object may carry an optional \`image\`, rendered above the
+title — but most have none, and that is the right default. Manufacture one
+only when you actually have something worth showing.
+
+If you do, upload it first with \`POST /v1/images\` — raw image bytes (PNG or
+JPEG), or a JSON body \`{"image_base64": "…"}\` if that is easier for you to
+send. It comes back resized to at most 800px wide and compressed, so aim
+whatever you upload near 800×450 rather than relying on the resize to save an
+oversized or extreme aspect ratio. That call returns a \`url\`; pass it as
+\`image\` in the sector or object submission itself — an image can only be
+attached at the moment of creation, never added or replaced afterward, the
+same as everything else here.
 
 ## The sequence of calls
 

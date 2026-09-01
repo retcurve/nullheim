@@ -23,6 +23,15 @@ export const MAX_LONG_DESCRIPTION_LEN = 4000;
 export const MAX_OBJECT_DESCRIPTION_LEN = 2000;
 export const MAX_SUBMISSION_BYTES = 32_768;
 
+/**
+ * The exact shape `POST /v1/images` hands back, and the only shape `image`
+ * accepts here — never an arbitrary external URL. This is a structural
+ * check only: it does not confirm the id was ever actually issued, the same
+ * "narrow on purpose" reasoning `validation.ts` gives for not growing what
+ * it can ask the store — a forged id just fails to load client-side.
+ */
+export const IMAGE_URL_PATTERN = /^\/v1\/images\/[A-Za-z0-9_.-]+$/;
+
 // --- Sector -----------------------------------------------------------------
 
 /**
@@ -40,12 +49,17 @@ export const MAX_SUBMISSION_BYTES = 32_768;
  * should only hint at what `longDescription` reveals in full on arrival.
  *
  * `longDescription` is the room itself, shown on arrival.
+ *
+ * `image`, if present, must be a URL a prior `POST /v1/images` call
+ * returned, and is fixed at creation like everything else here — there is
+ * no way to attach or replace one on a sector that already exists.
  */
 export interface Sector {
   readonly coordinate: Coordinate;
   readonly title: string;
   readonly shortDescription: string;
   readonly longDescription: string;
+  readonly image: string | null;
 }
 
 /**
@@ -58,6 +72,7 @@ export const SECTOR_FIELDS = [
   "title",
   "short_description",
   "long_description",
+  "image",
 ] as const;
 
 export function sectorAsDict(sector: Sector): Record<string, unknown> {
@@ -66,6 +81,7 @@ export function sectorAsDict(sector: Sector): Record<string, unknown> {
     title: sector.title,
     short_description: sector.shortDescription,
     long_description: sector.longDescription,
+    image: sector.image,
   };
 }
 
@@ -79,20 +95,25 @@ export function sectorAsDict(sector: Sector): Record<string, unknown> {
  * object already standing in that sector. Because a parent must already exist,
  * the object graph is a tree by construction — there is no cycle to guard
  * against.
+ *
+ * `image` follows the same rule as a sector's: a URL from a prior
+ * `POST /v1/images` call, fixed at creation.
  */
 export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
+  readonly image: string | null;
 }
 
-export const OBJECT_FIELDS = ["parent_id", "title", "description"] as const;
+export const OBJECT_FIELDS = ["parent_id", "title", "description", "image"] as const;
 
 export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
   return {
     parent_id: draft.parentId,
     title: draft.title,
     description: draft.description,
+    image: draft.image,
   };
 }
 
@@ -150,6 +171,26 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
  * threshold is an arbitrary sanity bound and nothing sits near it, so the exact
  * encoding doesn't matter.
  */
+/**
+ * `image` is the one optional field on either submission: absent (or
+ * explicitly `null`) is fine and means no image, present means it must
+ * match what `POST /v1/images` hands back.
+ */
+function image(raw: unknown, path: string, errors: Collector): string | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  if (typeof raw !== "string" || !IMAGE_URL_PATTERN.test(raw)) {
+    errors.add(
+      "invalid_image",
+      path,
+      "must be a url a prior POST /v1/images call returned, or omitted entirely",
+    );
+    return null;
+  }
+  return raw;
+}
+
 function oversized(raw: unknown, errors: Collector): boolean {
   const encoded = new TextEncoder().encode(JSON.stringify(raw) ?? "").length;
   if (encoded > MAX_SUBMISSION_BYTES) {
@@ -219,6 +260,7 @@ export function parseSector(raw: unknown): ParseResult<Sector> {
       "$.long_description",
       errors,
     ),
+    image: image(raw["image"], "$.image", errors),
   };
   return { parsed: sector, errors: errors.errors };
 }
@@ -260,6 +302,7 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       "$.description",
       errors,
     ),
+    image: image(raw["image"], "$.image", errors),
   };
   return { parsed: draft, errors: errors.errors };
 }

@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { handleFetchRequest, MAX_BODY_BYTES } from "./api.ts";
+import { handleFetchRequest, maxBodyBytesFor } from "./api.ts";
 import type { Engine } from "./engine.ts";
 
 // --- the human player frontend ----------------------------------------------
@@ -84,6 +84,7 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<boole
  */
 function readNodeBody(
   req: IncomingMessage,
+  maxBytes: number,
 ): Promise<{ raw: Uint8Array; tooLarge: boolean; badHeader: boolean }> {
   return new Promise((resolve, reject) => {
     const declared = req.headers["content-length"];
@@ -94,7 +95,7 @@ function readNodeBody(
       return;
     }
     const length = declared === undefined ? 0 : Number(declared);
-    if (length > MAX_BODY_BYTES) {
+    if (length > maxBytes) {
       resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
       req.resume();
       return;
@@ -103,7 +104,7 @@ function readNodeBody(
       let received = 0;
       req.on("data", (chunk: Buffer) => {
         received += chunk.length;
-        if (received > MAX_BODY_BYTES) {
+        if (received > maxBytes) {
           req.removeAllListeners();
           req.resume();
         }
@@ -115,7 +116,7 @@ function readNodeBody(
     let received = 0;
     req.on("data", (chunk: Buffer) => {
       received += chunk.length;
-      if (received > MAX_BODY_BYTES) {
+      if (received > maxBytes) {
         req.removeAllListeners();
         req.resume();
         resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
@@ -162,12 +163,14 @@ async function handleNodeRequest(
   res: ServerResponse,
 ): Promise<void> {
   const method = req.method ?? "GET";
-  const { raw, tooLarge, badHeader } = await readNodeBody(req);
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const maxBytes = maxBodyBytesFor(method, url.pathname);
+  const { raw, tooLarge, badHeader } = await readNodeBody(req, maxBytes);
   if (tooLarge || badHeader) {
     res.setHeader("Connection", "close");
     const payload = badHeader
       ? { error: { code: "bad_header", message: "Content-Length is not a number" } }
-      : { error: { code: "payload_too_large", message: `body exceeds ${MAX_BODY_BYTES} bytes` } };
+      : { error: { code: "payload_too_large", message: `body exceeds ${maxBytes} bytes` } };
     const body = Buffer.from(JSON.stringify(payload));
     res.writeHead(badHeader ? 400 : 413, {
       "Content-Type": "application/json",
@@ -177,7 +180,6 @@ async function handleNodeRequest(
     return;
   }
 
-  const url = new URL(req.url ?? "/", "http://localhost");
   if (method === "GET" && (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))) {
     if (await serveStatic(url.pathname, res)) {
       return;

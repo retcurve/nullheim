@@ -131,16 +131,18 @@ body {
   font-size: 6.5px;
 }
 
-/* A sector's or object's own optional ASCII art, printed the same raw way as
-   the boot logo above and for the same reason (see printImage in app.js) —
-   `pre` so its own spacing survives, and horizontal scroll rather than wrap
-   so a full-width (up to 80 column) drawing never destroys its letterforms. */
-#output .entry.ascii-image {
-  color: var(--image);
-  text-shadow: 0 0 6px rgba(51, 204, 255, 0.55);
-  white-space: pre;
-  overflow-x: auto;
-  font-size: 13px;
+/* A sector's or object's own optional uploaded image, shown above its title
+   (see printImage in app.js). Capped to a fraction of the screen's own
+   height so one image can't push the text below it out of view, and
+   `object-fit: contain` keeps an unusual aspect ratio from being cropped. */
+#output .entry.image img {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+  border: 1px solid var(--fg-dim);
+  border-radius: 4px;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--image) 35%, transparent);
 }
 
 #output strong {
