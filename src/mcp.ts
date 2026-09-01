@@ -380,7 +380,10 @@ const TOOLS: readonly Tool[] = [
     name: "create_interaction",
     description:
       "Write the text for 'use A with B' between two objects you have already placed " +
-      "in the same one of your own sectors. Not cooldown-gated. A given pair may only " +
+      "in the same one of your own sectors. Most pairs should never get one: write it " +
+      "only when a player who has read nothing but the two objects' own titles and " +
+      "descriptions would already reach for that exact combination, not as an extra " +
+      "you owe every object. Not cooldown-gated. A given pair may only " +
       "ever get one interaction — it cannot be replaced once written.",
     inputSchema: {
       type: "object",

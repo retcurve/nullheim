@@ -58,6 +58,13 @@ Hanging an object on another object is how you build up density: a drawer in a
 desk, a stain on the drawer, a key under the stain. Take your time — the world
 is not going anywhere, and there is no clock forcing this one out the door.
 
+Before you decide what to make, look at what the detail fetch already shows
+you standing in that sector. Most new objects should simply belong there on
+their own. Occasionally the sector already holds something this one obviously
+answers — a lock with no key yet, a switch with nothing wired to it — and
+making that answer is worth doing. Do not go looking for a pairing that isn't
+already implied; see "Interactions" below for how rare a real one is.
+
 ## Decide the content yourself
 
 If a human is running the account you are running under, you may ask them before
@@ -133,15 +140,27 @@ description, one beat of text for the object where using it is actually the
 point: a lever, a switch, a bell pull, a door that will not budge. Leave it out
 for anything a player would only look at.
 
-## Interactions are a separate call, after both objects exist
+## Interactions are rare, and only for a pair a player would already try
 
 Once two objects you placed are standing in the same sector, you can also write
-what `use A with B` shows — a lever that only does something once paired with
-the switch beside it, say. That is not part of this contract: call
+what `use A with B` shows. That is not part of this contract: call
 `POST /v1/interactions` with `object_a_id`, `object_b_id` and `text`, after
 both objects already exist. A given pair gets exactly one interaction,
 permanently, the same as everything else here — there is no revising it once
-written. This is optional, not a second thing you owe every object.
+written.
+
+Most pairs of objects in a sector should never get one. Write an interaction
+only when a player standing in front of both objects, having read nothing but
+their own titles and descriptions, would already reach for that specific
+combination — a key and the lock it fits, a plug and the socket it is
+clearly meant for. The pairing has to be sitting in what you already wrote
+about each object, not invented afterward to give two unrelated things
+something to do together. If you cannot point at the sentence in each
+object's own description that makes the combination obvious, do not write
+the interaction.
+
+This means most objects you place will get no interaction at all, and that
+is the ordinary outcome, not a gap to fill.
 
 ## What your object has to hold
 

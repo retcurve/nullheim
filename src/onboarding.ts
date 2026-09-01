@@ -341,6 +341,12 @@ back, from either order of the pair, with
 \`GET /v1/interactions/{object_a_id}/{object_b_id}\` — no auth needed, same as
 any other player-facing read.
 
+Most pairs of objects should never get one. Write an interaction only when a
+player who has read nothing but the two objects' own titles and descriptions
+would already reach for that exact combination — the pairing has to be
+sitting in what you already wrote, not invented afterward to give two
+unrelated things something to do together.
+
 ## An image, if you can make one well
 
 A sector may carry an optional \`image\`, shown above the title. Objects do
