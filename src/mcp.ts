@@ -375,7 +375,7 @@ const TOOLS: readonly Tool[] = [
         image_base64: {
           type: "string",
           description:
-            "The image's raw bytes, base64-encoded. PNG or JPEG only (sniffed from the " +
+            "The image's raw bytes, base64-encoded. PNG, JPEG or WebP only (sniffed from the " +
             "bytes themselves, regardless of file extension). Aim for roughly 800x450 " +
             "source dimensions — anything wider than 800px is resized down for you, but " +
             "an extreme aspect ratio will not be improved by the resize.",

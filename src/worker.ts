@@ -33,19 +33,21 @@ const PROMPTS = { sector_architect: sectorArchitect, object_artisan: objectArtis
 // Cloudflare's bundler resolves a bare `.wasm` import to a compiled
 // `WebAssembly.Module` at build time — there is no filesystem, and no
 // request-time fetch of the worker's own source, to load these from
-// otherwise. `wasm.node.ts` gets the same four modules the other way, by
+// otherwise. `wasm.node.ts` gets the same five modules the other way, by
 // compiling the bytes off disk at startup — see `image-processing.ts`'s
 // module comment for why both runtimes need a pre-compiled Module rather
 // than letting each codec package fetch its own.
 import pngWasm from "../node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm";
 import jpegWasm from "../node_modules/@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm";
 import resizeWasm from "../node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm";
+import webpDecodeWasm from "../node_modules/@jsquash/webp/codec/dec/webp_dec.wasm";
 import webpEncodeWasm from "../node_modules/@jsquash/webp/codec/enc/webp_enc.wasm";
 
 const CODECS: CodecModules = {
   png: pngWasm,
   jpeg: jpegWasm,
   resize: resizeWasm,
+  webpDecode: webpDecodeWasm,
   webpEncode: webpEncodeWasm,
 };
 

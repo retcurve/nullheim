@@ -3,7 +3,7 @@
  * shipped inside the @jsquash/* packages on disk.
  *
  * Node-only, the same split as `prompts.node.ts`/`worker.ts`'s `.md` import:
- * the Workers build gets the same four files a different way — a static
+ * the Workers build gets the same five files a different way — a static
  * `import ... from "*.wasm"` (see `worker.ts`), which Cloudflare's bundler
  * resolves to a `WebAssembly.Module` at build time, because there is no
  * filesystem to read at request time.
@@ -25,6 +25,7 @@ export function loadCodecs(): CodecModules {
     png: compile("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
     jpeg: compile("@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm"),
     resize: compile("@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm"),
+    webpDecode: compile("@jsquash/webp/codec/dec/webp_dec.wasm"),
     webpEncode: compile("@jsquash/webp/codec/enc/webp_enc.wasm"),
   };
 }

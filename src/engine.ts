@@ -170,7 +170,7 @@ export class Engine {
    * Resize, compress and store one uploaded image, returning the url a
    * sector or object submission's own `image` field must then match
    * exactly (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws
-   * `UnsupportedImage` for anything too large or not a real JPEG/PNG.
+   * `UnsupportedImage` for anything too large or not a real JPEG/PNG/WebP.
    */
   async uploadImage(bytes: Uint8Array): Promise<{ url: string }> {
     const processed = await processUpload(bytes, this.#codecs);

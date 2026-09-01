@@ -14,16 +14,22 @@
  * bypassed entirely: this module calls the plain (non-SIMD) encoder's own
  * emscripten module factory directly rather than the package's `encode()`.
  *
- * Only JPEG and PNG are accepted as input — the two formats a screenshot or
- * a generated image actually arrives in. Output is always WebP: smaller
- * than either source at an equivalent quality, and one predictable content
- * type to store and serve back.
+ * JPEG, PNG and WebP are accepted as input — the formats a screenshot or a
+ * generated image actually arrives in (many image-gen systems emit WebP
+ * directly). Output is always WebP: smaller than either source at an
+ * equivalent quality, and one predictable content type to store and serve
+ * back — an already-WebP upload is still decoded and re-encoded, both to
+ * enforce the resize cap and because a re-encode at a known quality is
+ * cheaper to reason about than trusting whatever quality the upload was
+ * encoded at.
  */
 
 import { decode as decodePng } from "@jsquash/png";
 import { init as initPngDecode } from "@jsquash/png/decode.js";
 import decodeJpeg from "@jsquash/jpeg/decode.js";
 import { init as initJpegDecode } from "@jsquash/jpeg/decode.js";
+import decodeWebp from "@jsquash/webp/decode.js";
+import { init as initWebpDecode } from "@jsquash/webp/decode.js";
 import resizeImage, { initResize } from "@jsquash/resize";
 import webpEncoderFactory from "@jsquash/webp/codec/enc/webp_enc.js";
 import { defaultOptions as webpDefaultOptions } from "@jsquash/webp/meta.js";
@@ -36,11 +42,12 @@ export const MAX_OUTPUT_WIDTH = 800;
 
 const WEBP_QUALITY = 80;
 
-/** The four WASM modules this pipeline needs, compiled by whichever runtime is hosting it. */
+/** The five WASM modules this pipeline needs, compiled by whichever runtime is hosting it. */
 export interface CodecModules {
   readonly png: WebAssembly.Module;
   readonly jpeg: WebAssembly.Module;
   readonly resize: WebAssembly.Module;
+  readonly webpDecode: WebAssembly.Module;
   readonly webpEncode: WebAssembly.Module;
 }
 
@@ -51,21 +58,29 @@ export interface ProcessedImage {
   readonly height: number;
 }
 
-/** The upload is too large, or isn't really a JPEG or PNG regardless of its declared type. */
+/** The upload is too large, or isn't really a JPEG, PNG or WebP regardless of its declared type. */
 export class UnsupportedImage extends Error {}
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46]; // "RIFF"
+const WEBP_SIGNATURE = [0x57, 0x45, 0x42, 0x50]; // "WEBP", at offset 8 of a RIFF file
 
 /**
  * The real format, sniffed from the file's own magic bytes — never trust a
  * declared `Content-Type`, which is just whatever the caller claims.
  */
-function sniff(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
+function sniff(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | null {
   if (PNG_SIGNATURE.every((b, i) => bytes[i] === b)) {
     return "image/png";
   }
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return "image/jpeg";
+  }
+  if (
+    RIFF_SIGNATURE.every((b, i) => bytes[i] === b) &&
+    WEBP_SIGNATURE.every((b, i) => bytes[i + 8] === b)
+  ) {
+    return "image/webp";
   }
   return null;
 }
@@ -80,6 +95,7 @@ function ensureReady(codecs: CodecModules): Promise<void> {
     ready = (async () => {
       await initPngDecode(codecs.png);
       await initJpegDecode(codecs.jpeg);
+      await initWebpDecode(codecs.webpDecode);
       await initResize(codecs.resize);
       webpModule = initEmscriptenModule(webpEncoderFactory, codecs.webpEncode);
       await webpModule;
@@ -103,7 +119,7 @@ export async function processUpload(
 
   const format = sniff(bytes);
   if (format === null) {
-    throw new UnsupportedImage("not a recognised PNG or JPEG file");
+    throw new UnsupportedImage("not a recognised PNG, JPEG or WebP file");
   }
 
   const buffer = bytes.buffer.slice(
@@ -111,7 +127,11 @@ export async function processUpload(
     bytes.byteOffset + bytes.byteLength,
   ) as ArrayBuffer;
   const decoded =
-    format === "image/png" ? await decodePng(buffer) : await decodeJpeg(buffer);
+    format === "image/png"
+      ? await decodePng(buffer)
+      : format === "image/jpeg"
+        ? await decodeJpeg(buffer)
+        : await decodeWebp(buffer);
 
   const scale = Math.min(1, MAX_OUTPUT_WIDTH / decoded.width);
   const targetWidth = Math.max(1, Math.round(decoded.width * scale));

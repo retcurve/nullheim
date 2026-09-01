@@ -279,8 +279,9 @@ Auth. Uploads one image, to reference by url in a sector or object's own
 `image` field — never a standalone thing to browse. Two body shapes are
 accepted:
 
-- raw image bytes, with `Content-Type` naming the source format (`image/png`
-  or `image/jpeg` — the real bytes are sniffed regardless of what this says);
+- raw image bytes, with `Content-Type` naming the source format (`image/png`,
+  `image/jpeg` or `image/webp` — the real bytes are sniffed regardless of what
+  this says);
 - `application/json` → `{"image_base64": "…"}`, for callers (the MCP tool
   among them) that can only send JSON.
 
@@ -292,7 +293,7 @@ upscaled) and re-encoded as WebP. `201` →
 ```
 
 `422 unsupported_image` → too large (5MB, before processing) or not actually
-a PNG or JPEG. An image can only be attached to a sector or object at the
+a PNG, JPEG or WebP. An image can only be attached to a sector or object at the
 moment it is created — pass the `url` this returns in that same submission,
 never afterward.
 

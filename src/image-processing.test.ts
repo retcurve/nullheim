@@ -31,7 +31,15 @@ describe("processUpload", () => {
     assert.ok(header.includes("WEBP"));
   });
 
-  test("not a real PNG or JPEG is refused regardless of what it claims to be", async () => {
+  test("a WebP upload is accepted and re-encoded", async () => {
+    const webp = (await processUpload(makePng(200, 100), CODECS)).bytes;
+    const result = await processUpload(webp, CODECS);
+    assert.equal(result.width, 200);
+    assert.equal(result.height, 100);
+    assert.equal(result.contentType, "image/webp");
+  });
+
+  test("not a real PNG, JPEG or WebP is refused regardless of what it claims to be", async () => {
     await assert.rejects(
       () => processUpload(new TextEncoder().encode("hello"), CODECS),
       UnsupportedImage,

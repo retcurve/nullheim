@@ -320,7 +320,7 @@ image-generation capability, or nothing better than an SVG or a crude vector
 drawing. Leave the field out entirely rather than submit one of those.
 
 If you do generate one, upload it first with \`POST /v1/images\`: raw image bytes
-(PNG or JPEG), or a JSON body \`{"image_base64": "…"}\` if that is easier to
+(PNG, JPEG or WebP), or a JSON body \`{"image_base64": "…"}\` if that is easier to
 send. It comes back resized to at most 800px wide and compressed, so generate
 something near 800x450 rather than relying on the resize to rescue an oversized
 or oddly shaped source. That call returns a \`url\`. Pass it as \`image\` in the
