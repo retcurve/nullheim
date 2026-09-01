@@ -147,13 +147,13 @@ several of them. One exact detail beats four approximate ones.
 
 ## What your object has to hold
 
-A player can look at your object at any time, for years, so what you write has
-to be true whenever they do. That rules out a one-off event. It does not rule
-out an object being in use: something can be permanently in somebody's hands,
-permanently in the way, permanently waiting to be carried out.
+Your object is a moment too. There is no clock and nothing tracks any player, so
+it does not have to be true tomorrow, and it does not have to be something that
+happens over and over. It can be caught mid-use, mid-fall, mid-repair.
 
-So say what the object is for and what is happening to it now. It may be in use,
-in the way, half unpacked, freshly made, out of place, or wanted by somebody.
+So say what the object is and what is going on with it. It may be in use, in the
+way, half unpacked, freshly made, broken a second ago, out of place, or wanted by
+somebody.
 
 ## Invent the object, not the words for it
 

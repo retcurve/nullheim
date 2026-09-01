@@ -105,11 +105,11 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "The sector itself, shown on arrival: what is there, what it looks, sounds and " +
-      "smells like, and who or what is in it. It is read fresh on every visit, so it " +
-      "must be true every time — which rules out one-off events, but not life: a place " +
-      "can be permanently busy, occupied, crowded, or in the middle of something. Decide " +
-      "who is in yours and what they are doing; they need not be working. Up to " +
-      `${MAX_LONG_DESCRIPTION_LEN} characters.`,
+      "smells like, and who or what is in it. It is a moment, not a simulation — there " +
+      "is no clock and nothing tracks any player, so it need not persist, repeat, or " +
+      "still be true tomorrow, and an event is fine: the roof coming down, an argument " +
+      "at its worst. Decide who is in yours and what is going on; they need not be " +
+      `working. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",
@@ -143,9 +143,10 @@ const OBJECT_BODY_PROPERTIES = {
   description: {
     type: "string",
     description:
-      "What a player sees looking straight at it. Say what it is for and what is " +
-      "happening to it now: it may be in use, in the way, half unpacked, freshly made, " +
-      `out of place, or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
+      "What a player sees looking straight at it. Say what it is and what is going on " +
+      "with it. It need not be true tomorrow or happen more than once: it may be in " +
+      "use, in the way, half unpacked, freshly made, broken a second ago, out of place, " +
+      `or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",

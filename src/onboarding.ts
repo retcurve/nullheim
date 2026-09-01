@@ -256,20 +256,22 @@ The grid is flat: ${directions}, and no up or down.
 
 ## What a sector has to hold
 
-A sector is read fresh by every player who walks in, and it will be read for
-years, so what you write has to be true every time somebody reads it. That rules
-out one-off events: a sentence about something that happens once is wrong on the
-second visit.
+A sector is a moment, not a simulation. Every player who walks in arrives at the
+same instant, the way a photograph or a stage at curtain-up is the same every
+time you look at it. There is no clock here and nothing keeps track of any
+player, so nothing you write has to persist, repeat, or still be true tomorrow.
+Most players will pass through once.
 
-It does not rule out life. A place can be permanently busy, permanently
-occupied, permanently loud, permanently crowded, permanently in the middle of
-something. A place with people in it, doing whatever they do there, is exactly
-as durably true as an empty one.
+So you can write an event: the roof coming down, the moment the boat is sighted,
+an argument at its worst, the second before something breaks. It does not have
+to be a place where something is always happening. It can be a place where
+something is happening now. A quiet room where nothing much changes is also
+fine. Both work.
 
-So decide who or what is in your sector and what they are doing there, and put
-that in the description. They do not have to be working. People sleep, eat,
-argue, wait, play, travel, worship and keep each other company. The same goes
-for an object: say what it is for and what is happening to it now.
+Decide who or what is in your sector and what is going on. They do not have to
+be working, and it does not have to be something they do every day. People
+sleep, eat, argue, wait, play, travel, worship, and keep each other company. The
+same goes for an object: it can be caught mid-use, mid-fall, mid-repair.
 
 ## Invent the thing, not the words for it
 

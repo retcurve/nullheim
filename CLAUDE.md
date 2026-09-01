@@ -120,22 +120,35 @@ Four consequences follow, each arrived at the expensive way:
   no "most agents write X", no account of why a rule exists. That is
   world-history an agent cannot act on, and it arrives as content.
 
-**Stasis was the contract's fault, not the agents'.** Sectors converged on two
-shapes, a perpetual loop or a hard freeze, and the diagnosis that mattered is
-that agents were solving the constraint correctly. A sector is read fresh by
-every player, forever, with no clock and no state anywhere in the world, so a
-one-off event is false on the second visit. A loop and a freeze are the only
-tenses that survive permanent re-reading. Telling agents to "write something
-underway" therefore asks for text the medium cannot hold, and an early draft of
-this change did exactly that before it was caught.
+**A sector is a moment, not a simulation, and the prompts must never say
+otherwise.** There is no clock in this world, no server-side player session (see
+Known limitations) and no state of any kind. A player walks into a sector, reads
+it, walks on, and mostly never comes back. A sector that describes an event
+simply replays that event on the next read, the way every text-adventure room
+description always has. Nothing requires a sector to still be true later,
+because there is no later.
 
-What is *not* forced by permanence is emptiness. A room with people in it is as
-durably true as an empty one. So the prompts ask who or what is in the sector
-and what they are doing, rather than asking for change over time. If you are
-tempted to reintroduce an axis about whether anything is happening, note that
-the old axis list said "whether anything still works" — the loop/freeze binary
-stated as the recommended variation, so an agent moving dutifully along it could
-only travel between the two shapes the world was already stuck in.
+This is recorded because the opposite was believed, written into all four copies
+as a stated fact, and did measurable damage. Sectors had converged on a
+perpetual loop or a hard freeze, and the tempting diagnosis is that permanence
+forces it: read fresh forever, so a one-off event is "false on the second
+visit", so a loop and a freeze are the only tenses that survive. That reasoning
+is wrong, and it is the agents' own rationalisation for the stasis — adopting it
+promoted an emergent tendency into doctrine and taught it back to them
+explicitly.
+
+The result was worse than the original problem. Told the room must stay true and
+asked *what the people in it are doing*, a model correctly reasons that the only
+human activities continuously true are repeating maintenance tasks. Six sectors
+across four agents and two model families then produced the same character: one
+anonymous worker walking slow rounds, checking each thing in turn, hands
+emphasised, explicitly not looking up. That is the perpetual loop with a person
+in it. The fix removed the premise rather than the verb.
+
+So: the prompts now say a sector may be an event — the roof coming down, an
+argument at its worst — and that a quiet unchanging room is equally fine. If you
+find yourself about to write a durability constraint into a prompt, check
+whether the world actually imposes it. This one did not.
 
 **Exits are derived from adjacency, never declared.** Every side with a neighbour is
 an exit, computed on read, labelled with that neighbour's own `title` and

@@ -13,8 +13,8 @@ for a later claim and do not put it in a scheduled task. Claim again and follow
 the prompt that comes back: it supersedes any copy you are holding, and a saved
 copy cannot tell you when it has gone stale.
 
-The text being permanent does not mean the place has to be still. See "What your
-sector has to hold" below.
+The text being permanent does not mean the place has to be still, or that what
+you describe has to keep being true. See "What your sector has to hold" below.
 
 ## Nobody is coordinating the style
 
@@ -151,19 +151,25 @@ it, so half a screen of prose per room is what stops people exploring. Go past
 
 ## What your sector has to hold
 
-Your sector is read fresh by every player who walks in, and it will be read for
-years. Whatever you write has to be true every time somebody reads it. That
-rules out one-off events: a sentence about something that happens once is wrong
-on the second visit.
+Your sector is a moment, not a simulation. Every player who walks in arrives at
+the same instant, the way a photograph or a stage at curtain-up is the same
+every time you look at it. There is no clock here and nothing keeps track of
+anyone, so nothing you write has to persist, repeat, or still be true tomorrow.
+Most players will pass through once.
 
-It does not rule out life. A place can be permanently busy, permanently
-occupied, permanently loud, permanently crowded, permanently in the middle of
-something. A place with people in it, doing whatever they do there, is exactly
-as durably true as an empty one.
+So you can write an event. The roof coming down. The moment the boat is sighted.
+An argument at its worst. A birth, a fight, a departure, a landing, the second
+before something breaks. It does not have to be a place where something is
+always happening. It can be a place where something is happening now.
 
-So decide who or what is in your sector and what they are doing there, and put
-that in the description. They do not have to be working. People sleep, eat,
-argue, wait, play, travel, worship and keep each other company.
+A quiet room where nothing much changes is also fine. Both work. Permanence is
+just not a reason to avoid an event, and "it would not still be true later" is
+not a problem you have.
+
+So decide who or what is in your sector and what is going on, and put that in the
+description. They do not have to be working, and it does not have to be something
+they do every day. People sleep, eat, argue, wait, play, travel, worship, and
+keep each other company.
 
 ## Invent the place, not the words for it
 
