@@ -25,14 +25,15 @@ import {
   claimAsDict,
   cooldownRemaining,
   isSettled,
-  objectsUntilNextSector,
   type Agent,
   type Claim,
 } from "./registry.ts";
 import {
+  parseInteraction,
   parseObject,
   parseSector,
   sectorAsDict,
+  type InteractionDraft,
   type ObjectDraft,
   type Sector,
 } from "./schema.ts";
@@ -40,13 +41,21 @@ import {
   AlreadyBaked,
   WorldStore,
   bakedAsDict,
+  interactionAsDict,
   now,
   objectAsDict,
   type BakedSector,
+  type Interaction,
   type WorldObject,
 } from "./store.ts";
 import { randomHex } from "./tokens.ts";
-import { validateObject, validateSector, type ValidationStore } from "./validation.ts";
+import {
+  validateInteraction,
+  validateObject,
+  validateSector,
+  type InteractionValidationStore,
+  type ValidationStore,
+} from "./validation.ts";
 
 export const GENESIS_AGENT_ID = "agent_genesis";
 
@@ -126,6 +135,7 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
     title: GENESIS_OBJECT_TITLE,
     description: GENESIS_OBJECT_DESCRIPTION,
     image: null,
+    useText: null,
     agentId: GENESIS_AGENT_ID,
     createdAt: now(),
   });
@@ -300,10 +310,10 @@ export class Engine {
   /**
    * Place one object, in whichever of the agent's sectors `parent_id` names.
    *
-   * Throws SectorRequired if the agent has not built one yet, NotYet if its
-   * cooldown is still running. The cooldown is per agent, not per sector, so
-   * holding more sectors buys somewhere else to put the object — never a
-   * second object in the same window.
+   * Throws SectorRequired if the agent has not built one yet. Not otherwise
+   * rate-limited: the cooldown now gates only the *next sector*, not what
+   * goes inside the ones an agent already holds — see registry.ts's module
+   * comment.
    */
   async createObject(
     agent: Agent,
@@ -327,12 +337,90 @@ export class Engine {
       title: draft.title,
       description: draft.description,
       image: draft.image,
+      useText: draft.useText,
       agentId: agent.agentId,
       createdAt: now(),
     };
     await this.store.addObject(world_object);
     await this.registry.noteContribution(agent);
     return { object: world_object, errors: [] };
+  }
+
+  // --- interactions ---------------------------------------------------------
+
+  async checkInteraction(
+    agent: Agent,
+    raw: unknown,
+  ): Promise<{ draft: InteractionDraft | null; errors: ValidationError[] }> {
+    const { parsed, errors } = parseInteraction(raw);
+    if (parsed === null || agent.coordinates.length === 0) {
+      return { draft: parsed, errors };
+    }
+    const store = await this.#interactionValidationStore(parsed.objectAId, parsed.objectBId);
+    return {
+      draft: parsed,
+      errors: [...errors, ...validateInteraction(parsed, agent.coordinates, store)],
+    };
+  }
+
+  /**
+   * Everything `validateInteraction` might need to ask, prefetched into a
+   * synchronous facade: the two named objects, if they exist, and whether
+   * this pair already has an interaction.
+   */
+  async #interactionValidationStore(
+    objectAId: string,
+    objectBId: string,
+  ): Promise<InteractionValidationStore> {
+    const [a, b, exists] = await Promise.all([
+      this.store.getObject(objectAId),
+      this.store.getObject(objectBId),
+      this.store.interactionExists(objectAId, objectBId),
+    ]);
+    return {
+      getObject: (id) => (id === objectAId ? a : id === objectBId ? b : null),
+      interactionExists: () => exists,
+    };
+  }
+
+  /**
+   * Author the text shown for `use A with B` (or `use B with A`) between two
+   * objects already standing in one of the agent's own sectors. Not
+   * cooldown-gated, the same as `createObject` — see registry.ts's module
+   * comment. A pair may only ever get one interaction, permanently:
+   * `validateInteraction` refuses a second one for the same two objects.
+   */
+  async createInteraction(
+    agent: Agent,
+    raw: unknown,
+  ): Promise<{ interaction: Interaction | null; errors: ValidationError[] }> {
+    this.registry.checkCanContribute(agent);
+
+    const { draft, errors } = await this.checkInteraction(agent, raw);
+    if (draft === null || errors.length) {
+      return { interaction: null, errors };
+    }
+
+    const interaction: Interaction = {
+      interactionId: `int_${randomHex(8)}`,
+      objectAId: draft.objectAId,
+      objectBId: draft.objectBId,
+      text: draft.text,
+      agentId: agent.agentId,
+      createdAt: now(),
+    };
+    await this.store.addInteraction(interaction);
+    return { interaction, errors: [] };
+  }
+
+  /**
+   * What a player sees on `use A with B` — public, unauthenticated, like
+   * every other player-facing read. Order never matters: `WorldStore`
+   * normalises both ids before looking the pair up.
+   */
+  async interactionView(objectAId: string, objectBId: string): Promise<Record<string, unknown> | null> {
+    const interaction = await this.store.interactionBetween(objectAId, objectBId);
+    return interaction === null ? null : interactionAsDict(interaction);
   }
 
   /**
@@ -432,6 +520,7 @@ export class Engine {
       title: world_object.title,
       image: world_object.image,
       description: world_object.description,
+      use_text: world_object.useText,
       coordinate: coords.asList(world_object.coordinate),
       things_you_can_see: children.map((child) => ({
         object_id: child.objectId,
@@ -514,9 +603,9 @@ export class Engine {
     // title, no long_description, no object tree. A count is a COUNT(*) on
     // the coordinate index (WorldStore.objectCountIn()), not a fetch of the
     // rows themselves, so this stays O(sectors held) no matter how many
-    // objects stand in any of them. Sector count itself grows sublinearly
-    // (the Nth sector costs 3N objects, so N ~ sqrt(total objects)), which is
-    // what actually bounds /me and the object prompt it carries — see
+    // objects stand in any of them. Sector count itself grows only as fast
+    // as the cooldown allows — one every `cooldown_seconds`, at most — which
+    // is what actually bounds /me and the object prompt it carries — see
     // renderObjectPrompt. Full prose and the object tree are served
     // per-sector, on demand, by sectorContext().
     const sectors: Record<string, unknown>[] = [];
@@ -532,10 +621,12 @@ export class Engine {
     }
     return {
       agent: agentAsDict(agent),
-      // A fresh agent owes nothing, so its first sector is free. After that
-      // the same arithmetic is what gates the second and every one after it.
-      can_claim_sector: objectsUntilNextSector(agent) === 0,
-      can_create_object: isSettled(agent) && cooldownRemaining(agent) <= 0,
+      // A fresh agent's cooldown starts at zero, so its first sector is free
+      // without needing a special case here. can_create_object needs only a
+      // sector to exist — objects are never cooldown-gated, only the next
+      // sector is (see registry.ts's module comment).
+      can_claim_sector: cooldownRemaining(agent) <= 0,
+      can_create_object: isSettled(agent),
       cooldown_seconds: this.registry.cooldownSeconds,
       sectors,
     };

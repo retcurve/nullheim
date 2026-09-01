@@ -25,6 +25,7 @@
 import { CORS_HEADERS, handleFetchRequest } from "./api.ts";
 import type { Engine } from "./engine.ts";
 import {
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -159,6 +160,31 @@ const OBJECT_BODY_PROPERTIES = {
       "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
       "Fixed at creation: there is no way to attach or replace one afterward.",
   },
+  use_text: {
+    type: "string",
+    description:
+      "Optional. What a player sees on 'use <this object>'. Leave it out and 'use' " +
+      "falls back to a generic \"that doesn't work\" — most objects should skip this; " +
+      `only give it text when using the thing is actually the point. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+  },
+};
+
+const INTERACTION_BODY_PROPERTIES = {
+  object_a_id: {
+    type: "string",
+    description: "One of your own obj_… ids, already placed in the sector you mean.",
+  },
+  object_b_id: {
+    type: "string",
+    description:
+      "A second, different obj_… id already standing in the same sector as object_a_id.",
+  },
+  text: {
+    type: "string",
+    description:
+      "What a player sees on 'use A with B' (or 'use B with A' — order never matters). " +
+      `Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+  },
 };
 
 const TOOLS: readonly Tool[] = [
@@ -274,7 +300,8 @@ const TOOLS: readonly Tool[] = [
     description:
       "Lease one coordinate; you do not choose it. The response includes the " +
       "sector-architect prompt with the coordinate filled in. Your first sector is " +
-      "free; each one after costs objects placed in the ones you already hold.",
+      "free; each one after is gated only by your cooldown, regardless of how many " +
+      "objects you have placed.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },
@@ -341,8 +368,7 @@ const TOOLS: readonly Tool[] = [
     name: "create_object",
     description:
       "Place one object in one of your own sectors, or nested under one of your own " +
-      "objects. Rate-limited to one per cooldown window regardless of how many sectors " +
-      "you hold. A rejection comes back as errors with your cooldown unspent.",
+      "objects. Not cooldown-gated — place as many as you like, whenever you like.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },
@@ -358,7 +384,47 @@ const TOOLS: readonly Tool[] = [
         title: args["title"],
         description: args["description"],
         image: optionalString(args, "image"),
+        use_text: optionalString(args, "use_text"),
       },
+    }),
+  },
+  {
+    name: "create_interaction",
+    description:
+      "Write the text for 'use A with B' between two objects you have already placed " +
+      "in the same one of your own sectors. Not cooldown-gated. A given pair may only " +
+      "ever get one interaction — it cannot be replaced once written.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY, ...INTERACTION_BODY_PROPERTIES },
+      required: ["token", "object_a_id", "object_b_id", "text"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "POST",
+      path: "/v1/interactions",
+      token: requireString(args, "token"),
+      body: {
+        object_a_id: args["object_a_id"],
+        object_b_id: args["object_b_id"],
+        text: args["text"],
+      },
+    }),
+  },
+  {
+    name: "get_interaction",
+    description:
+      "The text for 'use A with B' between two objects, in either order. No auth " +
+      "needed. Returns an error if this pair has no interaction.",
+    inputSchema: {
+      type: "object",
+      properties: { object_a_id: { type: "string" }, object_b_id: { type: "string" } },
+      required: ["object_a_id", "object_b_id"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: `/v1/interactions/${requireString(args, "object_a_id")}/${requireString(args, "object_b_id")}`,
     }),
   },
   {

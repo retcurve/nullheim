@@ -13,20 +13,28 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
 import { Direction } from "./coords.ts";
-import { DEFAULT_COOLDOWN_SECONDS, OBJECTS_PER_SECTOR } from "./registry.ts";
+import { DEFAULT_COOLDOWN_SECONDS } from "./registry.ts";
 import {
+  INTERACTION_FIELDS,
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
   MAX_TITLE_LEN,
   OBJECT_FIELDS,
   SECTOR_FIELDS,
+  parseInteraction,
   parseObject,
   parseSector,
 } from "./schema.ts";
 import { makeEngine } from "./testing.ts";
 import { ROUTES } from "./api.ts";
-import { onboardingDocument, EXAMPLE_OBJECT, EXAMPLE_SECTOR } from "./onboarding.ts";
+import {
+  onboardingDocument,
+  EXAMPLE_INTERACTION,
+  EXAMPLE_OBJECT,
+  EXAMPLE_SECTOR,
+} from "./onboarding.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SECTOR_PROMPT = readFileSync(join(ROOT, "prompts", "sector_architect.md"), "utf-8");
@@ -67,8 +75,18 @@ describe("field inventories", () => {
   });
 
   test("the schema doc names every field", () => {
-    for (const field of [...SECTOR_FIELDS, ...OBJECT_FIELDS]) {
+    for (const field of [...SECTOR_FIELDS, ...OBJECT_FIELDS, ...INTERACTION_FIELDS]) {
       assert.ok(SCHEMA_DOC.includes(`\`${field}\``), field);
+    }
+  });
+
+  test("the object prompt names every interaction field", () => {
+    // Interactions are authored by a separate call, after both objects
+    // already exist, so they get prose in the object prompt rather than a
+    // fenced JSON block of their own — see the "the object examples parse"
+    // test below, which would otherwise try to validate it as an object.
+    for (const field of INTERACTION_FIELDS) {
+      assert.ok(OBJECT_PROMPT.includes(`\`${field}\``), field);
     }
   });
 
@@ -76,7 +94,7 @@ describe("field inventories", () => {
     for (const limit of [MAX_TITLE_LEN, MAX_SHORT_DESCRIPTION_LEN, MAX_LONG_DESCRIPTION_LEN]) {
       assert.ok(SECTOR_PROMPT.includes(String(limit)), String(limit));
     }
-    for (const limit of [MAX_TITLE_LEN, MAX_OBJECT_DESCRIPTION_LEN]) {
+    for (const limit of [MAX_TITLE_LEN, MAX_OBJECT_DESCRIPTION_LEN, MAX_INTERACTION_TEXT_LEN]) {
       assert.ok(OBJECT_PROMPT.includes(String(limit)), String(limit));
     }
   });
@@ -171,14 +189,6 @@ describe("placeholders", () => {
       short_description: "Green glass and iron, and behind it something white moving in slow numbers.",
       long_description: "d",
     });
-    for (let i = 0; i < OBJECTS_PER_SECTOR; i++) {
-      await engine.createObject(agent, {
-        parent_id: (await engine.store.get(first.coordinate))!.sectorId,
-        title: `Thing ${i}`,
-        description: "d",
-      });
-    }
-
     const second = await engine.claim(agent);
     const rendered = await engine.renderSectorPrompt(second);
     assert.ok(!rendered.includes("{{"));
@@ -293,7 +303,7 @@ describe("the onboarding document", () => {
   }
 
   test("it names every field an agent must write", () => {
-    for (const field of [...SECTOR_FIELDS, ...OBJECT_FIELDS]) {
+    for (const field of [...SECTOR_FIELDS, ...OBJECT_FIELDS, ...INTERACTION_FIELDS]) {
       assert.ok(document().includes(`\`${field}\``), field);
     }
   });
@@ -305,6 +315,7 @@ describe("the onboarding document", () => {
       MAX_SHORT_DESCRIPTION_LEN,
       MAX_LONG_DESCRIPTION_LEN,
       MAX_OBJECT_DESCRIPTION_LEN,
+      MAX_INTERACTION_TEXT_LEN,
     ]) {
       assert.ok(text.includes(String(limit)), String(limit));
     }
@@ -319,6 +330,10 @@ describe("the onboarding document", () => {
     const objectResult = parseObject(EXAMPLE_OBJECT);
     assert.deepEqual(objectResult.errors, []);
     assert.notEqual(objectResult.parsed, null);
+
+    const interactionResult = parseInteraction(EXAMPLE_INTERACTION);
+    assert.deepEqual(interactionResult.errors, []);
+    assert.notEqual(interactionResult.parsed, null);
   });
 
   test("the examples it shows are the ones it embeds", () => {
@@ -326,6 +341,7 @@ describe("the onboarding document", () => {
     const blocks = jsonBlocks(document()).map((b) => JSON.parse(b));
     assert.ok(blocks.some((b) => JSON.stringify(b) === JSON.stringify(EXAMPLE_SECTOR)));
     assert.ok(blocks.some((b) => JSON.stringify(b) === JSON.stringify(EXAMPLE_OBJECT)));
+    assert.ok(blocks.some((b) => JSON.stringify(b) === JSON.stringify(EXAMPLE_INTERACTION)));
   });
 
   test("it describes the grid as flat and never declares exits", () => {

@@ -1,8 +1,9 @@
 /**
  * Nullheim — a retro terminal frontend for human players.
  *
- * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y} and
- * GET /v1/objects/{id}. Nothing here writes to the world.
+ * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y},
+ * GET /v1/objects/{id} and GET /v1/interactions/{a}/{b}. Nothing here writes
+ * to the world.
  *
  * The client keeps a small model of "the sector the player is currently
  * standing in": its title/description/exits, and whatever objects are known
@@ -333,6 +334,34 @@
     return body;
   }
 
+  /**
+   * Like fetchJson, but a 404 comes back as null instead of throwing — for
+   * reads where "not found" is itself a meaningful, expected answer (no
+   * interaction between this pair of objects) rather than a failure to report.
+   */
+  async function fetchJsonOr404Null(path) {
+    let res;
+    try {
+      res = await fetch(path, { headers: { Accept: "application/json" } });
+    } catch {
+      throw new Error("can't reach the world right now");
+    }
+    if (res.status === 404) {
+      return null;
+    }
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* fall through to status-based error below */
+    }
+    if (!res.ok) {
+      const message = body && body.error && body.error.message ? body.error.message : `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+    return body;
+  }
+
   // --- model --------------------------------------------------------------
 
   /**
@@ -382,11 +411,14 @@
 
   // --- matching -------------------------------------------------------------
 
-  function findMatches(query) {
+  function matchObjects(query) {
     const q = query.toLowerCase();
-    const exitMatches = model.exits.filter((e) => e.name.toLowerCase().includes(q));
-    const objectMatches = Array.from(model.objects.values()).filter((o) => o.title.toLowerCase().includes(q));
-    return { exitMatches, objectMatches };
+    return Array.from(model.objects.values()).filter((o) => o.title.toLowerCase().includes(q));
+  }
+
+  function findMatches(query) {
+    const exitMatches = model.exits.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()));
+    return { exitMatches, objectMatches: matchObjects(query) };
   }
 
   function describeCandidates(exitMatches, objectMatches) {
@@ -984,6 +1016,69 @@
     await examineObject(objectMatches[0].object_id);
   }
 
+  /** Re-fetches the current sector before matching, same as `doLook`. */
+  async function refreshModel() {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+      return true;
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+      return false;
+    }
+  }
+
+  /** `use <object>` — an object's own use_text, or a generic refusal if it has none. */
+  async function doUse(name) {
+    if (!(await refreshModel())) {
+      return;
+    }
+    const matches = matchObjects(name);
+    if (matches.length === 0) {
+      printError("You don't see that here.");
+      return;
+    }
+    if (matches.length > 1) {
+      printError(`Which do you mean: ${matches.map((o) => o.title).join(", ")}?`);
+      return;
+    }
+    try {
+      const data = await fetchJson(`/v1/objects/${matches[0].object_id}`);
+      mergeObject(data);
+      print(data.use_text || "That doesn't work.");
+    } catch (exc) {
+      printError(`Couldn't use that: ${exc.message}`);
+    }
+  }
+
+  /** `use A with B` — the written interaction between two objects, or a generic refusal. */
+  async function doUseWith(aName, bName) {
+    if (!(await refreshModel())) {
+      return;
+    }
+    const aMatches = matchObjects(aName);
+    const bMatches = matchObjects(bName);
+    if (aMatches.length === 0 || bMatches.length === 0) {
+      printError("You don't see that here.");
+      return;
+    }
+    if (aMatches.length > 1 || bMatches.length > 1) {
+      printError(`Which do you mean: ${[...aMatches, ...bMatches].map((o) => o.title).join(", ")}?`);
+      return;
+    }
+    const [a, b] = [aMatches[0], bMatches[0]];
+    if (a.object_id === b.object_id) {
+      print("That doesn't work.");
+      return;
+    }
+    try {
+      const interaction = await fetchJsonOr404Null(`/v1/interactions/${a.object_id}/${b.object_id}`);
+      print(interaction ? interaction.text : "That doesn't work.");
+    } catch (exc) {
+      printError(`Couldn't do that: ${exc.message}`);
+    }
+  }
+
   // --- command parsing --------------------------------------------------------
 
   const BARE_DIRECTIONS = {
@@ -1023,6 +1118,34 @@
         } else {
           doLook(rest);
         }
+      },
+    },
+    {
+      name: "use",
+      aliases: ["push", "pull"],
+      args: "<thing> [with <other thing>]",
+      description: "Use, push or pull something, or combine two things with \"use A with B\".",
+      // Drop-word stripping (see stripDropWords below) would eat the "with"
+      // that separates the two object names, so this command gets the raw,
+      // unstripped remainder instead and does its own splitting.
+      preserveRaw: true,
+      run(rawRest) {
+        if (!rawRest) {
+          printError("Use what?");
+          return;
+        }
+        const withMatch = rawRest.match(/\bwith\b/i);
+        if (withMatch) {
+          const aName = stripDropWords(rawRest.slice(0, withMatch.index).trim().split(/\s+/)).join(" ");
+          const bName = stripDropWords(rawRest.slice(withMatch.index + withMatch[0].length).trim().split(/\s+/)).join(" ");
+          if (!aName || !bName) {
+            printError("Use what with what?");
+            return;
+          }
+          doUseWith(aName, bName);
+          return;
+        }
+        doUse(stripDropWords(rawRest.trim().split(/\s+/)).join(" "));
       },
     },
     {
@@ -1229,7 +1352,11 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
 
     const matches = matchCommands(first);
     if (matches.length === 1) {
-      matches[0].run(rest);
+      // A command word is never itself a drop word, so rawParts[0] always
+      // equals parts[0] and slicing the raw input the same way recovers
+      // everything after it, filler words like "with" included.
+      const rawRest = rawParts.slice(1).join(" ");
+      matches[0].run(matches[0].preserveRaw ? rawRest : rest);
       return;
     }
     if (matches.length > 1) {

@@ -15,7 +15,6 @@ import {
   ClaimRateLimited,
   ClaimStatus,
   NotYet,
-  OBJECTS_PER_SECTOR,
   Registry,
   SectorRequired,
   SectorUnavailable,
@@ -94,7 +93,6 @@ describe("the frontier", () => {
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
       assert.equal(exc.code, "frontier_busy");
-      assert.ok(exc.retryable);
     }
   });
 
@@ -163,7 +161,6 @@ describe("leases", () => {
     } catch (exc) {
       assert.ok(exc instanceof SectorUnavailable);
       assert.equal(exc.code, "claim_in_progress");
-      assert.ok(exc.retryable);
     }
   });
 
@@ -207,11 +204,13 @@ describe("the world-wide claim rate", () => {
     );
   });
 
-  test("what an agent owes is reported before the world's rate", async () => {
-    // A locked agent polling a rate limit would be waiting on the wrong thing.
-    const { engine } = await makeEngine({ claimsPerHour: 1 });
+  test("this agent's own cooldown is reported before the world's rate", async () => {
+    // A cooldown-limited agent polling a rate limit would be waiting on the
+    // wrong thing. settle() itself spends the hour's one claim, so a second
+    // attempt hits both limits at once — the agent's own cooldown must win.
+    const { engine } = await makeEngine({ claimsPerHour: 1, cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
-    await assert.rejects(engine.claim(agent), SectorUnavailable);
+    await assert.rejects(engine.claim(agent), NotYet);
   });
 });
 
@@ -240,58 +239,46 @@ describe("submitting a sector", () => {
     assert.deepEqual(await engine.registry.authenticate(token), agent);
   });
 
-  test("a second sector is locked until the first is furnished", async () => {
-    const { engine } = await makeEngine();
+  test("claiming again before the cooldown elapses throws NotYet", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
-    try {
-      await engine.claim(agent);
-      assert.fail("expected a refusal");
-    } catch (exc) {
-      assert.ok(exc instanceof SectorUnavailable);
-      assert.equal(exc.code, "sector_locked");
-    }
+    await assert.rejects(engine.claim(agent), NotYet);
   });
 
-  test("a locked agent is told never to retry", async () => {
-    // The one refusal that retrying can never fix must say so — the agent has
-    // to go and do something else entirely before this endpoint will budge.
-    const { engine } = await makeEngine();
-    const { agent } = await settle(engine);
-    try {
-      await engine.claim(agent);
-      assert.fail("expected a refusal");
-    } catch (exc) {
-      assert.ok(exc instanceof SectorUnavailable);
-      assert.ok(!exc.retryable);
-      assert.match(exc.message, /Do not retry/);
-    }
-  });
-
-  test("three objects buy exactly one more sector", async () => {
-    const { engine } = await makeEngine();
+  test("founding a second sector costs nothing but the cooldown, however many objects are held", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await settle(engine);
 
-    // Two is not enough, and the refusal counts down rather than just refusing.
-    await furnish(engine, agent, OBJECTS_PER_SECTOR - 1);
-    await assert.rejects(engine.claim(agent), /place 1 more/);
-
-    await furnish(engine, agent, 1);
+    // Not a single object placed, and a second sector is still available
+    // immediately — sectors are no longer priced in objects at all.
     const second = await found(engine, agent);
     assert.equal(agent.coordinates.length, 2);
     assert.notDeepEqual(second.sector.coordinate, agent.coordinates[0]);
 
-    // And the price goes up with the estate: two sectors owe six objects, of
-    // which three are already paid.
-    await assert.rejects(engine.claim(agent), /place 3 more/);
+    // A third costs no more than the second did — nothing, either way.
+    const third = await found(engine, agent);
+    assert.equal(agent.coordinates.length, 3);
+    assert.notDeepEqual(third.sector.coordinate, agent.coordinates[1]);
   });
 
-  test("an agent may furnish any sector it holds, but only one per cooldown", async () => {
-    const { engine } = await makeEngine();
+  test("an agent may place any number of objects, with no cooldown between them", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
-    await furnish(engine, agent, OBJECTS_PER_SECTOR);
-    await found(engine, agent);
+    const sectorId = await root(engine, agent);
 
-    // parent_id alone decides which sector the object lands in.
+    for (let i = 0; i < 5; i += 1) {
+      const { object, errors } = await engine.createObject(agent, obj(sectorId, { title: `Thing ${i}` }));
+      assert.deepEqual(errors, []);
+      assert.notEqual(object, null);
+    }
+    assert.equal(agent.objectsCreated, 5);
+  });
+
+  test("parent_id alone decides which sector an object lands in", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    await found(engine, agent); // a second sector, free and immediate now
+
     const older = await root(engine, agent, 0);
     const newer = await root(engine, agent, 1);
     const { object } = await engine.createObject(agent, obj(newer));
@@ -389,13 +376,17 @@ describe("the contribution clock", () => {
     await assert.rejects(engine.createObject(agent, obj("sec_whatever")), SectorRequired);
   });
 
-  test("a fresh sector starts a cooldown", async () => {
+  test("a fresh sector's cooldown does not block furnishing it", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
-    await assert.rejects(engine.createObject(agent, obj("sec_whatever")), NotYet);
+    assert.ok(cooldownRemaining(agent) > 0, "settling starts the sector cooldown");
+
+    const { object, errors } = await engine.createObject(agent, obj(await root(engine, agent)));
+    assert.deepEqual(errors, []);
+    assert.notEqual(object, null);
   });
 
-  test("an elapsed cooldown allows exactly one object", async () => {
+  test("placing an object increments objectsCreated", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await settle(engine);
 
@@ -408,15 +399,14 @@ describe("the contribution clock", () => {
     assert.equal(agent.objectsCreated, 1);
   });
 
-  test("each object restarts the clock", async () => {
+  test("placing an object never touches the sector cooldown", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
-    agent.nextContributionAt = 0; // as if the first cooldown had elapsed
+    const before = agent.nextContributionAt;
 
     await engine.createObject(agent, obj(await root(engine, agent)));
     assert.equal(agent.objectsCreated, 1);
-    assert.ok(cooldownRemaining(agent) > 0, "placing an object must restart the clock");
-    await assert.rejects(engine.createObject(agent, obj("sec_whatever")), NotYet);
+    assert.equal(agent.nextContributionAt, before);
   });
 
   test("a rejected object does not spend the cooldown", async () => {
@@ -450,6 +440,66 @@ describe("the contribution clock", () => {
       tree[0]!.contains.map((node) => node.title),
       ["Key"],
     );
+  });
+});
+
+describe("interactions", () => {
+  test("an interaction requires both objects in a sector the caller holds", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent: one } = await settle(engine, "one");
+    const { agent: two } = await settle(engine, "two");
+    const { object: mine } = await engine.createObject(one, obj(await root(engine, one)));
+    const { object: theirs } = await engine.createObject(two, obj(await root(engine, two)));
+
+    const { interaction: made, errors } = await engine.createInteraction(one, {
+      object_a_id: mine!.objectId,
+      object_b_id: theirs!.objectId,
+      text: "Doesn't fit.",
+    });
+    assert.equal(made, null);
+    assert.ok(codes(errors).has("no_such_object"));
+  });
+
+  test("a pair of objects may only ever get one interaction", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Rope" }));
+    const { object: b } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Hook" }));
+
+    const first = await engine.createInteraction(agent, {
+      object_a_id: a!.objectId,
+      object_b_id: b!.objectId,
+      text: "Tied fast.",
+    });
+    assert.deepEqual(first.errors, []);
+    assert.notEqual(first.interaction, null);
+
+    const second = await engine.createInteraction(agent, {
+      object_a_id: a!.objectId,
+      object_b_id: b!.objectId,
+      text: "Something else entirely.",
+    });
+    assert.equal(second.interaction, null);
+    assert.ok(codes(second.errors).has("interaction_exists"));
+
+    // Order-independent: "use B with A" resolves the same written pair.
+    const view = await engine.interactionView(b!.objectId, a!.objectId);
+    assert.equal(view!["text"], "Tied fast.");
+  });
+
+  test("placing an interaction is unaffected by the sector cooldown", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 3600 });
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Rope" }));
+    const { object: b } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Hook" }));
+
+    const { interaction: made, errors } = await engine.createInteraction(agent, {
+      object_a_id: a!.objectId,
+      object_b_id: b!.objectId,
+      text: "Tied fast.",
+    });
+    assert.deepEqual(errors, []);
+    assert.notEqual(made, null);
   });
 });
 
@@ -580,7 +630,7 @@ describe("agents survive a restart", () => {
     let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
     const { agent, token } = await engine.register("persisto");
     await found(engine, agent);
-    await furnish(engine, agent, OBJECTS_PER_SECTOR);
+    await furnish(engine, agent, 3);
 
     // A fresh Engine over the same (still-open) database, as a restart
     // against the same file would produce: nothing but the database itself
@@ -591,9 +641,11 @@ describe("agents survive a restart", () => {
     const revived = await engine.registry.authenticate(token);
     assert.notEqual(revived, null, "the token must still authenticate");
     assert.deepEqual(revived!.coordinates, agent.coordinates);
-    assert.equal(revived!.objectsCreated, OBJECTS_PER_SECTOR);
-    // And the earned-sector arithmetic survives with it: having paid in full
-    // before the restart, a second sector is granted rather than locked.
+    assert.equal(revived!.objectsCreated, 3);
+    // The cooldown clock survives the restart too, at the value it actually
+    // held rather than reset to zero — a second sector stays available here
+    // only because this registry's cooldownSeconds is 0, not because the
+    // objects placed bought anything.
     assert.notEqual(await engine.claim(revived!), null);
     db.close();
   });

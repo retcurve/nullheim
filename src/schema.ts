@@ -24,6 +24,13 @@ export const MAX_OBJECT_DESCRIPTION_LEN = 2000;
 export const MAX_SUBMISSION_BYTES = 32_768;
 
 /**
+ * The one line shown for a `use` command — an object's own `use_text` and an
+ * interaction's `text` both cap here. Short on purpose: this is a single
+ * beat of flavour text triggered by a command, not a second description.
+ */
+export const MAX_INTERACTION_TEXT_LEN = 300;
+
+/**
  * The exact shape `POST /v1/images` hands back, and the only shape `image`
  * accepts here — never an arbitrary external URL. This is a structural
  * check only: it does not confirm the id was ever actually issued, the same
@@ -98,15 +105,23 @@ export function sectorAsDict(sector: Sector): Record<string, unknown> {
  *
  * `image` follows the same rule as a sector's: a URL from a prior
  * `POST /v1/images` call, fixed at creation.
+ *
+ * `useText`, if given, is what a player sees on `use <this object>` — fixed
+ * at creation like everything else here, since an object can never be
+ * rewritten. Absent means `use` on it falls back to a generic refusal. A
+ * *combination* of two objects (`use A with B`) is a separate, later-authored
+ * thing — see `InteractionDraft` below — because it necessarily needs both
+ * objects to already exist.
  */
 export interface ObjectDraft {
   readonly parentId: string;
   readonly title: string;
   readonly description: string;
   readonly image: string | null;
+  readonly useText: string | null;
 }
 
-export const OBJECT_FIELDS = ["parent_id", "title", "description", "image"] as const;
+export const OBJECT_FIELDS = ["parent_id", "title", "description", "image", "use_text"] as const;
 
 export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
   return {
@@ -114,6 +129,33 @@ export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
     title: draft.title,
     description: draft.description,
     image: draft.image,
+    use_text: draft.useText,
+  };
+}
+
+// --- Interaction --------------------------------------------------------------
+
+/**
+ * What a player sees on `use A with B` (or `use B with A` — order never
+ * matters). Both objects must already exist and must stand in the same
+ * sector, and only that sector's own holder may author one, the same rule
+ * that already governs who may add an object to it. Written once: like
+ * everything else here, a given pair of objects gets exactly one
+ * interaction, permanently.
+ */
+export interface InteractionDraft {
+  readonly objectAId: string;
+  readonly objectBId: string;
+  readonly text: string;
+}
+
+export const INTERACTION_FIELDS = ["object_a_id", "object_b_id", "text"] as const;
+
+export function interactionDraftAsDict(draft: InteractionDraft): Record<string, unknown> {
+  return {
+    object_a_id: draft.objectAId,
+    object_b_id: draft.objectBId,
+    text: draft.text,
   };
 }
 
@@ -189,6 +231,18 @@ function image(raw: unknown, path: string, errors: Collector): string | null {
     return null;
   }
   return raw;
+}
+
+/**
+ * The other optional field besides `image`: absent (or explicitly `null`)
+ * means nothing, present means it must pass the same text rules as any
+ * other field of the given cap — non-blank, no control characters.
+ */
+function optionalText(raw: unknown, cap: number, path: string, errors: Collector): string | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  return text(raw, cap, path, errors);
 }
 
 function oversized(raw: unknown, errors: Collector): boolean {
@@ -303,6 +357,48 @@ export function parseObject(raw: unknown): ParseResult<ObjectDraft> {
       errors,
     ),
     image: image(raw["image"], "$.image", errors),
+    useText: optionalText(raw["use_text"], MAX_INTERACTION_TEXT_LEN, "$.use_text", errors),
+  };
+  return { parsed: draft, errors: errors.errors };
+}
+
+/** Structurally parse an untrusted interaction submission. */
+export function parseInteraction(raw: unknown): ParseResult<InteractionDraft> {
+  const errors = new Collector();
+
+  if (!isPlainObject(raw)) {
+    errors.add("type_error", "$", "an interaction must be a JSON object");
+    return { parsed: null, errors: errors.errors };
+  }
+  if (oversized(raw, errors)) {
+    return { parsed: null, errors: errors.errors };
+  }
+
+  const unknown = unknownFields(raw, INTERACTION_FIELDS);
+  if (unknown.length) {
+    errors.add("unknown_field", "$", `unrecognised fields: ${unknown.join(", ")}`);
+  }
+
+  let objectAId = raw["object_a_id"];
+  if (typeof objectAId !== "string" || !objectAId.trim()) {
+    errors.add("type_error", "$.object_a_id", "required: the id of an object in your sector");
+    objectAId = "";
+  }
+
+  let objectBId = raw["object_b_id"];
+  if (typeof objectBId !== "string" || !objectBId.trim()) {
+    errors.add(
+      "type_error",
+      "$.object_b_id",
+      "required: the id of a different object in the same sector",
+    );
+    objectBId = "";
+  }
+
+  const draft: InteractionDraft = {
+    objectAId: objectAId as string,
+    objectBId: objectBId as string,
+    text: text(raw["text"], MAX_INTERACTION_TEXT_LEN, "$.text", errors),
   };
   return { parsed: draft, errors: errors.errors };
 }
