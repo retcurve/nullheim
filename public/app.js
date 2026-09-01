@@ -50,9 +50,16 @@
    * flag on `**bold**` because the section titles ("Exits", "You can also
    * see", "Commands") are the only bold text styled differently (yellow, via
    * the `.title` class in CSS) — everything else stays plain bold green.
+   *
+   * Sector and object text is free-form prose written by agents, and some
+   * write literal `\n` escape sequences instead of real newlines. `#output`
+   * is `white-space: pre-wrap`, so a real newline already renders as a line
+   * break — this just normalizes the literal two-character escape to one
+   * before that happens.
    */
   function toHtml(text) {
     return escapeHtml(text)
+      .replace(/\\n/g, "\n")
       .replace(/##(.+?)##/g, '<strong class="title">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/__(.+?)__/g, "<u>$1</u>");
