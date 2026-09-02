@@ -155,6 +155,46 @@ describe("the worked examples must be submittable, not just plausible", () => {
   });
 });
 
+/**
+ * "The roof coming down" and "the moment the boat is sighted" were worked
+ * examples of what an event-sector could be, not content to be built. At
+ * least one agent built the former literally. Naming a scene in a prompt puts
+ * a well-written sentence about that scene in the context window, and it gets
+ * absorbed regardless of the disclaiming prose around it — the same mechanism
+ * `f6da09a` already found for object examples and titles (see CLAUDE.md's
+ * "Even the example names carry genre"). The banned-furniture list ("old
+ * books, ledgers, dust motes, hidden notes") had the identical problem from
+ * the other side: it described the cliché being banned instead of banning it
+ * by shape, which CLAUDE.md's own "prompts never describe the cliché they are
+ * banning" rule rules out.
+ *
+ * These tests check the replacement phrasing stays in sync across all three
+ * copies, not that the old strings are gone — a blocklist of retired phrases
+ * guards against nobody, since no one retypes "the roof coming down" by
+ * accident. The actual drift risk is a future edit rephrasing the ban in only
+ * one of the three copies.
+ */
+describe("the moment and cliché guidance stays in sync across copies", () => {
+  test("the event guidance bans by shape, not by naming a scene", () => {
+    for (const [name, text] of [
+      ["sector", SECTOR_PROMPT],
+      ["onboarding", onboardingDocument(DEFAULT_COOLDOWN_SECONDS)],
+    ] as const) {
+      assert.ok(text.includes("mid-way through happening"), name);
+    }
+  });
+
+  test("the cliché-furniture guidance bans by function, not by naming props", () => {
+    for (const [name, text] of [
+      ["sector", SECTOR_PROMPT],
+      ["object", OBJECT_PROMPT],
+      ["onboarding", onboardingDocument(DEFAULT_COOLDOWN_SECONDS)],
+    ] as const) {
+      assert.ok(text.replace(/\s+/g, " ").includes("signal age, disuse, or hidden meaning"), name);
+    }
+  });
+});
+
 describe("placeholders", () => {
   test("the sector prompt is fully filled", async () => {
     const { engine } = await makeEngine();

@@ -266,22 +266,21 @@ time you look at it. There is no clock here and nothing keeps track of any
 player, so nothing you write has to persist, repeat, or still be true tomorrow.
 Most players will pass through once.
 
-So you can write an event: the roof coming down, the moment the boat is sighted,
-an argument at its worst, the second before something breaks. It does not have
-to be a place where something is always happening. It can be a place where
-something is happening now. A quiet room where nothing much changes is also
-fine. Both work.
+So you can write an event: something caught mid-way through happening, not
+before it and not after it. It does not have to be a place where something is
+always happening. It can be a place where something is happening now. A quiet
+room where nothing much changes is also fine. Both work.
 
 Decide who or what is in your sector and what is going on. They do not have to
-be working, and it does not have to be something they do every day. People
-sleep, eat, argue, wait, play, travel, worship, and keep each other company. The
-same goes for an object: it can be caught mid-use, mid-fall, mid-repair.
+be working, and it does not have to be something they do every day. The same
+goes for an object: it can be caught mid-use, mid-fall, mid-repair.
 
 ## Invent the thing, not the words for it
 
-Invent the place, or the object, and then describe it plainly. Skip the standard
-furniture of atmospheric writing: old books, ledgers, dust motes, hidden notes.
-Give it a form and a material, and let the strange part be the thing itself.
+Invent the place, or the object, and then describe it plainly. Skip generic
+scene-dressing: objects whose only job is to signal age, disuse, or hidden
+meaning. Give it a form and a material, and let the strange part be the thing
+itself.
 Something strange with an ordinary name lands much harder than something
 ordinary with a strange one.
 

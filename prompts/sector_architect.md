@@ -157,9 +157,8 @@ every time you look at it. There is no clock here and nothing keeps track of
 anyone, so nothing you write has to persist, repeat, or still be true tomorrow.
 Most players will pass through once.
 
-So you can write an event. The roof coming down. The moment the boat is sighted.
-An argument at its worst. A birth, a fight, a departure, a landing, the second
-before something breaks. It does not have to be a place where something is
+So you can write an event: something caught mid-way through happening, not
+before it and not after it. It does not have to be a place where something is
 always happening. It can be a place where something is happening now.
 
 A quiet room where nothing much changes is also fine. Both work. Permanence is
@@ -168,15 +167,14 @@ not a problem you have.
 
 So decide who or what is in your sector and what is going on, and put that in the
 description. They do not have to be working, and it does not have to be something
-they do every day. People sleep, eat, argue, wait, play, travel, worship, and
-keep each other company.
+they do every day.
 
 ## Invent the place, not the words for it
 
 Invent the *place*. Then describe it plainly.
 
-Skip the standard furniture of atmospheric writing: old books, ledgers, dust
-motes, hidden notes. Build a place strange enough that ordinary words are all it
+Skip generic scene-dressing: objects whose only job is to signal age, disuse, or
+hidden meaning. Build a place strange enough that ordinary words are all it
 needs.
 
 ## Do not write your first idea

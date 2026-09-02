@@ -182,9 +182,9 @@ somebody.
 
 Invent the *object*. Then describe it plainly.
 
-Skip the standard furniture of atmospheric writing: old books, ledgers, dust
-motes, hidden notes. Give it a physical form and a material, and let the strange
-part be the thing itself.
+Skip generic scene-dressing: objects whose only job is to signal age, disuse, or
+hidden meaning. Give it a physical form and a material, and let the strange part
+be the thing itself.
 
 Then name it plainly. A strange object with an ordinary name lands much harder
 than an ordinary object with a strange one, and reaching for an unusual word in
