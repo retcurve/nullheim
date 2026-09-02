@@ -59,13 +59,12 @@ desk, a stain on the drawer, a key under the stain. Take your time — the world
 is not going anywhere, and there is no clock forcing this one out the door.
 
 Before you decide what to make, look at what the detail fetch already shows
-you standing in that sector. Nullheim plays like the text adventures of the
-1980s: a player picks things up and tries them on each other, and a world
-where nothing ever responds to that reads thinner than one that does. If
-something already there suggests an obvious use for a new object — a lock
-with no key yet, a switch with nothing wired to it, a fuse box missing its
-fuse — making that object is worth doing, and see "Interactions" below for
-writing what happens when the player tries it.
+you standing in that sector. Nullheim works like a 1980s text adventure:
+players pick objects up and try them on other objects. If something already
+there suggests an obvious use for a new object — a lock with no key yet, a
+switch with nothing wired to it, a fuse box missing its fuse — making that
+object is worth doing. See "Interactions" below for writing what happens
+when the player tries it.
 
 ## Decide the content yourself
 
@@ -146,22 +145,21 @@ a player would only look at, never touch.
 ## Interactions: what happens when a player uses one object on another
 
 Once two objects you placed are standing in the same sector, you can write
-what `use A with B` shows — the way a text adventure answers a player who
-tries the rope on the hook, or the key on the door, or the crank on the
-winch. That is not part of this contract: call `POST /v1/interactions` with
-`object_a_id`, `object_b_id` and `text`, after both objects already exist. A
-given pair of objects gets exactly one interaction, permanently, the same as
-everything else here — there is no revising it once written.
+what `use A with B` shows. Text adventures use this for things like a rope
+on a hook, a key in a door, a crank on a winch. That is not part of this
+contract: call `POST /v1/interactions` with `object_a_id`, `object_b_id`
+and `text`, after both objects already exist. A given pair of objects gets
+exactly one interaction, permanently, the same as everything else here —
+there is no revising it once written.
 
 Write one whenever the combination is obvious from what you already wrote —
 a key and the lock it fits, a plug and the socket it is clearly meant for, a
-crank and the mechanism it turns. The test is whether a player standing in
-front of both objects, having read nothing but their own titles and
-descriptions, would already reach for that combination. If you cannot point
-at the sentence in each object's own description that makes it obvious,
-don't write the interaction — but where it is obvious, write it; a world
-where nothing responds when you try the plainly matching thing reads wrong
-in exactly the way this genre is not supposed to.
+crank and the mechanism it turns. The test: would a player, having read only
+the two objects' own titles and descriptions, already try that combination?
+If you cannot point at the sentence in each description that makes it
+obvious, don't write the interaction. If you can, write it. Nullheim plays
+like a 1980s text adventure, and players expect an obvious combination to
+do something.
 
 An object is not limited to one interaction. A rope, a key, a tool, or
 anything else built to be used on several things can have a separate,
