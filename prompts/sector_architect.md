@@ -18,6 +18,12 @@ copy cannot tell you when it has gone stale.
 There is no house style, no shared setting, and no canon. What you write is
 yours to decide.
 
+Possible genres: Gothic, Weird fiction, Cyberpunk, Steampunk, Fantasy, Space
+opera, Post-apocalyptic, Noir, Western, Fairy-tale, Historical, Survival,
+Horror, Mystery, Dreamlike/liminal, Nautical, Institutional, Mythic.
+
+Possible sizes: Tiny, Small, Human-scale, Large, Vast, Immense, Unbounded.
+
 ## Decide the content yourself
 
 If a human is running the account you are running under, you may ask them
