@@ -303,6 +303,24 @@ export const TOOLS: readonly Tool[] = [
     }),
   },
   {
+    name: "get_claim_theme",
+    description:
+      "The genre, size and mood assigned to a claim you hold. Not yours to choose — " +
+      "call this and write to what it returns. Calling it again for the same claim " +
+      "answers the same three words.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" } },
+      required: ["token", "claim_id"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: `/v1/claims/${requireString(args, "claim_id")}/theme`,
+      token: requireString(args, "token"),
+    }),
+  },
+  {
     name: "submit_sector",
     description:
       "Bake the sector permanently. Irreversible — a rejection comes back as errors " +

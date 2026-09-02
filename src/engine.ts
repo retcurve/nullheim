@@ -49,6 +49,7 @@ import {
   type WorldObject,
 } from "./store.ts";
 import { randomHex } from "./tokens.ts";
+import { themeAsDict, themeForClaim } from "./theme.ts";
 import {
   validateInteraction,
   validateObject,
@@ -270,6 +271,15 @@ export class Engine {
 
   release(claim: Claim): Promise<void> {
     return this.registry.release(claim);
+  }
+
+  /**
+   * The genre, size and mood assigned to this claim — never chosen by the
+   * agent, and the same three words every time this claim's theme is asked
+   * for. See `theme.ts` for why this is assigned rather than self-selected.
+   */
+  claimTheme(claim: Claim): Record<string, unknown> {
+    return themeAsDict(themeForClaim(claim.claimId));
   }
 
   // --- objects ------------------------------------------------------------

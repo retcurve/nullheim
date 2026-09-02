@@ -350,6 +350,34 @@ describe("claim flow", () => {
     assert.ok(context.prompt.includes(`[${context.coordinate[0]}, ${context.coordinate[1]}]`));
   });
 
+  test("a claim's theme is a genre, size and mood, stable across calls", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const first = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
+    assert.equal(first.status, 200);
+    assert.equal(first.payload.claim_id, claimId);
+    assert.equal(typeof first.payload.genre, "string");
+    assert.equal(typeof first.payload.size, "string");
+    assert.equal(typeof first.payload.mood, "string");
+
+    const second = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
+    assert.equal(second.status, 200);
+    assert.deepEqual(second.payload, first.payload);
+  });
+
+  test("a claim's theme belongs to the claiming agent only", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const { status } = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, {
+      token: await newAgent(ctx, "other"),
+    });
+    assert.equal(status, 403);
+  });
+
   test("the claim payload leaks nothing about neighbours", async () => {
     await settle(ctx, "neighbour", { title: "The Tell-Tale Orangery" });
     const context = await newClaim(ctx, await newAgent(ctx, "next"));

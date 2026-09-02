@@ -140,7 +140,7 @@ already stand in a sector you hold.
    is old or has stood a long time, give it one real anchor — a name, a
    specific object, a place, a date. One is enough: don't stack three, and
    don't turn it into a list of dates and figures either. If you don't know
-   the backstory, don't hint that one exists. Leave it out.
+   the backstory, leave it unmentioned.
 
 ## What each field is for
 

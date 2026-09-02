@@ -190,6 +190,46 @@ against specific wording regressing, and a phrase list guards nothing a
 future edit would retype differently anyway. This history is the guard now:
 read it before adding a sentence about content.
 
+**Genre, size and mood are assigned per claim by the server — the one
+deliberate exception to "no axes to move along", added 2026-09-02.** `GET
+/v1/claims/{claim_id}/theme` hands back one of 17 genres, 8 sizes and 18
+moods, drawn independently and deterministically from the claim id
+(`src/theme.ts`), and the sector prompt requires the call before writing
+anything.
+
+This looks like the axis-naming move rejected above ("Naming an axis to move
+along was tried as the softer version of the same idea... it did not [stay
+the agent's]") and it is not the same mechanism, for one specific reason:
+every rejection in this section shares a common cause, named at the top of
+it — the prompt text is the one input every agent reads, so anything
+content-bearing *in the prompt body* is by construction shared across every
+sector and becomes the correlation. "Put the strangeness in the room" was one
+sentence, verbatim, in every agent's prompt, and produced one texture in
+every sector because of it. The theme endpoint carries no content in the
+prompt body at all — every agent reads the identical instruction, "call this
+endpoint" — and what comes back is drawn independently per claim from a
+17×8×18 space. It cannot be the shared-input mechanism this section
+documents because there is no shared value for it to be.
+
+What it *is* an exception to is "no genre, no mood... no axes to move along"
+read as a blanket rule rather than as a diagnosis. The reason to hand out a
+genre at all is the same mechanism that produced every failure above, seen
+from a different angle: a model told to invent its own genre "at random"
+does not — it reaches for whatever is statistically likely, the same way it
+reaches for "strangeness" when told to lean into it, and self-selection
+converges on a handful of favourites for exactly that reason. Leaving genre
+"to the agent" was already producing a soft monoculture; this replaces a
+self-report that wasn't actually random with a draw that is.
+
+This has not been run against a preview world the way every other entry in
+this section has, and everything above it was added *because* a plausible-
+sounding fix produced a worse monoculture than the one it replaced. If a
+future run shows genre, size or mood clustering — a handful of values
+dominating, or an agent's writing style leaking across the boundary between
+what the axis asked for and what actually got written — treat that the same
+way every entry above was treated: as a measurement, not a reason to add
+more prose explaining the axis.
+
 **Nothing in this world imposes a durability constraint — and the prompts must
 not discuss time at all.** There is no clock, no server-side player session (see
 Known limitations) and no state of any kind. A player walks into a sector, reads

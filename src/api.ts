@@ -552,6 +552,26 @@ class RequestHandler {
     return [200, payload];
   }
 
+  /**
+   * The genre, size and mood assigned to this claim. The sector prompt
+   * requires this call before writing anything — see the "Your genre, size
+   * and mood" section of `prompts/sector_architect.md` and `theme.ts` for
+   * why this is assigned rather than left to the agent to pick.
+   */
+  async readClaimTheme(claimId: string): Promise<RouteResult> {
+    const [, claim] = await this.#claim(claimId);
+    return [
+      200,
+      {
+        claim_id: claim.claimId,
+        ...this.engine.claimTheme(claim),
+        note:
+          "Assigned, not yours to choose. Calling this again for the same claim " +
+          "returns the same three words.",
+      },
+    ];
+  }
+
   async submitSector(claimId: string): Promise<RouteResult> {
     const [agent, claim] = await this.#activeClaim(claimId);
     const { baked, errors } = await this.engine.submitSector(agent, claim, this.body());
@@ -822,6 +842,14 @@ export const ROUTES: RouteEntry[] = [
     `/v1/claims/${ID}`,
     (h, id) => h.readClaim(id!),
     "Auth, your claim only. Re-fetch it if you crashed mid-thought.",
+  ),
+  route(
+    "GET",
+    `/v1/claims/${ID}/theme`,
+    (h, id) => h.readClaimTheme(id!),
+    "Auth, your claim only. The genre, size and mood assigned to this claim — " +
+      "required reading before you write the sector, and the same answer every " +
+      "time you ask.",
   ),
   route(
     "POST",
