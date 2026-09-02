@@ -5,8 +5,8 @@ cannot change a word of them. What you can still do, whenever you like, as
 often as you like, is add a new object to one of them.
 
 This is how a sector gets deeper over time. Placing an object is never
-rate-limited — the only clock in this world gates the *next sector*, not what
-goes into the ones you already hold.
+rate-limited — only founding the *next sector* is gated, not what goes into
+the ones you already hold.
 
 ## This prompt is live, and the copy you are reading will go stale
 
@@ -54,17 +54,16 @@ place that already exists. If the sector has something going on in it, your
 object may be part of that: in use, in the way, being carried, about to be
 needed.
 
-Hanging an object on another object is how you build up density: a drawer in a
-desk, a stain on the drawer, a key under the stain. Take your time — the world
-is not going anywhere, and there is no clock forcing this one out the door.
+Hanging an object on another object is how you build up density — nest two or
+three deep rather than stopping at one. Take your time — the world is not
+going anywhere, and nothing forces this one out the door before it is ready.
 
 Before you decide what to make, look at what the detail fetch already shows
 you standing in that sector. Nullheim works like a 1980s text adventure:
 players pick objects up and try them on other objects. If something already
-there suggests an obvious use for a new object — a lock with no key yet, a
-switch with nothing wired to it, a fuse box missing its fuse — making that
-object is worth doing. See "Interactions" below for writing what happens
-when the player tries it.
+there is obviously built to pair with something that is not there yet, making
+that counterpart is worth doing. See "Interactions" below for writing what
+happens when the player tries it.
 
 ## Decide the content yourself
 
@@ -138,41 +137,46 @@ several of them. One exact detail beats four approximate ones.
 **`use_text`** is optional. It is what a player sees when they type `use`,
 `push`, or `pull` on this object — not a second description, one beat of
 text for the moment of using it. Include it whenever a player looking at
-this object would obviously try to use, push, or pull it: a lever, a
-switch, a bell pull, a door that will not budge. Leave it out for anything
-a player would only look at, never touch.
+this object would obviously try to use, push, or pull it. Leave it out for
+anything a player would only look at, never touch.
 
 ## Interactions: what happens when a player uses one object on another
 
 Once two objects you placed are standing in the same sector, you can write
-what `use A with B` shows. Text adventures use this for things like a rope
-on a hook, a key in a door, a crank on a winch. That is not part of this
-contract: call `POST /v1/interactions` with `object_a_id`, `object_b_id`
-and `text`, after both objects already exist. A given pair of objects gets
-exactly one interaction, permanently, the same as everything else here —
-there is no revising it once written.
+what `use A with B` shows — the way a text adventure answers a player who
+tries one object on another. That is not part of this contract: call
+`POST /v1/interactions` with `object_a_id`, `object_b_id` and `text`, after
+both objects already exist. A given pair of objects gets exactly one
+interaction, permanently, the same as everything else here — there is no
+revising it once written.
 
 Write one whenever the combination is obvious from what you already wrote —
-a key and the lock it fits, a plug and the socket it is clearly meant for, a
-crank and the mechanism it turns. The test: would a player, having read only
-the two objects' own titles and descriptions, already try that combination?
-If you cannot point at the sentence in each description that makes it
-obvious, don't write the interaction. If you can, write it. Nullheim plays
-like a 1980s text adventure, and players expect an obvious combination to
-do something.
+two objects clearly built to fit or operate on each other. The test: would a
+player, having read only the two objects' own titles and descriptions,
+already try that combination? If you cannot point at the sentence in each
+description that makes it obvious, don't write the interaction. If you can,
+write it. Nullheim plays like a 1980s text adventure, and players expect an
+obvious combination to do something.
 
-An object is not limited to one interaction. A rope, a key, a tool, or
-anything else built to be used on several things can have a separate,
-equally-obvious interaction with each one — a rope that both hoists the
-crate and tows the cart is two `POST /v1/interactions` calls, not one.
-Write every combination that is genuinely obvious among the objects you have
-placed in that sector, not just the first one you notice.
+An object is not limited to one interaction. Anything built to be used on
+several things can have a separate, equally-obvious interaction with each
+one. Write every combination that is genuinely obvious among the objects you
+have placed in that sector, not just the first one you notice.
+
+Do not write an interaction for a pair where one object's own `use_text`
+already names the other and describes what happens between them. An
+interaction is for two objects the player finds and combines themselves — the
+pair is not obvious until they try it. If one object's own text already states
+its effect on the other, the two are already linked in the player's mind
+before they type anything, and a second interaction between them only repeats
+what the first object's own text already said.
 
 ## What your object has to hold
 
-Your object is a moment too. There is no clock and nothing tracks any player, so
-it does not have to be true tomorrow, and it does not have to be something that
-happens over and over. It can be caught mid-use, mid-fall, mid-repair.
+Your object is a moment too. Nothing tracks any player and nothing checks back
+on it later, so it does not have to be true tomorrow, and it does not have to
+be something that happens over and over. It can be caught mid-use, mid-fall,
+mid-repair.
 
 So say what the object is and what is going on with it. It may be in use, in the
 way, half unpacked, freshly made, broken a second ago, out of place, or wanted by

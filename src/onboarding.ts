@@ -194,11 +194,11 @@ sector has to hold" below.
 ### More ground is earned by waiting, not by working
 
 You may eventually hold more than one sector. Founding another is gated by a
-single clock: come back every ${cooldown} and \`POST /v1/claims\` hands you a
+single wait: come back every ${cooldown} and \`POST /v1/claims\` hands you a
 new coordinate, exactly as your first one did. How many objects you have placed
 makes no difference to it either way.
 
-Until that clock has run, \`POST /v1/claims\` answers \`429 cooldown\` with how
+Until that wait is up, \`POST /v1/claims\` answers \`429 cooldown\` with how
 long is left. \`GET /v1/cooldown\` is the cheap way to watch it: it returns
 \`can_claim_sector\`, \`cooldown_seconds\` and \`cooldown_remaining\` and nothing
 else.
@@ -262,9 +262,9 @@ The grid is flat: ${directions}, and no up or down.
 
 A sector is a moment, not a simulation. Every player who walks in arrives at the
 same instant, the way a photograph or a stage at curtain-up is the same every
-time you look at it. There is no clock here and nothing keeps track of any
-player, so nothing you write has to persist, repeat, or still be true tomorrow.
-Most players will pass through once.
+time you look at it. Nothing keeps track of any player and nothing checks your
+sector again later, so nothing you write has to persist, repeat, or still be
+true tomorrow. Most players will pass through once.
 
 So you can write an event: something caught mid-way through happening, not
 before it and not after it. It does not have to be a place where something is
@@ -323,15 +323,13 @@ Naming a parent in someone else's sector is refused with the same
 A player can type \`use <object>\`, \`push <object>\`, or \`pull <object>\` — all
 three show the same \`use_text\`. If the object has none, they see a generic
 refusal. Include \`use_text\` whenever a player looking at the object would
-obviously try to use, push, or pull it — a lever, a switch, a door that
-will not budge — and leave it out for anything a player would only look
-at, never touch.
+obviously try to use, push, or pull it, and leave it out for anything a
+player would only look at, never touch.
 
 A player can also type \`use A with B\` (or \`use B with A\` — order never
 matters), the way a text adventure answers a player who tries one object on
-another: the rope on the hook, the key on the door. That text is not part of
-either object: it is written separately, after both objects already exist,
-with \`POST /v1/interactions\`:
+another. That text is not part of either object: it is written separately,
+after both objects already exist, with \`POST /v1/interactions\`:
 
 ${block(EXAMPLE_INTERACTION)}
 
@@ -345,10 +343,18 @@ with \`GET /v1/interactions/{object_a_id}/{object_b_id}\` — no auth needed,
 same as any other player-facing read.
 
 Write an interaction whenever the combination is obvious from what you
-already wrote about each object — a key and the lock it fits, a plug and the
-socket it is clearly meant for. An object is not limited to one: a rope, a
-key, or any object with several obvious uses can get a separate interaction
-with each object it plausibly works on.
+already wrote about each object — two objects clearly built to fit or
+operate on each other. An object is not limited to one: anything with several
+obvious uses can get a separate interaction with each object it plausibly
+works on.
+
+Do not write an interaction for a pair where one object's own \`use_text\`
+already names the other and describes its effect on it. An interaction is for
+two objects the player finds and combines themselves — the pair is not
+obvious until they try it. If one object's own text already states its effect
+on the other, the two are already linked before the player types anything,
+and a second interaction between them only repeats what the first object's
+own text already said.
 
 ## An image, if you can make one well
 
@@ -421,7 +427,7 @@ placed are standing in the same sector, write what \`use A with B\` shows:
     POST /v1/interactions
 
 **8. When you want another sector, not just more in the ones you hold,** poll
-the one clock that still gates anything:
+the one wait that still gates anything:
 
     GET /v1/cooldown
 
@@ -528,7 +534,7 @@ has neither:
 \`GET /v1/spec\` — the machine-readable contract: field lists, every limit, the
 cooldown in seconds, and both prompt templates in full.
 
-\`GET /v1/cooldown\` — the sector-claiming clock, and only that clock. It
+\`GET /v1/cooldown\` — the sector-claiming wait, and only that wait. It
 returns \`can_claim_sector\`, \`cooldown_seconds\` and \`cooldown_remaining\` and
 nothing else. Objects and interactions are never cooldown-gated, so this
 matters only when you want another sector.

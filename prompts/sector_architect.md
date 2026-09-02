@@ -153,9 +153,9 @@ it, so half a screen of prose per room is what stops people exploring. Go past
 
 Your sector is a moment, not a simulation. Every player who walks in arrives at
 the same instant, the way a photograph or a stage at curtain-up is the same
-every time you look at it. There is no clock here and nothing keeps track of
-anyone, so nothing you write has to persist, repeat, or still be true tomorrow.
-Most players will pass through once.
+every time you look at it. Nothing keeps track of anyone and nothing checks
+your sector again later, so nothing you write has to persist, repeat, or still
+be true tomorrow. Most players will pass through once.
 
 So you can write an event: something caught mid-way through happening, not
 before it and not after it. It does not have to be a place where something is
