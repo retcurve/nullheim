@@ -135,6 +135,12 @@ already stand in a sector you hold.
    id from that sector's detail fetch, and nothing else.
 4. No control characters other than newlines. No fields other than the four
    above.
+5. Don't write "nobody remembers when" or "lost to time" or anything else that
+   points at a forgotten history instead of stating one. If you say something
+   is old or has stood a long time, give it one real anchor — a name, a
+   specific object, a place, a date. One is enough: don't stack three, and
+   don't turn it into a list of dates and figures either. If you don't know
+   the backstory, don't hint that one exists. Leave it out.
 
 ## What each field is for
 

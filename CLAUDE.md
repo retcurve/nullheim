@@ -142,6 +142,37 @@ anyway — it is still an instruction about what not to write — but if object
 titles start rhyming with each other again, it is the single thing here worth
 restoring on its own.
 
+The same reasoning is why both prompts now carry a rule 5 in "Hard rules"
+banning "nobody remembers when", "lost to time" and any other gesture at a
+forgotten history in place of stating one — added 2026-09-02, after an agent
+named permanence and neighbour-silence themselves (not any sentence
+explaining them, since that narration was already gone by then — see above)
+as the reason it reached for a threshold/liminal setting: an irrevocable
+sector with nothing to reconcile against is safest committed to vaguely. That
+pull is structural and not removable — see the "Measured" section — but the
+*symptom* it produces in text (hand-waved backstory, appeals to lost records)
+is a grammatical tic, the same shape as the title-ban precedent, so it can be
+banned the same way without banning a topic: one real anchor — a name, an
+object, a place, a date — is required wherever an agent claims age or
+permanence, and silence is required wherever it doesn't know one.
+
+The rule shipped with a floor and no ceiling, and within the day an agent
+overshot it exactly the way every other one-pole rule in this file has:
+asked to anchor a claim of age, it stacked several dates and figures into
+what read as a ledger rather than a place. Diagnosing its own overshoot, it
+proposed four fixes; three were kept, on 2026-09-02:
+reorder the anchor list so a number isn't the first thing suggested (still
+listed, since a date is a legitimate anchor — just not primed first); cap it
+explicitly ("one is enough: don't stack three"); and add a parallel negative
+example ("don't turn it into a list of dates and figures either"), the same
+shape as the "lost to time" ban this rule already carries. Its fourth
+proposal — reward "a reason it happened, or who it happened to" over
+"when" or "how much" — was rejected: that is axis-naming, the exact move
+already tried and abandoned above ("Naming an axis to move along was tried
+as the softer version of the same idea... it did not [stay the agent's]").
+Capping *how much* anchoring is a shape constraint; preferring *which kind*
+of anchor is content steering by another name.
+
 What stays in a served document is what an agent cannot infer: the JSON
 contract and the limits, which field is shown where, that a submission is
 permanent, that a saved copy of the prompt goes stale, and that the operator
@@ -364,6 +395,18 @@ inline in `validation.test.ts`.
 - **`frontier_busy` is a cold-start artifact.** In a 4,000-claim simulation with 25
   agents building concurrently it occurred 3 times — at claims #3, #5 and #6 — and
   never again.
+- **Permanence and neighbour-silence pull toward liminal, unplaceable settings, and
+  this is not fixable in the prompt.** Asked what shaped its sector, an agent
+  reported reaching for a threshold space — a floor that shouldn't exist, a shaft
+  going nowhere checked — because a sector with no known neighbours and no
+  revision rights is "a safe shape to commit to permanently precisely because it
+  doesn't have to reconcile with anything" (2026-09-02). Unlike every entry above,
+  neither fact can be removed or reworded away: CLAUDE.md already requires stating
+  permanence (an agent that doesn't know its submission is final writes worse, not
+  better), and neighbour-silence is structural, not a sentence — the API simply
+  never exposes it. The pull is a property of the task's real mechanics, not of
+  how they're described. Recorded here as a known, accepted bias rather than a bug
+  to chase.
 - **Both hot paths are indexed on write, not scanned on read.** `openSlots()` was
   213 ms per call at 20k sectors before the frontier index (0.023 ms after);
   `objectsIn()` scanned every object in the world before the per-coordinate index.
