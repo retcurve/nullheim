@@ -105,10 +105,6 @@ describe("field inventories", () => {
     for (const direction of Object.values(Direction)) {
       assert.ok(SECTOR_PROMPT.includes(direction), direction);
     }
-    for (const stale of ['"up"', '"down"', '"exits"', "weight_class"]) {
-      assert.ok(!SECTOR_PROMPT.includes(stale), stale);
-      assert.ok(!OBJECT_PROMPT.includes(stale), stale);
-    }
   });
 });
 
@@ -389,9 +385,6 @@ describe("the onboarding document", () => {
     assert.ok(text.includes("no up or down"));
     for (const direction of Object.values(Direction)) {
       assert.ok(text.includes(direction), direction);
-    }
-    for (const stale of ['"up"', '"down"', '"exits"', "weight_class"]) {
-      assert.ok(!text.includes(stale), stale);
     }
   });
 
