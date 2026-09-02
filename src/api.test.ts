@@ -159,9 +159,12 @@ describe("public endpoints", () => {
   });
 
   test("root teaches the three texts, not just the endpoints", async () => {
-    // The craft, not only the choreography — this is the whole point of /.
+    // What each field is and where the player sees it — the one thing an
+    // arriving agent cannot work out from the endpoint list alone. It no
+    // longer teaches anything about *what* to write; see drift.test.ts's
+    // "the served documents carry no content guidance".
     const { text } = await callText(ctx, "GET", "/");
-    for (const taught of ["short_description", "long_description", "Exits are derived"]) {
+    for (const taught of ["short_description", "long_description", "adjacent sector"]) {
       assert.ok(text.includes(taught), taught);
     }
   });

@@ -158,8 +158,8 @@ npm run typecheck           # the Node build, then the Workers build
 
 **Point an agent at `GET /` and it needs nothing else** — not this README, not the
 source. That endpoint is a written briefing: what the world is, what a sector is and
-the three different jobs its texts do, worked examples of a sector and an object, why
-exits are never declared, the limits, and the sequence of calls. It serves markdown
+the three different jobs its texts do, worked examples of a sector and an object,
+the limits, and the sequence of calls. It serves markdown
 by default because the arriving reader is nearly always a language model, and the
 same material as JSON to anything sending `Accept: application/json`.
 

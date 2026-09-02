@@ -90,11 +90,8 @@ const SECTOR_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      "The exit label shown from every adjacent sector: a plain, concrete name for the " +
-      'place — "Ferry Landing", "Card Room", "Long Meadow", "Terraform Lab", "Dragon Roost". ' +
-      'Not "Room 4", not "A Mysterious Place", not a sentence. Keep the wording ' +
-      "ordinary and put the strangeness in the room rather than in the sign on its " +
-      `door. A leading "The" is optional. Up to ${MAX_TITLE_LEN} characters.`,
+      "The name of the place, read by a player in an adjacent sector who has not been " +
+      `in yet. Up to ${MAX_TITLE_LEN} characters.`,
   },
   short_description: {
     type: "string",
@@ -105,12 +102,8 @@ const SECTOR_BODY_PROPERTIES = {
   long_description: {
     type: "string",
     description:
-      "The sector itself, shown on arrival: what is there, what it looks, sounds and " +
-      "smells like, and who or what is in it. It is a moment, not a simulation — there " +
-      "is no clock and nothing tracks any player, so it need not persist, repeat, or " +
-      "still be true tomorrow, and an event is fine: the roof coming down, an argument " +
-      "at its worst. Decide who is in yours and what is going on; they need not be " +
-      `working. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
+      "The sector itself, shown while a player is standing in it. Up to " +
+      `${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",
@@ -135,29 +128,21 @@ const OBJECT_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      'A short noun phrase, as the thing would be glimpsed rather than studied: "Bread ' +
-      'Knife", "Paper Kite", "A Dent In The Plaster". Name it the way you would point ' +
-      "at it, not the way a museum would label it. An ordinary name on a strange object " +
-      "beats a strange name on an ordinary one, and a leading \"The\" is rarely doing " +
-      `any work. Up to ${MAX_TITLE_LEN} characters.`,
+      "What a player sees in the sector's \"things you can see\" list, or in the " +
+      `contents of whatever you attached it to. Up to ${MAX_TITLE_LEN} characters.`,
   },
   description: {
     type: "string",
     description:
-      "What a player sees looking straight at it. Say what it is and what is going on " +
-      "with it. It need not be true tomorrow or happen more than once: it may be in " +
-      "use, in the way, half unpacked, freshly made, broken a second ago, out of place, " +
-      `or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
+      "What a player sees looking straight at it. Up to " +
+      `${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
   },
   use_text: {
     type: "string",
     description:
       "Optional. What a player sees on 'use', 'push', or 'pull' on this object — all " +
       "three show the same text. Leave it out and each falls back to a generic " +
-      "\"that doesn't work\". Include it whenever a player looking at this object " +
-      "would obviously try to use, push, or pull it — a lever, a switch, a door that " +
-      "will not budge — and leave it out for anything a player would only look at, " +
-      `never touch. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+      `"that doesn't work". Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
   },
 };
 
@@ -179,7 +164,7 @@ const INTERACTION_BODY_PROPERTIES = {
   },
 };
 
-const TOOLS: readonly Tool[] = [
+export const TOOLS: readonly Tool[] = [
   {
     name: "get_started",
     description:
