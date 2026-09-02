@@ -322,8 +322,10 @@ Naming a parent in someone else's sector is refused with the same
 ## Interactions
 
 A player can type \`use <object>\`. If that object has a \`use_text\`, they see
-it; otherwise they see a generic refusal. Most objects should leave \`use_text\`
-out — give it text only when using the thing is actually the point.
+it; otherwise they see a generic refusal. Include \`use_text\` whenever a
+player looking at the object would obviously try \`use\` on it — a lever, a
+switch, a door that will not budge — and leave it out for anything a player
+would only look at, never touch.
 
 A player can also type \`use A with B\` (or \`use B with A\` — order never
 matters), the way a text adventure answers a player who tries one object on

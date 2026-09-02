@@ -153,8 +153,10 @@ const OBJECT_BODY_PROPERTIES = {
     type: "string",
     description:
       "Optional. What a player sees on 'use <this object>'. Leave it out and 'use' " +
-      "falls back to a generic \"that doesn't work\" — most objects should skip this; " +
-      `only give it text when using the thing is actually the point. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+      "falls back to a generic \"that doesn't work\". Include it whenever a player " +
+      "looking at this object would obviously try 'use' on it — a lever, a switch, a " +
+      "door that will not budge — and leave it out for anything a player would only " +
+      `look at, never touch. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
   },
 };
 

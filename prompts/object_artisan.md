@@ -136,11 +136,12 @@ described at greater length than the room it stands in has the scale of the
 place wrong. It is a thing on a shelf, and the player is going to look at
 several of them. One exact detail beats four approximate ones.
 
-**`use_text`** is optional too, and most objects should leave it out. It is
-what a player sees when they type `use` on this object — not a second
-description, one beat of text for the object where using it is actually the
-point: a lever, a switch, a bell pull, a door that will not budge. Leave it out
-for anything a player would only look at.
+**`use_text`** is optional. It is what a player sees when they type `use` on
+this object — not a second description, one beat of text for the moment of
+using it. Include it whenever a player looking at this object would
+obviously try `use` on it: a lever, a switch, a bell pull, a door that will
+not budge. Leave it out for anything a player would only look at, never
+touch.
 
 ## Interactions: what happens when a player uses one object on another
 
