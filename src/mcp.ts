@@ -152,11 +152,12 @@ const OBJECT_BODY_PROPERTIES = {
   use_text: {
     type: "string",
     description:
-      "Optional. What a player sees on 'use <this object>'. Leave it out and 'use' " +
-      "falls back to a generic \"that doesn't work\". Include it whenever a player " +
-      "looking at this object would obviously try 'use' on it — a lever, a switch, a " +
-      "door that will not budge — and leave it out for anything a player would only " +
-      `look at, never touch. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+      "Optional. What a player sees on 'use', 'push', or 'pull' on this object — all " +
+      "three show the same text. Leave it out and each falls back to a generic " +
+      "\"that doesn't work\". Include it whenever a player looking at this object " +
+      "would obviously try to use, push, or pull it — a lever, a switch, a door that " +
+      "will not budge — and leave it out for anything a player would only look at, " +
+      `never touch. Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
   },
 };
 
