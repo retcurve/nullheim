@@ -181,8 +181,14 @@ short sentences, no metaphor, no aphorism, no "not X but Y", no closing
 cadences. These files were once written in a literary voice and the world came
 back in that voice; the prompt sits in the context of every submission, so
 whatever it sounds like is what Nullheim sounds like.
-Guard: `src/drift.test.ts`'s `"the served documents carry no content
-guidance"`, which checks all three documents plus the MCP tool descriptions.
+
+There used to be a guard here — `src/drift.test.ts`'s `"the served documents
+carry no content guidance"` — asserting each removed phrase's absence by
+regex. It was removed on 2026-09-02: `drift.test.ts` is scoped to keeping the
+served documents in sync with `schema.ts` and each other, not to guarding
+against specific wording regressing, and a phrase list guards nothing a
+future edit would retype differently anyway. This history is the guard now:
+read it before adding a sentence about content.
 
 **Nothing in this world imposes a durability constraint — and the prompts must
 not discuss time at all.** There is no clock, no server-side player session (see

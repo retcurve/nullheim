@@ -29,7 +29,6 @@ import {
 } from "./schema.ts";
 import { makeEngine } from "./testing.ts";
 import { ROUTES } from "./api.ts";
-import { TOOLS } from "./mcp.ts";
 import {
   onboardingDocument,
   EXAMPLE_INTERACTION,
@@ -148,69 +147,6 @@ describe("the worked examples must be submittable, not just plausible", () => {
       const { parsed, errors } = parseObject(JSON.parse(block));
       assert.deepEqual(errors, [], block.slice(0, 40));
       assert.notEqual(parsed, null);
-    }
-  });
-});
-
-/**
- * The prompts once carried content guidance — what a sector had to hold, what
- * to invent, what cliches to avoid, which examples to follow — and every piece
- * of it transmitted. The guidance is the only input every agent shares, so
- * whatever it names becomes the thing the world is full of. It was all removed;
- * these tests keep it from growing back one copy at a time.
- *
- * A phrase list would guard nothing, since a future edit will not retype the
- * old wording. What is checkable is the shape: the served documents describe
- * where each field is shown and what the limits are, and do not tell an agent
- * what to write.
- */
-describe("the served documents carry no content guidance", () => {
-  const served = () =>
-    [
-      ["sector", SECTOR_PROMPT],
-      ["object", OBJECT_PROMPT],
-      ["onboarding", onboardingDocument(DEFAULT_COOLDOWN_SECONDS)],
-    ] as const;
-
-  test("no document tells an agent what kind of place or thing to write", () => {
-    // Each of these was in a served document, and each produced a monoculture
-    // in the preview world: a genre menu, a strangeness target, a mandate to
-    // put a working person in the room, and a tense that forced a freeze.
-    const steering = [
-      /\bPick a genre\b/i,
-      /\bstrangeness\b/i,
-      /\bstrange (?:enough|part|object|thing|room|place)\b/i,
-      /\bmoment, not a simulation\b/i,
-      /\bmid-way through happening\b/i,
-      /\bgive them something to be doing\b/i,
-      /\bscene-dressing\b/i,
-      /\byour (?:first|second) idea\b/i,
-    ];
-    for (const [name, text] of served()) {
-      for (const pattern of steering) {
-        assert.doesNotMatch(text, pattern, `${name}: ${pattern}`);
-      }
-    }
-  });
-
-  test("no document forbids describing exits, doors or neighbours", () => {
-    // Removed with the rest: it is a content ban like any other, and the
-    // schema has no exit fields for a sector to disagree about anyway.
-    for (const [name, text] of served()) {
-      assert.doesNotMatch(text, /say nothing about (?:doors|the ways out)/i, name);
-      assert.doesNotMatch(text, /do not (?:mention|write about)[^.]*\bexits?\b/i, name);
-    }
-  });
-
-  test("the title examples are gone from every copy", () => {
-    // `Ferry Landing` entered the sector prompt as one of five example titles
-    // deliberately spread across kinds of place. The next sector baked into
-    // the preview world, 65 minutes later, was titled `Ferry Landing`. A menu
-    // gets picked from however wide it is.
-    for (const [name, text] of [...served(), ["mcp", JSON.stringify(TOOLS)]] as const) {
-      for (const example of ["Ferry Landing", "Dragon Roost", "Terraform Lab", "Bread Knife"]) {
-        assert.ok(!text.includes(example), `${name}: ${example}`);
-      }
     }
   });
 });
