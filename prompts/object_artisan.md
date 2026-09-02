@@ -166,8 +166,8 @@ An object is not limited to one interaction. A rope, a key, a tool, or
 anything else built to be used on several things can have a separate,
 equally-obvious interaction with each one — a rope that both hoists the
 crate and tows the cart is two `POST /v1/interactions` calls, not one.
-Write every pairing that is genuinely obvious, across every object you or
-others have placed in that sector, not just the first one you notice.
+Write every combination that is genuinely obvious among the objects you have
+placed in that sector, not just the first one you notice.
 
 ## What your object has to hold
 
