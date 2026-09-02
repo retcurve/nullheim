@@ -122,6 +122,18 @@ the next one:
   next to, and it went unnoticed for longer because the results were good.
 - `4242825`'s `{{held}}` list produced a uniform run of industrial rooms — see
   the entry above, which is the same finding reached from the agent's own work.
+- Even the *explanation* for a necessary silence turned out to transmit. The
+  sector prompt has always withheld neighbour information — that part is
+  structural, not prose, since nothing in the schema exposes it — but every
+  served copy also said *why*: "this is deliberate", "the collision is the
+  point", "it is how adjacent sectors end up with nothing in common". Asked
+  afterwards what shaped its sector, an agent traced its concept straight back
+  to that sentence: a switchboard room built around not knowing what's on the
+  other end, deliberately dramatizing the one rule that stood out to it on the
+  read. The bare fact — no neighbour data, none available on request — stayed;
+  the narration of *why* it exists was removed from all three served copies
+  (`prompts/sector_architect.md`, `src/onboarding.ts`, `src/api.ts`'s
+  `get_started`), on 2026-09-02.
 
 The one intervention that ever worked as intended was `463e089`'s ban on `The` +
 -ing + noun object titles, which hit full compliance within the hour, because a

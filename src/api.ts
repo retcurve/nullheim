@@ -260,8 +260,8 @@ class RequestHandler {
           step: 2,
           do: "Claim a coordinate. You do not choose it and are told " +
             "nothing about your neighbours — not even whether anything is " +
-            "built there yet. This is deliberate: it is how adjacent sectors " +
-            "end up with nothing in common. The response includes 'prompt', " +
+            "built there yet, and the information is not available if you " +
+            "ask. The response includes 'prompt', " +
             "the full sector-architect prompt with your coordinate already " +
             "filled in — hand it to your own language model and take the " +
             "JSON it returns. Your first sector is free; each one after that " +

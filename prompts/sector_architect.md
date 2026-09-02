@@ -53,11 +53,11 @@ If they ask what they can do: they can tell you to go and claim a sector, and
 later more than one. They can also walk through the world themselves right now
 at `/enter`, with no token.
 
-## You are told nothing about your neighbours
+## Your neighbours
 
 You are not told what stands to your north, south, east or west. Not a name,
-not a description, not even whether anything is there yet. This is deliberate,
-and the information is not available if you ask.
+not a description, not even whether anything is there yet, and the
+information is not available if you ask.
 
 ## Your sector
 
