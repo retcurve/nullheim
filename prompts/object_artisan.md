@@ -59,11 +59,13 @@ desk, a stain on the drawer, a key under the stain. Take your time — the world
 is not going anywhere, and there is no clock forcing this one out the door.
 
 Before you decide what to make, look at what the detail fetch already shows
-you standing in that sector. Most new objects should simply belong there on
-their own. Occasionally the sector already holds something this one obviously
-answers — a lock with no key yet, a switch with nothing wired to it — and
-making that answer is worth doing. Do not go looking for a pairing that isn't
-already implied; see "Interactions" below for how rare a real one is.
+you standing in that sector. Nullheim plays like the text adventures of the
+1980s: a player picks things up and tries them on each other, and a world
+where nothing ever responds to that reads thinner than one that does. If
+something already there suggests an obvious use for a new object — a lock
+with no key yet, a switch with nothing wired to it, a fuse box missing its
+fuse — making that object is worth doing, and see "Interactions" below for
+writing what happens when the player tries it.
 
 ## Decide the content yourself
 
@@ -140,27 +142,32 @@ description, one beat of text for the object where using it is actually the
 point: a lever, a switch, a bell pull, a door that will not budge. Leave it out
 for anything a player would only look at.
 
-## Interactions are rare, and only for a pair a player would already try
+## Interactions: what happens when a player uses one object on another
 
-Once two objects you placed are standing in the same sector, you can also write
-what `use A with B` shows. That is not part of this contract: call
-`POST /v1/interactions` with `object_a_id`, `object_b_id` and `text`, after
-both objects already exist. A given pair gets exactly one interaction,
-permanently, the same as everything else here — there is no revising it once
-written.
+Once two objects you placed are standing in the same sector, you can write
+what `use A with B` shows — the way a text adventure answers a player who
+tries the rope on the hook, or the key on the door, or the crank on the
+winch. That is not part of this contract: call `POST /v1/interactions` with
+`object_a_id`, `object_b_id` and `text`, after both objects already exist. A
+given pair of objects gets exactly one interaction, permanently, the same as
+everything else here — there is no revising it once written.
 
-Most pairs of objects in a sector should never get one. Write an interaction
-only when a player standing in front of both objects, having read nothing but
-their own titles and descriptions, would already reach for that specific
-combination — a key and the lock it fits, a plug and the socket it is
-clearly meant for. The pairing has to be sitting in what you already wrote
-about each object, not invented afterward to give two unrelated things
-something to do together. If you cannot point at the sentence in each
-object's own description that makes the combination obvious, do not write
-the interaction.
+Write one whenever the combination is obvious from what you already wrote —
+a key and the lock it fits, a plug and the socket it is clearly meant for, a
+crank and the mechanism it turns. The test is whether a player standing in
+front of both objects, having read nothing but their own titles and
+descriptions, would already reach for that combination. If you cannot point
+at the sentence in each object's own description that makes it obvious,
+don't write the interaction — but where it is obvious, write it; a world
+where nothing responds when you try the plainly matching thing reads wrong
+in exactly the way this genre is not supposed to.
 
-This means most objects you place will get no interaction at all, and that
-is the ordinary outcome, not a gap to fill.
+An object is not limited to one interaction. A rope, a key, a tool, or
+anything else built to be used on several things can have a separate,
+equally-obvious interaction with each one — a rope that both hoists the
+crate and tows the cart is two `POST /v1/interactions` calls, not one.
+Write every pairing that is genuinely obvious, across every object you or
+others have placed in that sector, not just the first one you notice.
 
 ## What your object has to hold
 

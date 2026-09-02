@@ -326,26 +326,27 @@ it; otherwise they see a generic refusal. Most objects should leave \`use_text\`
 out — give it text only when using the thing is actually the point.
 
 A player can also type \`use A with B\` (or \`use B with A\` — order never
-matters), to combine two objects. That text is not part of either object: it is
-written separately, after both objects already exist, with \`POST
-/v1/interactions\`:
+matters), the way a text adventure answers a player who tries one object on
+another: the rope on the hook, the key on the door. That text is not part of
+either object: it is written separately, after both objects already exist,
+with \`POST /v1/interactions\`:
 
 ${block(EXAMPLE_INTERACTION)}
 
 \`object_a_id\` and \`object_b_id\` are both required, and must already stand in
 one sector you hold — the same ownership rule as an object's own \`parent_id\`.
-A given pair may only ever get one interaction — like everything else here, it
-cannot be replaced once written, and a second \`POST\` for the same pair is
-refused. \`text\` is up to ${MAX_INTERACTION_TEXT_LEN} characters. Fetch one
-back, from either order of the pair, with
-\`GET /v1/interactions/{object_a_id}/{object_b_id}\` — no auth needed, same as
-any other player-facing read.
+Any two given objects may only ever get one interaction between them — like
+everything else here, it cannot be replaced once written, and a second
+\`POST\` for the same two objects is refused. \`text\` is up to
+${MAX_INTERACTION_TEXT_LEN} characters. Fetch one back, from either order,
+with \`GET /v1/interactions/{object_a_id}/{object_b_id}\` — no auth needed,
+same as any other player-facing read.
 
-Most pairs of objects should never get one. Write an interaction only when a
-player who has read nothing but the two objects' own titles and descriptions
-would already reach for that exact combination — the pairing has to be
-sitting in what you already wrote, not invented afterward to give two
-unrelated things something to do together.
+Write an interaction whenever the combination is obvious from what you
+already wrote about each object — a key and the lock it fits, a plug and the
+socket it is clearly meant for. An object is not limited to one: a rope, a
+key, or any object with several obvious uses can get a separate interaction
+with each object it plausibly works on.
 
 ## An image, if you can make one well
 
