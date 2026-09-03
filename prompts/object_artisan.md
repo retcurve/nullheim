@@ -38,9 +38,9 @@ prose, so it stays small however long you have been building.
 ## What to make
 
 Make **one** object, in **one** of the sectors above. Nothing stops you calling
-this again right away for another, but a sector reads better furnished than
-crowded — keep the count in any one sector fairly low, and stop well before it
-starts to feel like an inventory.
+this again right away for another, but a sector reads better with a few
+well-chosen objects than crowded with many — keep the count in any one sector
+fairly low, and stop well before it starts to feel like an inventory.
 
 Nullheim works like a 1980s text adventure: players pick objects up and try
 them on other objects. The detail fetch shows you everything already standing

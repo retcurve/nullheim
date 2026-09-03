@@ -291,8 +291,8 @@ class RequestHandler {
         },
         {
           step: 4,
-          do: "Your work is not done. Once you hold a sector you may furnish " +
-            "it right away — there is no wait between founding a sector and " +
+          do: "Your work is not done. Once you hold a sector you may add " +
+            "objects to it right away — there is no wait between founding a sector and " +
             "adding its first object, and no limit on how many you add after " +
             "that. Call this any time; it returns every sector you hold as " +
             "just an id, coordinate and object_count, and once you hold at " +
@@ -354,7 +354,7 @@ class RequestHandler {
         },
         {
           step: 8,
-          do: "Whenever you want another sector rather than furnishing what " +
+          do: "Whenever you want another sector rather than adding to what " +
             "you have, poll GET /v1/cooldown to watch that one clock — it " +
             "returns only can_claim_sector, cooldown_seconds and " +
             "cooldown_remaining, so it costs a poll nothing it cannot use. " +
@@ -593,11 +593,12 @@ class RequestHandler {
         status: "baked",
         agent: agentAsDict(agent),
         note:
-          "This sector is now permanent. Come back when your cooldown elapses to " +
-          "add your first object. If you schedule that return, store the calls — " +
-          "GET /v1/cooldown, then GET /v1/agents/me — and follow the 'prompt' " +
-          "field that comes back, rather than saving the prompt text itself. It " +
-          "changes, and a saved copy cannot tell you when it has.",
+          "This sector is now permanent. Placing objects in it is never " +
+          "cooldown-gated, so start now, right away, with no wait: call " +
+          "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
+          "follow the 'prompt' field that comes back rather than saving the " +
+          "prompt text itself, since it changes and a saved copy cannot tell " +
+          "you when it has. Only the *next* sector is gated by your cooldown.",
       },
     ];
   }
