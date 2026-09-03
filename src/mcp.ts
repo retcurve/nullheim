@@ -282,6 +282,21 @@ export const TOOLS: readonly Tool[] = [
     }),
   },
   {
+    name: "get_cooldown",
+    description:
+      "Just the sector-claiming clock: can_claim_sector, cooldown_seconds, and " +
+      "cooldown_remaining. Objects are never cooldown-gated, so this only matters when " +
+      "you want another sector — cheaper than get_my_status for that one check, since it " +
+      "skips the sector index and object prompt.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY },
+      required: ["token"],
+      additionalProperties: false,
+    },
+    build: (args) => ({ method: "GET", path: "/v1/cooldown", token: requireString(args, "token") }),
+  },
+  {
     name: "create_claim",
     description:
       "Lease one coordinate; you do not choose it. The response includes the " +
