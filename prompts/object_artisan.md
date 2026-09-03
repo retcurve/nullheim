@@ -112,14 +112,15 @@ be in the same sector.
 
 ## Hard rules
 
-1. `title` and `description` are required and must not be empty. `use_text`
+1. Avoid abeyance and perpetuity. Avoid absence dressed up as atmosphere. If
+   you write about something happening, use the present tense.
+2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
-2. Length caps: 64 / 2000 / 300 characters (title / description / use_text).
-3. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
+3. Length caps: 64 / 2000 / 300 characters (title / description / use_text).
+4. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
    id from that sector's detail fetch, and nothing else.
-4. No control characters other than newlines. No fields other than the four
+5. No control characters other than newlines. No fields other than the four
    above.
-5. Avoid abeyance and perpetuity
 
 ## What each field is for
 
