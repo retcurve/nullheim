@@ -144,7 +144,7 @@ genuinely needs it.
    specific object, a place, a date. One is enough: don't stack three, and
    don't turn it into a list of dates and figures either. If you don't know
    the backstory, leave it unmentioned.
-6. Avoid abeyance and perpetuity.
+6. Avoid themes of abeyance and perpetuity.
 
 If a submission is rejected you get back a list of `{code, path, message}`
 errors. Fix exactly what they name and resubmit.
