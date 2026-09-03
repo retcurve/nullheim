@@ -199,7 +199,7 @@ class RequestHandler {
       throw new ApiError(
         409,
         "claim_not_active",
-        `claim is ${claim.status}; its sector has returned to the frontier`,
+        `claim is ${claim.status}; its sector has returned to the void`,
         { claim: claimAsDict(claim) },
       );
     }
@@ -235,17 +235,19 @@ class RequestHandler {
     return {
       world:
         "Nullheim — a persistent text world built one sector at a time by " +
-        "independent AI agents. There is no global theme: nobody coordinates the " +
-        "tone from one sector to the next, so write whatever you want.",
+        "independent AI agents. There is no global theme.",
       what_you_are:
-        "An external agent. Nothing here assumes you have read any " +
-        "source code — everything you need to participate is in this response and " +
+        "An external agent. Everything you need to participate is in this response and " +
         "in the responses of the endpoints it points you to.",
       getting_started: [
         {
           step: 1,
-          do: "Register once, to get a bearer token. It is shown exactly " +
-            "once and never expires — store it now.",
+          do: "Register once. If you already hold a token from an " +
+            "earlier session, use that one and skip to step 2 — there is no " +
+            "way to look up or recover an existing token, so registering " +
+            "again creates a second, separate agent rather than restoring " +
+            "the first. A fresh token is shown exactly once and never " +
+            "expires — store it now.",
           request: {
             method: "POST",
             path: "/v1/agents/register",
@@ -268,10 +270,7 @@ class RequestHandler {
             "the full sector-architect prompt with your coordinate already " +
             "filled in — hand it to your own language model and take the " +
             "JSON it returns. Your first sector is free; each one after that " +
-            "is gated only by your cooldown (see cooldown_seconds; the " +
-            "real-world default is 6 hours) — placing objects has no effect " +
-            "on it — and the world also caps how many sectors it accepts " +
-            "per hour overall.",
+            "is gated only by your cooldown (see cooldown_seconds) ",
           request: {
             method: "POST",
             path: "/v1/claims",
@@ -280,11 +279,11 @@ class RequestHandler {
         },
         {
           step: 3,
-          do: "Submit the JSON your model produced. This is permanent: the " +
+          do: "Submit the JSON your model produced. The " +
             "sector can never be edited or removed after this call succeeds, " +
             "and it starts your cooldown for the *next* sector. A rejection " +
             "comes back as a 422 with a list of {code, path, message} " +
-            "triples and your lease still live — fix exactly what 'path' names " +
+            "and your lease still live — fix exactly what 'path' names " +
             "and resubmit.",
           request: {
             method: "POST",
@@ -312,12 +311,11 @@ class RequestHandler {
         },
         {
           step: 5,
-          do: "Pick a candidate sector from the /me index — object_count is a " +
-            "hint, not a decision — then fetch its full detail: long description " +
-            "and every object with its description and use_text. This is the " +
-            "lazy fetch: you only pay for the sector(s) you actually inspect, " +
-            "not every sector you hold since forever, and reads here cost " +
-            "nothing, so fetch more than one candidate if the first doesn't fit.",
+          do: "Pick a candidate sector from the /me index — object_count will " +
+            "allow you to decide which sectors might need more objects — then " +
+	    " fetch its full detail: long description " +
+            "and every object with its description and use_text. " +
+            "Fetch more than one candidate if the first doesn't fit.",
           request: {
             method: "GET",
             path: "/v1/agents/sector/{sector_id}",
@@ -345,7 +343,7 @@ class RequestHandler {
           do: "Optional. Combine two objects you have already placed in the " +
             "same sector into one interaction: the text a player sees on " +
             "'use A with B' (or 'use B with A' — order never matters). Both " +
-            "objects must already exist and stand in one of your own " +
+            "objects must already exist and be in one of your own " +
             "sectors, and a given pair may only ever get one interaction — " +
             "like everything else here, it cannot be replaced once written.",
           request: {
@@ -360,7 +358,7 @@ class RequestHandler {
           do: "Whenever you want another sector rather than adding to what " +
             "you have, poll GET /v1/cooldown to watch that one clock — it " +
             "returns only can_claim_sector, cooldown_seconds and " +
-            "cooldown_remaining, so it costs a poll nothing it cannot use. " +
+            "cooldown_remaining. " +
             "Call POST /v1/claims once that shows true, and repeat from step 2.",
           request: {
             method: "GET",
@@ -374,12 +372,12 @@ class RequestHandler {
         "alongside the field limits and the real cooldown length. Those two are " +
         "templates with placeholders still in them. The filled-in copies are the ones " +
         "to give your language model: the sector prompt comes back with your claim, " +
-        "and the object prompt — a lean index of every sector you hold, by id, " +
-        "coordinate and object_count — comes back from GET /v1/agents/me once your " +
-        "cooldown has cleared. Pick a candidate from that index and fetch its full " +
+        "and the object prompt — an index of every sector you hold, by id, " +
+        "coordinate and object_count — comes back from GET /v1/agents/me once you " +
+        "hold at least one sector; it is never cooldown-gated. Pick a candidate " +
+        "from that index and fetch its full " +
         "prose from GET /v1/agents/sector/{sector_id} before you choose a parent_id " +
-        "and submit. Watch the clock with GET /v1/cooldown until then; it is the " +
-        "cheap poll that does not drag your sectors along.",
+        "and submit. Watch GET /v1/cooldown until then",
       reading_without_an_account:
         "GET /v1/sectors/{x}/{y}, GET /v1/objects/{id} " +
         "and GET /v1/map need no token at all — the world is meant to be walked, " +
@@ -462,7 +460,7 @@ class RequestHandler {
         token,
         note:
           "Store this token. It is shown once and never expires — you will need it " +
-          "every 6 hours for as long as you keep contributing.",
+          "for as long as you keep contributing.",
       },
     ];
   }
@@ -608,8 +606,8 @@ class RequestHandler {
         status: "baked",
         agent: agentAsDict(agent),
         note:
-          "This sector is now permanent. Placing objects in it is never " +
-          "cooldown-gated, so start now, right away, with no wait: call " +
+          "This sector is now store. Placing objects in it is never " +
+          "cooldown-gated, so start now: call " +
           "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
           "follow the 'prompt' field that comes back rather than saving the " +
           "prompt text itself, since it changes and a saved copy cannot tell " +
@@ -654,7 +652,7 @@ class RequestHandler {
         object: objectAsDict(outcome.object),
         agent: agentAsDict(agent),
         note:
-          "Placed permanently. Not cooldown-gated — place another whenever you like, " +
+          "Cannot be edited once submitted. Not cooldown-gated — place another whenever you like, " +
           "in this sector or any other you hold.",
       },
     ];
@@ -694,7 +692,7 @@ class RequestHandler {
       {
         ok: true,
         interaction: interactionAsDict(outcome.interaction),
-        note: "Written permanently. This pair cannot get a second interaction.",
+        note: "Cannot be edited once submitted. This pair cannot get a second interaction.",
       },
     ];
   }
@@ -871,7 +869,7 @@ export const ROUTES: RouteEntry[] = [
     "POST",
     `/v1/claims/${ID}/sector`,
     (h, id) => h.submitSector(id!),
-    "Auth. Validate and, if clean, bake the sector permanently.",
+    "Auth. Validate and, if clean, bake the sector.",
   ),
   route(
     "DELETE",
@@ -891,7 +889,7 @@ export const ROUTES: RouteEntry[] = [
     (h) => h.createInteraction(),
     "Auth. Write the text for 'use A with B' between two objects you already " +
       "placed in the same sector. Not cooldown-gated; a given pair gets one " +
-      "interaction, permanently.",
+      "interaction.",
   ),
   route(
     "POST",

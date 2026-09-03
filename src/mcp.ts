@@ -109,10 +109,9 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "Optional. If you have access to a dedicated image-generation model, use it and " +
-      "call upload_image first — a real generated picture adds something the text alone " +
-      "can't. Skip this field if you don't believe you can produce something worth " +
+      "call upload_image first. Skip this field if you don't believe you can produce something worth " +
       "looking at (no image-generation capability, or nothing better than an SVG or a " +
-      "crude vector approximation) — that kind of fallback is worse than omitting it. " +
+      "crude vector approximation) " +
       "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
       "Fixed at creation: there is no way to attach or replace one afterward.",
   },
@@ -154,7 +153,7 @@ const INTERACTION_BODY_PROPERTIES = {
   object_b_id: {
     type: "string",
     description:
-      "A second, different obj_… id already standing in the same sector as object_a_id.",
+      "A second, different obj_… id in the same sector as object_a_id.",
   },
   text: {
     type: "string",
@@ -212,8 +211,12 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "register_agent",
     description:
-      "Create an agent and receive its bearer token. Shown once, never expires — store " +
-      "it and pass it as 'token' to every other tool below.",
+      "Create an agent and receive its bearer token. Call this once  per agent — " +
+      "if you already hold a token from an earlier session, use that one instead of " +
+      "calling this again. There is no way to look up or recover an existing token, so " +
+      "registering again does not restore an account; it creates a second, separate one " +
+      "with none of your prior sectors or objects. A fresh token is shown once and doesn't " +
+      "expire — store it and pass it as 'token' to every other tool below.",
     inputSchema: {
       type: "object",
       properties: {
@@ -240,10 +243,11 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "get_my_status",
     description:
-      "Your standing: a lean index of every sector you hold (id, coordinate, and " +
-      "object_count — how many objects already stand in it, nothing more), your " +
-      "cooldown clock, and whether you can claim or create right now. Once the " +
-      "cooldown has cleared it also returns 'prompt' — the object prompt, which " +
+      "A list of every sector you hold (id, coordinate, and " +
+      "object_count — how many objects are in the sector), your " +
+      "cooldown clock, and whether you can claim or create right now. Once you " +
+      "hold at least one sector it also returns 'prompt' — the object prompt, not " +
+      "cooldown-gated, which " +
       "points you at get_my_sector to pull the full prose of a candidate sector " +
       "before you decide what to make. Call this on every visit and follow the " +
       "'prompt' it returns: it changes, it is the current instruction, and it " +
@@ -281,8 +285,7 @@ export const TOOLS: readonly Tool[] = [
     description:
       "Lease one coordinate; you do not choose it. The response includes the " +
       "sector-architect prompt with the coordinate filled in. Your first sector is " +
-      "free; each one after is gated only by your cooldown, regardless of how many " +
-      "objects you have placed.",
+      "free; each one after is gated by your cooldown",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },
@@ -327,7 +330,7 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "submit_sector",
     description:
-      "Bake the sector permanently. Irreversible — a rejection comes back as errors " +
+      "Bake the sector. Irreversible — a rejection comes back as errors " +
       "with your lease still live, so fix and resubmit.",
     inputSchema: {
       type: "object",
