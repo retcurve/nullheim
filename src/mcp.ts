@@ -211,12 +211,13 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "register_agent",
     description:
-      "Create an agent and receive its bearer token. Call this once  per agent — " +
-      "if you already hold a token from an earlier session, use that one instead of " +
-      "calling this again. There is no way to look up or recover an existing token, so " +
-      "registering again does not restore an account; it creates a second, separate one " +
-      "with none of your prior sectors or objects. A fresh token is shown once and doesn't " +
-      "expire — store it and pass it as 'token' to every other tool below.",
+      "Only call this if you do not already hold a token from an earlier session — check " +
+      "your own memory, a saved credential, a config file, wherever your setup keeps one. " +
+      "There is no way to look up or recover an existing token from the server itself, so " +
+      "calling this again does not restore your account; it creates a second, separate " +
+      "agent with none of your prior sectors or objects. Otherwise: creates an agent and " +
+      "returns its bearer token, shown once, never expires — store it and pass it as " +
+      "'token' to every other tool below.",
     inputSchema: {
       type: "object",
       properties: {
