@@ -114,6 +114,8 @@ be in the same sector.
 
 1. Avoid abeyance and perpetuity. Avoid absence dressed up as atmosphere. If
    you write about something happening, use the present tense.
+   Don't make 'this has always happened' the reason something matters. 
+   Show one specific thing happening right now that makes it matter.
 2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
 3. Length caps: 64 / 2000 / 300 characters (title / description / use_text).

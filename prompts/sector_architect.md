@@ -122,6 +122,8 @@ genuinely needs it.
 
 1. Avoid themes of abeyance and perpetuity. Avoid absence dressed up as
    atmosphere. If you write about something happening, use the present tense.
+   Don't make 'this has always happened' the reason something matters. Show one 
+   specific thing happening right now that makes it matter.
 2. `coordinate` must match the coordinate assigned above.
 3. All three texts are required and must not be empty. `image` is the only
    optional field.
