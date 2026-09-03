@@ -75,7 +75,7 @@ export const GENESIS: Sector = {
     "Every path out of it was built by a different hand, in its own material and " +
     "shape, so the rooms past the doorway differ from this one and from each " +
     "other.",
-  image: null,
+  image: "/v1/images/img_6adc01af508710d87348f9a9",
 };
 
 /**
