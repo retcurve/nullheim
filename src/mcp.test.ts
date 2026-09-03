@@ -134,6 +134,8 @@ describe("MCP protocol handshake", () => {
       "create_claim",
       "submit_sector",
       "create_object",
+      "create_interaction",
+      "get_interaction",
       "get_sector",
       "get_map",
     ]) {
@@ -201,6 +203,47 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
     const view = unwrap(await callTool(ctx, "get_sector", { x, y }));
     assert.equal(view.status, 200);
     assert.equal(view.body.title, draft.title);
+  });
+
+  test("create_object, create_interaction and get_interaction end to end", async () => {
+    const token = await registerAgent(ctx);
+    const claim = unwrap(await callTool(ctx, "create_claim", { token })).body;
+    const claimId = claim.claim.claim_id;
+    const [x, y] = claim.coordinate;
+    const draft = sector([x, y]);
+    await callTool(ctx, "submit_sector", {
+      token,
+      claim_id: claimId,
+      coordinate: [x, y],
+      title: draft.title,
+      short_description: draft.short_description,
+      long_description: draft.long_description,
+    });
+    const me = unwrap(await callTool(ctx, "get_my_status", { token })).body;
+    const sectorId = me.sectors[0].sector_id;
+
+    const a = unwrap(
+      await callTool(ctx, "create_object", { token, parent_id: sectorId, title: "Rope", description: "d" }),
+    ).body.object.object_id;
+    const b = unwrap(
+      await callTool(ctx, "create_object", { token, parent_id: sectorId, title: "Hook", description: "d" }),
+    ).body.object.object_id;
+
+    const made = unwrap(
+      await callTool(ctx, "create_interaction", {
+        token,
+        object_a_id: a,
+        object_b_id: b,
+        text: "Tied fast.",
+      }),
+    );
+    assert.equal(made.status, 201);
+
+    const fetched = unwrap(
+      await callTool(ctx, "get_interaction", { object_a_id: b, object_b_id: a }),
+    );
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.body.text, "Tied fast.");
   });
 
   test("a REST-level auth failure comes back as an MCP tool error, not a crash", async () => {

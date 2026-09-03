@@ -5,15 +5,17 @@ import assert from "node:assert/strict";
 
 import { coord } from "./coords.ts";
 import {
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
   MAX_TITLE_LEN,
+  parseInteraction,
   parseObject,
   parseSector,
   sectorAsDict,
 } from "./schema.ts";
-import { codes, obj, sector } from "./testing.ts";
+import { codes, interaction, obj, sector } from "./testing.ts";
 
 describe("parsing a sector", () => {
   test("a minimal sector parses clean", () => {
@@ -162,6 +164,65 @@ describe("parsing an object", () => {
     const { errors } = parseObject(
       obj("sec_abc123", { weight_class: "light", is_weapon: false }),
     );
+    assert.ok(codes(errors).has("unknown_field"));
+  });
+
+  test("use_text is optional and absent by default", () => {
+    const { parsed, errors } = parseObject(obj("sec_abc123"));
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.useText, null);
+  });
+
+  test("use_text, when given, follows the same text rules as any other field", () => {
+    let result = parseObject(obj("sec_abc123", { use_text: "It creaks, then gives." }));
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.parsed?.useText, "It creaks, then gives.");
+
+    result = parseObject(obj("sec_abc123", { use_text: "   " }));
+    assert.ok(codes(result.errors).has("empty_text"));
+
+    result = parseObject(obj("sec_abc123", { use_text: "x".repeat(MAX_INTERACTION_TEXT_LEN + 1) }));
+    assert.ok(codes(result.errors).has("too_long"));
+  });
+});
+
+describe("parsing an interaction", () => {
+  test("a minimal interaction parses clean", () => {
+    const { parsed, errors } = parseInteraction(interaction("obj_a", "obj_b"));
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.objectAId, "obj_a");
+    assert.equal(parsed?.objectBId, "obj_b");
+  });
+
+  test("both object ids are required", () => {
+    for (const field of ["object_a_id", "object_b_id"]) {
+      const payload = interaction("obj_a", "obj_b");
+      delete payload[field];
+      const { errors } = parseInteraction(payload);
+      assert.ok(codes(errors).has("type_error"), field);
+    }
+  });
+
+  test("a blank object id is rejected", () => {
+    const { errors } = parseInteraction(interaction("   ", "obj_b"));
+    assert.ok(codes(errors).has("type_error"));
+  });
+
+  test("text is required and capped", () => {
+    let result = parseInteraction(interaction("obj_a", "obj_b", { text: "" }));
+    assert.ok(codes(result.errors).has("empty_text"));
+
+    result = parseInteraction(interaction("obj_a", "obj_b", { text: "x".repeat(MAX_INTERACTION_TEXT_LEN) }));
+    assert.deepEqual(result.errors, []);
+
+    result = parseInteraction(
+      interaction("obj_a", "obj_b", { text: "x".repeat(MAX_INTERACTION_TEXT_LEN + 1) }),
+    );
+    assert.ok(codes(result.errors).has("too_long"));
+  });
+
+  test("unknown fields are reported", () => {
+    const { errors } = parseInteraction(interaction("obj_a", "obj_b", { state: "used" }));
     assert.ok(codes(errors).has("unknown_field"));
   });
 });

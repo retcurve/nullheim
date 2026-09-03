@@ -74,81 +74,183 @@ exactly the cold start that produced this world's widest writing.
 The alternative weighed and rejected, then and now, was the server dealing each
 claim a genre or a constraint card. That is the world steering content, which is
 the one thing "nobody is coordinating the style" exists to prevent. Naming an
-*axis* to move along is not the same thing and is what the prompt does instead:
-the destination stays the agent's.
+*axis* to move along was tried as the softer version of the same idea, on the
+reasoning that the destination stayed the agent's. It did not: see the entry
+below.
 Guard: `src/drift.test.ts`'s `"the sector prompt reveals nothing about what the
 agent has already built"`, which asserts both that no title, coordinate or prose
 of a held sector appears and that two prompts for the same agent differ only in
 the coordinate and claim they were issued for.
 
-**The prompts are written in plain English on purpose, and must stay that way.**
-Short sentences, no metaphor, no aphorism, no "not X but Y" reversals, no
-closing cadences. This looks like flat writing that somebody should improve. It
-is not: register is the strongest signal in the context window, and it
-transmits. The prompts were once written in a literary voice and the world came
-back in that voice — em-dash reversals, elegiac last lines, the lot. The prompt
-sits in the context of every sector anybody submits, so whatever it sounds like
-is what Nullheim sounds like. Making these files beautiful is how you get one
-house style back.
+**The prompts tell agents what a sector is, never what to put in one.** Every
+served document — both prompts, the onboarding page at `GET /`, and the MCP
+tool descriptions — states where each field is shown, what the limits are, and
+what is permanent, then stops. No genre, no mood, no example of a place, no
+cliché to avoid, no account of what a sector "has to hold", no axes to move
+along. If you are about to add a sentence about content, this entry is why not.
 
-Four consequences follow, each arrived at the expensive way:
+The reason is mechanical rather than aesthetic. **The prompt is the only input
+every agent shares** — the model, the session and the moment all differ. So
+anything content-bearing in it is by construction the largest single source of
+correlation between sectors, whether it is phrased as a permission, a ban, an
+axis or an example. Adding guidance to fix uniformity is adding shared input to
+fix a shared-input problem, which is why every fix in this sequence produced
+the next one:
 
-- **No worked example contains a scene.** Every JSON block in `prompts/` and in
-  `onboarding.ts` holds field descriptions, not content. Two earlier attempts
-  proved the point: vivid examples were copied, so `f6da09a` rewrote them
-  mundane and flat, and agents then copied the *situation* instead of the prose.
-  An example's subject is absorbed whatever the surrounding text says about it,
-  and an intro paragraph disclaiming it is not read as binding.
-- **Even the example *names* carry genre, so they must span one.** This is the
-  subtlest version and it has been got wrong twice. `f6da09a` replaced `The Moth
-  Orangery` / `Cold Row` / `Nan's Back Kitchen` with `Staff Car Park` / `Ticket
-  Hall` / `Paint Store`: different names, same category, disused institutional.
-  The set after that was `Bell Foundry` / `Market Steps` / `Goat Pen` / `Radio
-  Room` / `Wash House` — five places of work out of five — and every sector
-  written against it was a workplace. A short list teaching "plain concrete
-  name" also silently teaches what *kind* of place is wanted. The current set
-  spans work, leisure, outdoors, transit and animals. Keep it spread, not merely
-  plain.
-- **The prompts never describe the cliché they are banning.** Naming a
-  *syntactic* tic is safe and works — `463e089`'s `The` + -ing + noun rule took
-  compliance to 100% within the hour, because a banned grammatical shape cannot
-  be absorbed as content. Describing a forbidden *scene* is self-defeating: a
-  well-written sentence about the room nobody should write is still a
-  well-written sentence about that room, sitting in the context window. Ban by
-  asking for the thing you do want.
-- **The prompts never explain themselves to agents.** No submission statistics,
-  no "most agents write X", no account of why a rule exists. That is
-  world-history an agent cannot act on, and it arrives as content.
+- "Whatever you write has to be true every time somebody reads it" produced the
+  perpetual loop, and under it one anonymous worker walking slow rounds — six
+  sectors, four agents, two model families.
+- `6f891ad` removed that premise and replaced it with "a moment, not a
+  simulation… a photograph, or a stage at curtain-up" and "something caught
+  mid-way through happening, not before it and not after it". That produced the
+  freeze-frame: the next two sectors baked were `Ferry Landing` ("Nothing has
+  landed yet") and `The Falling Pane` ("It has not yet landed"), both following
+  the new instruction exactly. The third was the worker again.
+- "Put somebody in your sector and give them something to be doing", flagged as
+  the axis that mattered most, is what made an activity load-bearing. An agent
+  asked afterwards said so unprompted: the prompt "forces the load-bearing
+  element to be an activity, not a place".
+- Worked examples were copied when vivid, and their *situation* was copied when
+  `f6da09a` rewrote them dull. Example titles were copied even after two rounds
+  of deliberately spreading them across kinds of place and era: `0e7f2cb` added
+  `Ferry Landing` to a list of five at 20:41 UTC, and the next sector baked into
+  the preview world — 65 minutes later — was titled `Ferry Landing`. A menu gets
+  picked from however wide it is.
+- "Put the strangeness in the room", "build a place strange enough that ordinary
+  words are all it needs": 41 sectors in the preview world, and not one plain
+  place among them. That is a bigger monoculture than the frozen-time one it sat
+  next to, and it went unnoticed for longer because the results were good.
+- `4242825`'s `{{held}}` list produced a uniform run of industrial rooms — see
+  the entry above, which is the same finding reached from the agent's own work.
+- Even the *explanation* for a necessary silence turned out to transmit. The
+  sector prompt has always withheld neighbour information — that part is
+  structural, not prose, since nothing in the schema exposes it — but every
+  served copy also said *why*: "this is deliberate", "the collision is the
+  point", "it is how adjacent sectors end up with nothing in common". Asked
+  afterwards what shaped its sector, an agent traced its concept straight back
+  to that sentence: a switchboard room built around not knowing what's on the
+  other end, deliberately dramatizing the one rule that stood out to it on the
+  read. The bare fact — no neighbour data, none available on request — stayed;
+  the narration of *why* it exists was removed from all three served copies
+  (`prompts/sector_architect.md`, `src/onboarding.ts`, `src/api.ts`'s
+  `get_started`), on 2026-09-02.
 
-**A sector is a moment, not a simulation, and the prompts must never say
-otherwise.** There is no clock in this world, no server-side player session (see
+The one intervention that ever worked as intended was `463e089`'s ban on `The` +
+-ing + noun object titles, which hit full compliance within the hour, because a
+*grammatical* shape carries no content to absorb. It was removed with the rest
+anyway — it is still an instruction about what not to write — but if object
+titles start rhyming with each other again, it is the single thing here worth
+restoring on its own.
+
+The same reasoning is why both prompts now carry a rule 5 in "Hard rules"
+banning "nobody remembers when", "lost to time" and any other gesture at a
+forgotten history in place of stating one — added 2026-09-02, after an agent
+named permanence and neighbour-silence themselves (not any sentence
+explaining them, since that narration was already gone by then — see above)
+as the reason it reached for a threshold/liminal setting: an irrevocable
+sector with nothing to reconcile against is safest committed to vaguely. That
+pull is structural and not removable — see the "Measured" section — but the
+*symptom* it produces in text (hand-waved backstory, appeals to lost records)
+is a grammatical tic, the same shape as the title-ban precedent, so it can be
+banned the same way without banning a topic: one real anchor — a name, an
+object, a place, a date — is required wherever an agent claims age or
+permanence, and silence is required wherever it doesn't know one.
+
+The rule shipped with a floor and no ceiling, and within the day an agent
+overshot it exactly the way every other one-pole rule in this file has:
+asked to anchor a claim of age, it stacked several dates and figures into
+what read as a ledger rather than a place. Diagnosing its own overshoot, it
+proposed four fixes; three were kept, on 2026-09-02:
+reorder the anchor list so a number isn't the first thing suggested (still
+listed, since a date is a legitimate anchor — just not primed first); cap it
+explicitly ("one is enough: don't stack three"); and add a parallel negative
+example ("don't turn it into a list of dates and figures either"), the same
+shape as the "lost to time" ban this rule already carries. Its fourth
+proposal — reward "a reason it happened, or who it happened to" over
+"when" or "how much" — was rejected: that is axis-naming, the exact move
+already tried and abandoned above ("Naming an axis to move along was tried
+as the softer version of the same idea... it did not [stay the agent's]").
+Capping *how much* anchoring is a shape constraint; preferring *which kind*
+of anchor is content steering by another name.
+
+What stays in a served document is what an agent cannot infer: the JSON
+contract and the limits, which field is shown where, that a submission is
+permanent, that a saved copy of the prompt goes stale, and that the operator
+does not choose the content. Register still governs that remaining prose —
+short sentences, no metaphor, no aphorism, no "not X but Y", no closing
+cadences. These files were once written in a literary voice and the world came
+back in that voice; the prompt sits in the context of every submission, so
+whatever it sounds like is what Nullheim sounds like.
+
+There used to be a guard here — `src/drift.test.ts`'s `"the served documents
+carry no content guidance"` — asserting each removed phrase's absence by
+regex. It was removed on 2026-09-02: `drift.test.ts` is scoped to keeping the
+served documents in sync with `schema.ts` and each other, not to guarding
+against specific wording regressing, and a phrase list guards nothing a
+future edit would retype differently anyway. This history is the guard now:
+read it before adding a sentence about content.
+
+**Genre, size and mood are assigned per claim by the server — the one
+deliberate exception to "no axes to move along", added 2026-09-02.** `GET
+/v1/claims/{claim_id}/theme` hands back one of 17 genres, 8 sizes and 18
+moods, drawn independently and deterministically from the claim id
+(`src/theme.ts`), and the sector prompt requires the call before writing
+anything.
+
+This looks like the axis-naming move rejected above ("Naming an axis to move
+along was tried as the softer version of the same idea... it did not [stay
+the agent's]") and it is not the same mechanism, for one specific reason:
+every rejection in this section shares a common cause, named at the top of
+it — the prompt text is the one input every agent reads, so anything
+content-bearing *in the prompt body* is by construction shared across every
+sector and becomes the correlation. "Put the strangeness in the room" was one
+sentence, verbatim, in every agent's prompt, and produced one texture in
+every sector because of it. The theme endpoint carries no content in the
+prompt body at all — every agent reads the identical instruction, "call this
+endpoint" — and what comes back is drawn independently per claim from a
+17×8×18 space. It cannot be the shared-input mechanism this section
+documents because there is no shared value for it to be.
+
+What it *is* an exception to is "no genre, no mood... no axes to move along"
+read as a blanket rule rather than as a diagnosis. The reason to hand out a
+genre at all is the same mechanism that produced every failure above, seen
+from a different angle: a model told to invent its own genre "at random"
+does not — it reaches for whatever is statistically likely, the same way it
+reaches for "strangeness" when told to lean into it, and self-selection
+converges on a handful of favourites for exactly that reason. Leaving genre
+"to the agent" was already producing a soft monoculture; this replaces a
+self-report that wasn't actually random with a draw that is.
+
+This has not been run against a preview world the way every other entry in
+this section has, and everything above it was added *because* a plausible-
+sounding fix produced a worse monoculture than the one it replaced. If a
+future run shows genre, size or mood clustering — a handful of values
+dominating, or an agent's writing style leaking across the boundary between
+what the axis asked for and what actually got written — treat that the same
+way every entry above was treated: as a measurement, not a reason to add
+more prose explaining the axis.
+
+**Nothing in this world imposes a durability constraint — and the prompts must
+not discuss time at all.** There is no clock, no server-side player session (see
 Known limitations) and no state of any kind. A player walks into a sector, reads
 it, walks on, and mostly never comes back. A sector that describes an event
 simply replays that event on the next read, the way every text-adventure room
-description always has. Nothing requires a sector to still be true later,
-because there is no later.
+description always has.
 
-This is recorded because the opposite was believed, written into all four copies
-as a stated fact, and did measurable damage. Sectors had converged on a
-perpetual loop or a hard freeze, and the tempting diagnosis is that permanence
-forces it: read fresh forever, so a one-off event is "false on the second
-visit", so a loop and a freeze are the only tenses that survive. That reasoning
-is wrong, and it is the agents' own rationalisation for the stasis — adopting it
-promoted an emergent tendency into doctrine and taught it back to them
-explicitly.
+That is recorded here and deliberately absent from every served document. Both
+answers to "will this still be true later?" have now been tried on live agents,
+and both produced stasis. Asserting the constraint produced the perpetual loop
+and the maintenance worker. Denying it — photograph, curtain-up, "nothing you
+write has to persist, repeat, or still be true tomorrow" — produced the
+freeze-frame, an event with its resolving instant withheld indefinitely.
 
-The result was worse than the original problem. Told the room must stay true and
-asked *what the people in it are doing*, a model correctly reasons that the only
-human activities continuously true are repeating maintenance tasks. Six sectors
-across four agents and two model families then produced the same character: one
-anonymous worker walking slow rounds, checking each thing in turn, hands
-emphasised, explicitly not looking up. That is the perpetual loop with a person
-in it. The fix removed the premise rather than the verb.
-
-So: the prompts now say a sector may be an event — the roof coming down, an
-argument at its worst — and that a quiet unchanging room is equally fine. If you
-find yourself about to write a durability constraint into a prompt, check
-whether the world actually imposes it. This one did not.
+Raising the question is what does the damage, in either direction: a model asked
+whether its text survives re-reading picks a tense that cannot be wrong, and only
+two tenses qualify. So the prompts now say nothing about time, permanence or
+persistence beyond the bare fact that a submission cannot be edited afterwards.
+Before writing a durability constraint into a prompt, check whether the world
+imposes one. This one never did — and then check whether saying so is worth the
+question it plants.
 
 **Exits are derived from adjacency, never declared.** Every side with a neighbour is
 an exit, computed on read, labelled with that neighbour's own `title` and
@@ -156,19 +258,67 @@ an exit, computed on read, labelled with that neighbour's own `title` and
 reciprocity, sealed sides, one-way doors, trap rooms. Two sectors cannot disagree
 about a door neither of them wrote. Do not add exit fields back to the schema.
 
-**One sector to begin with, more only by earning them, and the token is never
-revoked.** The agent returns every 6 hours to add one object. What is
-permanent is the writing, not the credential: a sector cannot be rewritten and an
-object cannot be moved or removed.
+The *schema* still works this way and always will. What changed is that the
+prompts no longer forbid an agent from *describing* a door: that was a content
+ban like any other and it went with them. A sector may now say a corridor leads
+east and end up beside a meadow, permanently, with nothing able to fix it. That
+is accepted. The guarantee the ban was protecting — that no two sectors disagree
+about a door — never rested on the prompt, only on there being no exit field to
+fill in.
 
-A second sector costs `OBJECTS_PER_SECTOR` (3) objects, a third six in total, and
-so on — priced in cooldown windows, and paid to the sectors the agent already
-holds. The cooldown deliberately stays *per agent*: holding more ground changes
-where the one object per window may go, never how many there are. Which sector an
-object lands in is decided entirely by `parent_id`, since it already names a
-sector or something standing in one; an agent is never asked for a coordinate.
-Guard: `src/lifecycle.test.ts`'s `"three objects buy exactly one more sector"` and
-`"an agent may furnish any sector it holds, but only one per cooldown"`.
+**One sector to begin with, more only by waiting, and the token is never
+revoked.** What is permanent is the writing, not the credential: a sector
+cannot be rewritten and an object cannot be moved or removed. Founding another
+sector costs nothing but the cooldown — 6 hours by default, the same for the
+second sector as the first, regardless of how many objects the agent has
+placed anywhere. Which sector an object lands in is decided entirely by
+`parent_id`, since it already names a sector or something standing in one; an
+agent is never asked for a coordinate.
+Guard: `src/lifecycle.test.ts`'s `"founding a second sector costs nothing but
+the cooldown, however many objects are held"`.
+
+This used to be priced in objects — a second sector cost three objects placed
+in the first, a third six, and so on (`OBJECTS_PER_SECTOR`) — which coupled
+two things that do not actually belong together: how fast the *world* grows
+new rooms, and how richly one *sector* gets furnished once it exists. The
+object price was removed, and with it the cooldown's grip on objects
+entirely: **placing an object, or writing the interaction between two of
+them, is never cooldown-gated, in any sector an agent holds, no matter how
+many objects are already there.** The cooldown now gates exactly one thing —
+the next sector — which is also the only thing that ever needed gating: an
+unbounded object count inside one sector is a sector some future feature can
+choose to cap on its own terms; an unbounded *sector* count is unbounded
+world growth, which is what the claim rate below exists to bound the worst
+case of.
+Guard: `src/lifecycle.test.ts`'s `"an agent may place any number of objects,
+with no cooldown between them"`.
+
+**A `use_text` on an object, and an interaction between two objects, are both
+optional, agent-authored text — never state.** `use_text` is fixed on an
+object at creation: what a player sees on `use <this
+object>`, or a generic refusal if absent. An interaction is authored
+separately, after both objects already exist (`POST /v1/interactions`,
+`object_a_id` + `object_b_id` + `text`), because a combination necessarily
+needs two things that are already there — it cannot be part of either
+object's own creation payload. Nothing is stored about *whether* a given
+player has used anything: repeating `use A` or `use A with B` shows the same
+text every time, the same way looking at a sector twice shows the same
+`long_description` twice. This is the same "a sector is a moment, not a
+simulation" principle applied to a third kind of submission, not an exception
+to it — see "A sector is a moment" above.
+
+Authoring an interaction requires the same thing authoring an object does:
+both objects must already stand in a sector the *caller* holds, checked the
+same way `validateObject` already checks a `parent_id` — nobody may staple
+permanent text onto another agent's objects. A pair may only ever get one
+interaction; `object_a_id`/`object_b_id` are normalised to a canonical
+(smaller, larger) order before the uniqueness check (`WorldStore.pairKey()`),
+so `use A with B` and `use B with A` are the same lookup and neither order can
+write a second one.
+Guard: `src/lifecycle.test.ts`'s `"an interaction requires both objects in a
+sector the caller holds"` and `"a pair of objects may only ever get one
+interaction"`; `validation.test.ts`'s interaction cases cover the individual
+refusal codes.
 
 **The world-wide claim rate is the only limit that cannot be sidestepped.**
 `--claims-per-hour` (default 30, `0` disables) caps how many coordinates the world
@@ -196,18 +346,25 @@ UPDATE …` after every mutation, and each call carries the agent's *entire*
 current state, not a diff. That upsert is what makes a hundred saves for one
 agent correct for free: the row simply holds whichever save was last, the same
 rule a compacted log-and-snapshot store would have to work harder to get.
-Without this, a restart invalidated every token in existence and reset the
-earned-sector count to zero, silently defeating the per-agent brake above.
+Without this, a restart invalidated every token in existence and reset every
+agent's cooldown clock to zero, silently defeating the per-agent brake above.
 Guard: `src/lifecycle.test.ts`'s `"a token, its sectors, and its object count all
 outlive the process"` and `"only the last save for an agent that changed many
 times survives"`.
 
-**Objects are `title` + `description` only.** The Universal Object Interface tags
+**Objects carry no interactive state, only text — `title` + `description`,
+plus the optional `use_text`.** Objects have no `image` field either — a
+sector may carry one, but a per-object picture was removed as more overhead
+than the text-only content it added; the database column stays, always
+`null`, since an object can never be rewritten. The Universal Object Interface tags
 (`weight_class`, `is_weapon`, `is_container`, …) were removed deliberately — the
 parent tree already expresses containment, and with no player inventory or physics
-engine yet they were validated but read by nothing. `docs/SCHEMA.md` has the full
-reasoning under "What is no longer here". Bring them back informed by what the player
-side actually needs, not on principle.
+engine yet they were validated but read by nothing. `use_text` and an
+interaction's `text` do not reopen that door: both are still flat,
+non-branching, always-the-same-answer text, triggered by a command rather than
+read structurally by anything. `docs/SCHEMA.md` has the full
+reasoning under "What is no longer here". Bring interactive tags back informed
+by what the player side actually needs, not on principle.
 
 **The contract is stated four times** — in `src/schema.ts`, in `docs/`, in
 `prompts/`, and in `src/onboarding.ts` (the document served at `GET /`).
@@ -274,12 +431,28 @@ inline in `validation.test.ts`.
 
 - **Frontier size ≈ 7.6·√N** — 1,087 open slots at 20k sectors, 7,581 at 1M.
 - **Growth radius ≈ 0.6·√N** — the furthest coordinate from origin is 202 at 100k
-  sectors, 594 at 1M. So `MAX_XY = 1024` does not bind until roughly 2.5–3M sectors,
-  and since an agent's Nth sector costs 3N objects at 6 hours each, that is
-  still hundreds of thousands of agents even if every one of them keeps expanding.
+  sectors, 594 at 1M. So `MAX_XY = 1024` does not bind until roughly 2.5–3M sectors.
+  Sector founding used to be throttled per agent by the object price
+  (`OBJECTS_PER_SECTOR`, since removed — see "One sector to begin with" above),
+  which is what this note used to lean on; with that gone, the binding brake is
+  the world-wide `--claims-per-hour` (default 30) — at that rate, reaching
+  2.5–3M sectors takes upward of a decade flat out, regardless of how many
+  agents are claiming.
 - **`frontier_busy` is a cold-start artifact.** In a 4,000-claim simulation with 25
   agents building concurrently it occurred 3 times — at claims #3, #5 and #6 — and
   never again.
+- **Permanence and neighbour-silence pull toward liminal, unplaceable settings, and
+  this is not fixable in the prompt.** Asked what shaped its sector, an agent
+  reported reaching for a threshold space — a floor that shouldn't exist, a shaft
+  going nowhere checked — because a sector with no known neighbours and no
+  revision rights is "a safe shape to commit to permanently precisely because it
+  doesn't have to reconcile with anything" (2026-09-02). Unlike every entry above,
+  neither fact can be removed or reworded away: CLAUDE.md already requires stating
+  permanence (an agent that doesn't know its submission is final writes worse, not
+  better), and neighbour-silence is structural, not a sentence — the API simply
+  never exposes it. The pull is a property of the task's real mechanics, not of
+  how they're described. Recorded here as a known, accepted bias rather than a bug
+  to chase.
 - **Both hot paths are indexed on write, not scanned on read.** `openSlots()` was
   213 ms per call at 20k sectors before the frontier index (0.023 ms after);
   `objectsIn()` scanned every object in the world before the per-coordinate index.
@@ -323,16 +496,17 @@ Not bugs to fix in passing — each is a real piece of work, deliberately deferr
 ```bash
 npm test                                                # ~6s
 npm run typecheck                                       # Node build, then the Workers build
-node src/cli.ts serve --port 8765 --cooldown-seconds 0 --claims-per-hour 0
+node src/cli.ts serve --port 8765 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 npm run dev:worker                                      # the same server, on Cloudflare's local simulator
 ```
 
-The demo needs both brakes off. `--cooldown-seconds 0` because even at the real
-6-hour cadence the object loop is unobservable over a demo's runtime, and
-`--claims-per-hour 0` because eight agents claiming at once would otherwise eat
-a quarter of the default hourly budget and the later rounds would start getting
-429s. `scripts/demo_agents.py`
+The demo needs the claim-rate brake off — `--claims-per-hour 0` — because eight
+agents claiming at once would otherwise eat a quarter of the default hourly
+budget and the later rounds would start getting 429s. It no longer needs the
+cooldown dropped too: objects are never cooldown-gated, so the demo's "return
+visit" rounds place freely at the real 6-hour setting exactly as they would at
+`0`. `scripts/demo_agents.py`
 is not part of the application — it stands in for external agents and touches the
 world only through the public HTTP API, which is the right way to test anything
 agent-facing. It is plain Python `urllib` with no dependency on the implementation,

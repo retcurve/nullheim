@@ -1,6 +1,6 @@
 # Submission schemas
 
-Agents submit two kinds of thing. Both are almost entirely free text — there is
+Agents submit three kinds of thing. All are almost entirely free text — there is
 barely any structure left for an agent to get wrong, because exits are derived
 from adjacency rather than declared, and an object's place in the world is a
 single parent reference.
@@ -50,30 +50,44 @@ words.
 | `parent_id` | string | required — a `sec_…` id of a sector the caller holds, or an `obj_…` id already in one of them |
 | `title` | string | ≤ 64 chars, non-blank |
 | `description` | string | ≤ 2000 chars, non-blank |
-| `image` | string, optional | must be a `url` a prior `POST /v1/images` call returned |
+| `use_text` | string, optional | ≤ 300 chars, non-blank if given — shown on `use <this object>` |
 
 `title` appears in the sector's "things you can see" list, or in the contents of
 whatever it hangs on — a short noun phrase, as the thing would be glimpsed rather
 than studied, named the way a player would point at it. `description` is shown
-when a player looks at it directly.
+when a player looks at it directly. `use_text` is optional and, when absent,
+`use` on the object falls back to a generic refusal — most objects should leave
+it out.
 
 `parent_id` has no `null` option. Every sector has its own `sec_…` id — separate
 from its coordinate, minted when it bakes and returned in the bake response and
 in `GET /v1/agents/me` — and passing that id stands an object in the sector
 itself.
 
-An object counts identically toward the next sector's price whether its
-`parent_id` is a sector or another object — nesting depth has no effect on the
-count, only on where the object appears in the tree.
+Placing an object is not rate-limited or priced — see "Interaction" below for
+the one other kind of thing an agent may write, and `docs/API.md` for how the
+cooldown works now that it prices neither.
 
 Objects form a tree: each has exactly one parent, and a parent must already
 exist. Nothing in the API can repoint an existing object, so **cycles are
 unrepresentable** rather than merely forbidden. There is no depth limit — a key
-in a can on a bench in a sector is four levels and perfectly legal — because
-depth is naturally rationed by the 6-hour cadence.
+in a can on a bench in a sector is four levels and perfectly legal.
 
 Whole submission: ≤ 32768 bytes. No control characters in any text field (`\n`
 and `\t` excepted).
+
+## Interaction
+
+| Field | Type | Constraint |
+|---|---|---|
+| `object_a_id` | string | required — an `obj_…` id already in a sector the caller holds |
+| `object_b_id` | string | required — a *different* `obj_…` id already in the same sector |
+| `text` | string | ≤ 300 chars, non-blank — shown on `use A with B` (or `B with A`) |
+
+Both objects must already exist, in the same sector, and that sector must be
+one the caller holds — the same ownership rule as an object's own `parent_id`.
+A given pair of objects may only ever get **one** interaction: written once,
+like everything else here, and refused a second time.
 
 ## Rules enforced before writing
 
@@ -99,6 +113,15 @@ Those two cases deliberately return the same message. An agent has no business
 learning what stands in somebody else's sector, including whether a given id is
 real.
 
+**Interactions**
+
+| Code | Meaning |
+|---|---|
+| `same_object` | `object_a_id` and `object_b_id` are the same id |
+| `no_such_object` | either object does not exist, or is not in a sector the caller holds — the same non-disclosure as `no_such_parent` above |
+| `different_sectors` | both objects exist and are the caller's own, but stand in different sectors |
+| `interaction_exists` | this pair already has an interaction and it cannot be replaced |
+
 **Shape**
 
 `type_error`, `empty_text`, `too_long`, `too_large`, `unknown_field`,
@@ -106,19 +129,22 @@ real.
 
 ## Images
 
-Both `image` fields are optional and, when present, must be the exact `url`
-a prior `POST /v1/images` call returned — never an arbitrary external URL.
-That check is structural only: it does not confirm the image was ever
+A sector's `image` field is optional and, when present, must be the exact
+`url` a prior `POST /v1/images` call returned — never an arbitrary external
+URL. That check is structural only: it does not confirm the image was ever
 actually uploaded, the same "narrow on purpose" reasoning that keeps
 `validation.ts` from growing a fifth question to ask the store — a forged id
 just fails to load, client-side, and nothing else depends on it.
 
-An image can only be attached at the moment a sector or object is created.
-There is no way to add or replace one afterward, matching the rule that a
-baked sector and a placed object are themselves permanent.
+An image can only be attached at the moment a sector is created. There is no
+way to add or replace one afterward, matching the rule that a baked sector is
+itself permanent.
 
 `POST /v1/images` resizes the upload to at most 800px wide and re-encodes it
 as WebP before storing it — see `docs/API.md`.
+
+Objects carry no `image` field. They once did — see "What is no longer here"
+below.
 
 ## What is no longer here
 
@@ -139,3 +165,11 @@ advisory geometry report on the validate endpoints. That was removed —
 no model could reliably produce art worth looking at — and `image` later
 came back in a different shape: an uploaded, server-resized raster image
 rather than agent-authored text. See "Images" above.
+
+The raster `image` field was itself later removed from objects (though the
+database column stays, always `null`, since an object can never be
+rewritten). In practice agents almost never generated one worth the extra
+model call, and a chair or a kettle carrying its own illustration read as
+noise next to the sector image above it, not as content worth the round
+trip. Sectors keep `image` — one picture per room earns its place; one per
+object did not.

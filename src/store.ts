@@ -44,6 +44,7 @@ export interface WorldObject {
   readonly title: string;
   readonly description: string;
   readonly image: string | null;
+  readonly useText: string | null;
   readonly agentId: string;
   readonly createdAt: number;
 }
@@ -56,9 +57,40 @@ export function objectAsDict(o: WorldObject): Record<string, unknown> {
     title: o.title,
     description: o.description,
     image: o.image,
+    use_text: o.useText,
     agent_id: o.agentId,
     created_at: o.createdAt,
   };
+}
+
+/**
+ * A written `use A with B` interaction. `objectAId`/`objectBId` are always
+ * stored with the lexicographically smaller object id first (see
+ * `pairKey()`), so a lookup never has to try both orderings.
+ */
+export interface Interaction {
+  readonly interactionId: string;
+  readonly objectAId: string;
+  readonly objectBId: string;
+  readonly text: string;
+  readonly agentId: string;
+  readonly createdAt: number;
+}
+
+export function interactionAsDict(i: Interaction): Record<string, unknown> {
+  return {
+    interaction_id: i.interactionId,
+    object_a_id: i.objectAId,
+    object_b_id: i.objectBId,
+    text: i.text,
+    agent_id: i.agentId,
+    created_at: i.createdAt,
+  };
+}
+
+/** The canonical (smaller, larger) ordering every interaction is stored and looked up by. */
+export function pairKey(objectAId: string, objectBId: string): [string, string] {
+  return objectAId < objectBId ? [objectAId, objectBId] : [objectBId, objectAId];
 }
 
 export interface Exit {
@@ -109,6 +141,7 @@ interface ObjectRow {
   title: string;
   description: string;
   image: string | null;
+  use_text: string | null;
   agent_id: string;
   created_at: number;
 }
@@ -121,6 +154,27 @@ function rowToObject(row: ObjectRow): WorldObject {
     title: row.title,
     description: row.description,
     image: row.image,
+    useText: row.use_text,
+    agentId: row.agent_id,
+    createdAt: row.created_at,
+  };
+}
+
+interface InteractionRow {
+  interaction_id: string;
+  object_a_id: string;
+  object_b_id: string;
+  text: string;
+  agent_id: string;
+  created_at: number;
+}
+
+function rowToInteraction(row: InteractionRow): Interaction {
+  return {
+    interactionId: row.interaction_id,
+    objectAId: row.object_a_id,
+    objectBId: row.object_b_id,
+    text: row.text,
     agentId: row.agent_id,
     createdAt: row.created_at,
   };
@@ -298,7 +352,7 @@ export class WorldStore {
     try {
       await this.#db.run(
         "INSERT INTO objects (object_id, x, y, parent_id, title, description, image, " +
-          "agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "use_text, agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           o.objectId,
           o.coordinate.x,
@@ -307,6 +361,7 @@ export class WorldStore {
           o.title,
           o.description,
           o.image,
+          o.useText,
           o.agentId,
           o.createdAt,
         ],
@@ -374,6 +429,50 @@ export class WorldStore {
   async allObjects(): Promise<WorldObject[]> {
     const rows = await this.#db.all<ObjectRow>("SELECT * FROM objects ORDER BY created_at ASC");
     return rows.map(rowToObject);
+  }
+
+  // --- interactions ---------------------------------------------------------
+
+  /**
+   * Write one `use A with B` interaction, permanently.
+   *
+   * Ids are normalised to `pairKey()`'s canonical order before the insert,
+   * so `idx_interactions_pair`'s uniqueness catches a duplicate regardless
+   * of which order the caller happened to name the two objects in.
+   */
+  async addInteraction(i: Interaction): Promise<void> {
+    const [objectAId, objectBId] = pairKey(i.objectAId, i.objectBId);
+    try {
+      await this.#db.run(
+        "INSERT INTO interactions (interaction_id, object_a_id, object_b_id, text, " +
+          "agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [i.interactionId, objectAId, objectBId, i.text, i.agentId, i.createdAt],
+      );
+    } catch (exc) {
+      if (isUniqueViolation(exc)) {
+        throw new Error(`${objectAId} and ${objectBId} already have an interaction`);
+      }
+      throw exc;
+    }
+  }
+
+  /** The interaction between two objects, in either order, or null if there isn't one. */
+  async interactionBetween(objectAId: string, objectBId: string): Promise<Interaction | null> {
+    const [a, b] = pairKey(objectAId, objectBId);
+    const row = await this.#db.first<InteractionRow>(
+      "SELECT * FROM interactions WHERE object_a_id = ? AND object_b_id = ?",
+      [a, b],
+    );
+    return row === null ? null : rowToInteraction(row);
+  }
+
+  async interactionExists(objectAId: string, objectBId: string): Promise<boolean> {
+    const [a, b] = pairKey(objectAId, objectBId);
+    const row = await this.#db.first(
+      "SELECT 1 FROM interactions WHERE object_a_id = ? AND object_b_id = ? LIMIT 1",
+      [a, b],
+    );
+    return row !== null;
   }
 }
 

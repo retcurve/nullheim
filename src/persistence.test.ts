@@ -150,6 +150,7 @@ describe("objects", () => {
         title,
         description: "d",
         image: null,
+        useText: null,
         agentId: "a",
         createdAt: index + 1,
       });

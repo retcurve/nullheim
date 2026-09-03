@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS objects (
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   image TEXT,
+  use_text TEXT,
   agent_id TEXT NOT NULL,
   created_at REAL NOT NULL
 );
@@ -52,6 +53,23 @@ CREATE TABLE IF NOT EXISTS objects (
 -- is "everything at this coordinate, oldest first" or a further filter by
 -- parent_id over that same set, so the index leads with the coordinate.
 CREATE INDEX IF NOT EXISTS idx_objects_coordinate ON objects (x, y, created_at);
+
+-- A `use A with B` interaction between two objects. Order-independent by
+-- convention — object_a_id and object_b_id are always stored with the
+-- lexicographically smaller id first (WorldStore.addInteraction() enforces
+-- this), so the unique index below is what makes a given pair write-once,
+-- the same permanence rule as everything else here, and a lookup never has
+-- to try both orderings against two separate rows.
+CREATE TABLE IF NOT EXISTS interactions (
+  interaction_id TEXT PRIMARY KEY,
+  object_a_id TEXT NOT NULL,
+  object_b_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_interactions_pair ON interactions (object_a_id, object_b_id);
 
 -- An agent's own state. `coordinates` is a JSON array of [x, y] pairs, in the
 -- order the agent founded them — small and always read as a whole (an agent

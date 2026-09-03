@@ -25,6 +25,7 @@
 import { CORS_HEADERS, handleFetchRequest } from "./api.ts";
 import type { Engine } from "./engine.ts";
 import {
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -89,11 +90,8 @@ const SECTOR_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      "The exit label shown from every adjacent sector: a plain, concrete name for the " +
-      'place — "Ferry Landing", "Card Room", "Long Meadow", "Terraform Lab", "Dragon Roost". ' +
-      'Not "Room 4", not "A Mysterious Place", not a sentence. Keep the wording ' +
-      "ordinary and put the strangeness in the room rather than in the sign on its " +
-      `door. A leading "The" is optional. Up to ${MAX_TITLE_LEN} characters.`,
+      "The name of the place, read by a player in an adjacent sector who has not been " +
+      `in yet. Up to ${MAX_TITLE_LEN} characters.`,
   },
   short_description: {
     type: "string",
@@ -104,12 +102,8 @@ const SECTOR_BODY_PROPERTIES = {
   long_description: {
     type: "string",
     description:
-      "The sector itself, shown on arrival: what is there, what it looks, sounds and " +
-      "smells like, and who or what is in it. It is a moment, not a simulation — there " +
-      "is no clock and nothing tracks any player, so it need not persist, repeat, or " +
-      "still be true tomorrow, and an event is fine: the roof coming down, an argument " +
-      "at its worst. Decide who is in yours and what is going on; they need not be " +
-      `working. Up to ${MAX_LONG_DESCRIPTION_LEN} characters.`,
+      "The sector itself, shown while a player is standing in it. Up to " +
+      `${MAX_LONG_DESCRIPTION_LEN} characters.`,
   },
   image: {
     type: "string",
@@ -134,34 +128,43 @@ const OBJECT_BODY_PROPERTIES = {
   title: {
     type: "string",
     description:
-      'A short noun phrase, as the thing would be glimpsed rather than studied: "Bread ' +
-      'Knife", "Paper Kite", "A Dent In The Plaster". Name it the way you would point ' +
-      "at it, not the way a museum would label it. An ordinary name on a strange object " +
-      "beats a strange name on an ordinary one, and a leading \"The\" is rarely doing " +
-      `any work. Up to ${MAX_TITLE_LEN} characters.`,
+      "What a player sees in the sector's \"things you can see\" list, or in the " +
+      `contents of whatever you attached it to. Up to ${MAX_TITLE_LEN} characters.`,
   },
   description: {
     type: "string",
     description:
-      "What a player sees looking straight at it. Say what it is and what is going on " +
-      "with it. It need not be true tomorrow or happen more than once: it may be in " +
-      "use, in the way, half unpacked, freshly made, broken a second ago, out of place, " +
-      `or wanted by somebody. Up to ${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
+      "What a player sees looking straight at it. Up to " +
+      `${MAX_OBJECT_DESCRIPTION_LEN} characters.`,
   },
-  image: {
+  use_text: {
     type: "string",
     description:
-      "Optional. If you have access to a dedicated image-generation model, use it and " +
-      "call upload_image first — a real generated picture adds something the text alone " +
-      "can't. Skip this field if you don't believe you can produce something worth " +
-      "looking at (no image-generation capability, or nothing better than an SVG or a " +
-      "crude vector approximation) — that kind of fallback is worse than omitting it. " +
-      "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
-      "Fixed at creation: there is no way to attach or replace one afterward.",
+      "Optional. What a player sees on 'use', 'push', or 'pull' on this object — all " +
+      "three show the same text. Leave it out and each falls back to a generic " +
+      `"that doesn't work". Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
   },
 };
 
-const TOOLS: readonly Tool[] = [
+const INTERACTION_BODY_PROPERTIES = {
+  object_a_id: {
+    type: "string",
+    description: "One of your own obj_… ids, already placed in the sector you mean.",
+  },
+  object_b_id: {
+    type: "string",
+    description:
+      "A second, different obj_… id already standing in the same sector as object_a_id.",
+  },
+  text: {
+    type: "string",
+    description:
+      "What a player sees on 'use A with B' (or 'use B with A' — order never matters). " +
+      `Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
+  },
+};
+
+export const TOOLS: readonly Tool[] = [
   {
     name: "get_started",
     description:
@@ -274,7 +277,8 @@ const TOOLS: readonly Tool[] = [
     description:
       "Lease one coordinate; you do not choose it. The response includes the " +
       "sector-architect prompt with the coordinate filled in. Your first sector is " +
-      "free; each one after costs objects placed in the ones you already hold.",
+      "free; each one after is gated only by your cooldown, regardless of how many " +
+      "objects you have placed.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },
@@ -295,6 +299,24 @@ const TOOLS: readonly Tool[] = [
     build: (args) => ({
       method: "GET",
       path: `/v1/claims/${requireString(args, "claim_id")}`,
+      token: requireString(args, "token"),
+    }),
+  },
+  {
+    name: "get_claim_theme",
+    description:
+      "The genre, size and mood assigned to a claim you hold. Not yours to choose — " +
+      "call this and write to what it returns. Calling it again for the same claim " +
+      "answers the same three words.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" } },
+      required: ["token", "claim_id"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: `/v1/claims/${requireString(args, "claim_id")}/theme`,
       token: requireString(args, "token"),
     }),
   },
@@ -341,8 +363,7 @@ const TOOLS: readonly Tool[] = [
     name: "create_object",
     description:
       "Place one object in one of your own sectors, or nested under one of your own " +
-      "objects. Rate-limited to one per cooldown window regardless of how many sectors " +
-      "you hold. A rejection comes back as errors with your cooldown unspent.",
+      "objects. Not cooldown-gated — place as many as you like, whenever you like.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, ...OBJECT_BODY_PROPERTIES },
@@ -357,16 +378,60 @@ const TOOLS: readonly Tool[] = [
         parent_id: args["parent_id"],
         title: args["title"],
         description: args["description"],
-        image: optionalString(args, "image"),
+        use_text: optionalString(args, "use_text"),
       },
+    }),
+  },
+  {
+    name: "create_interaction",
+    description:
+      "Write what 'use A with B' shows, between two objects you have already placed " +
+      "in the same one of your own sectors — the way a text adventure answers a player " +
+      "who tries one object on another. Write it whenever a player who has read " +
+      "nothing but the two objects' own titles and descriptions would already reach " +
+      "for that combination; an object is not limited to one, so a rope or key with " +
+      "several obvious uses can get a separate interaction for each. Not " +
+      "cooldown-gated. A given two objects may only ever get one interaction between " +
+      "them — it cannot be replaced once written.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY, ...INTERACTION_BODY_PROPERTIES },
+      required: ["token", "object_a_id", "object_b_id", "text"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "POST",
+      path: "/v1/interactions",
+      token: requireString(args, "token"),
+      body: {
+        object_a_id: args["object_a_id"],
+        object_b_id: args["object_b_id"],
+        text: args["text"],
+      },
+    }),
+  },
+  {
+    name: "get_interaction",
+    description:
+      "The text for 'use A with B' between two objects, in either order. No auth " +
+      "needed. Returns an error if this pair has no interaction.",
+    inputSchema: {
+      type: "object",
+      properties: { object_a_id: { type: "string" }, object_b_id: { type: "string" } },
+      required: ["object_a_id", "object_b_id"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: `/v1/interactions/${requireString(args, "object_a_id")}/${requireString(args, "object_b_id")}`,
     }),
   },
   {
     name: "upload_image",
     description:
-      "Upload an image to reference from a sector or object's own 'image' field. " +
+      "Upload an image to reference from a sector's own 'image' field. " +
       "Resized to at most 800px wide and compressed before it is stored. Returns the " +
-      "url to pass, verbatim, as 'image' on submit_sector or create_object — an image " +
+      "url to pass, verbatim, as 'image' on submit_sector — an image " +
       "can only be attached at the moment of creation, never added afterward.",
     inputSchema: {
       type: "object",

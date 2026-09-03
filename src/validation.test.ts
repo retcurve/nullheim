@@ -13,9 +13,15 @@ import * as coords from "./coords.ts";
 import { ORIGIN, coord, type Coordinate } from "./coords.ts";
 import type { Engine } from "./engine.ts";
 import type { ValidationError } from "./errors.ts";
-import { parseObject, parseSector } from "./schema.ts";
-import { validateObject, validateSector, type ValidationStore } from "./validation.ts";
-import { codes, makeEngine, obj, root, sector, settle } from "./testing.ts";
+import { parseInteraction, parseObject, parseSector } from "./schema.ts";
+import {
+  validateInteraction,
+  validateObject,
+  validateSector,
+  type InteractionValidationStore,
+  type ValidationStore,
+} from "./validation.ts";
+import { codes, found, interaction, makeEngine, obj, root, sector, settle } from "./testing.ts";
 
 /**
  * A synchronous facade over the live store, built by prefetching exactly what
@@ -60,6 +66,32 @@ async function checkObject(engine: Engine, at: Coordinate, payload: unknown): Pr
     count: () => 0, // unused by validateObject
   };
   return [...errors, ...validateObject(parsed, [at], store)];
+}
+
+/**
+ * `sectorCoordinates` is the caller's whole estate, the same shape
+ * `validateInteraction` itself takes — an interaction's two objects may
+ * stand in any one of the caller's own sectors, not just a single named one.
+ */
+async function checkInteraction(
+  engine: Engine,
+  sectorCoordinates: readonly Coordinate[],
+  payload: unknown,
+): Promise<ValidationError[]> {
+  const { parsed, errors } = parseInteraction(payload);
+  if (parsed === null) {
+    return errors;
+  }
+  const [a, b, exists] = await Promise.all([
+    engine.store.getObject(parsed.objectAId),
+    engine.store.getObject(parsed.objectBId),
+    engine.store.interactionExists(parsed.objectAId, parsed.objectBId),
+  ]);
+  const store: InteractionValidationStore = {
+    getObject: (id) => (id === parsed.objectAId ? a : id === parsed.objectBId ? b : null),
+    interactionExists: () => exists,
+  };
+  return [...errors, ...validateInteraction(parsed, sectorCoordinates, store)];
 }
 
 describe("sector rules", () => {
@@ -192,5 +224,92 @@ describe("object rules", () => {
     // nothing in the API can do that.
     assert.equal(second!.parentId, first!.objectId);
     assert.equal((await engine.store.getObject(first!.objectId))!.parentId, null);
+  });
+});
+
+describe("interaction rules", () => {
+  test("two objects in the same sector may interact", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Rope" }));
+    const { object: b } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Hook" }));
+
+    assert.deepEqual(
+      await checkInteraction(engine, agent.coordinates, interaction(a!.objectId, b!.objectId)),
+      [],
+    );
+  });
+
+  test("an object cannot interact with itself", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent)));
+
+    const errors = await checkInteraction(engine, agent.coordinates, interaction(a!.objectId, a!.objectId));
+    assert.ok(codes(errors).has("same_object"));
+  });
+
+  test("a nonexistent object is refused", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent)));
+
+    const errors = await checkInteraction(
+      engine,
+      agent.coordinates,
+      interaction(a!.objectId, "obj_nope"),
+    );
+    assert.ok(codes(errors).has("no_such_object"));
+  });
+
+  test("an object in another agent's sector is indistinguishable from a missing one", async () => {
+    const { engine } = await makeEngine();
+    const { agent: one } = await settle(engine, "one");
+    const { agent: two } = await settle(engine, "two");
+    const { object: mine } = await engine.createObject(one, obj(await root(engine, one)));
+    const { object: theirs } = await engine.createObject(
+      two,
+      obj(await root(engine, two), { title: "Their Secret Thing" }),
+    );
+
+    const trespass = await checkInteraction(engine, one.coordinates, interaction(mine!.objectId, theirs!.objectId));
+    const missing = await checkInteraction(
+      engine,
+      one.coordinates,
+      interaction(mine!.objectId, "obj_deadbeefdeadbeef"),
+    );
+    assert.deepEqual(codes(trespass), codes(missing));
+    assert.ok(!trespass.some((e) => e.message.includes("Their Secret Thing")));
+  });
+
+  test("two objects in different sectors, even both the caller's own, are refused", async () => {
+    const { engine } = await makeEngine({ cooldownSeconds: 0 });
+    const { agent } = await settle(engine);
+    await found(engine, agent);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent, 0)));
+    const { object: b } = await engine.createObject(agent, obj(await root(engine, agent, 1)));
+
+    const errors = await checkInteraction(engine, agent.coordinates, interaction(a!.objectId, b!.objectId));
+    assert.ok(codes(errors).has("different_sectors"));
+  });
+
+  test("a pair of objects may only ever get one interaction", async () => {
+    const { engine } = await makeEngine();
+    const { agent } = await settle(engine);
+    const { object: a } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Rope" }));
+    const { object: b } = await engine.createObject(agent, obj(await root(engine, agent), { title: "Hook" }));
+
+    const { interaction: made, errors } = await engine.createInteraction(
+      agent,
+      interaction(a!.objectId, b!.objectId),
+    );
+    assert.deepEqual(errors, []);
+    assert.notEqual(made, null);
+
+    // Same order, and the reverse order — both refused.
+    const again = await checkInteraction(engine, agent.coordinates, interaction(a!.objectId, b!.objectId));
+    assert.ok(codes(again).has("interaction_exists"));
+    const reversed = await checkInteraction(engine, agent.coordinates, interaction(b!.objectId, a!.objectId));
+    assert.ok(codes(reversed).has("interaction_exists"));
   });
 });

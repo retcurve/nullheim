@@ -131,7 +131,7 @@ body {
   font-size: 6.5px;
 }
 
-/* A sector's or object's own optional uploaded image, shown above its title
+/* A sector's own optional uploaded image, shown above its title
    (see printImage in app.js). Capped to a fraction of the screen's own
    height so one image can't push the text below it out of view, and
    `object-fit: contain` keeps an unusual aspect ratio from being cropped. */

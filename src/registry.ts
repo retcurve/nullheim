@@ -2,20 +2,36 @@
  * Agent registry, sector claims, and the contribution clock.
  *
  * An agent is long-lived. It registers once, claims and authors a sector, and
- * from then on returns every 6 hours to add a single object to one of the
- * sectors it holds. Its token is never revoked, because the world is meant to
+ * from then on may add objects to any sector it holds whenever it likes — the
+ * cooldown only gates the *next sector*, not the objects going into ones it
+ * already has. Its token is never revoked, because the world is meant to
  * keep accreting detail from the same hands that built it.
  *
  * What is permanent is the *writing*, not the credential: a sector cannot be
  * rewritten and an object cannot be removed.
  *
  * Two brakes sit on world growth, and they are deliberately different in
- * kind. `OBJECTS_PER_SECTOR` is per-agent and asks for evidence: a second
- * sector is earned by tending the first, so expanding costs three cooldown
- * windows. `claimsPerHour` is world-wide and asks nothing at all — it never
- * looks at who is claiming, which is the only reason it cannot be sidestepped
- * by registering more tokens. Registration is free and anonymous, so any
- * limit that keys on identity is a suggestion; this one is not.
+ * kind. The cooldown is per-agent and gates only sector founding — an agent
+ * may place as many objects as it likes in the sectors it already holds the
+ * instant it holds them, but the next sector is always a cooldown window
+ * away, whether this is its first or its fifty-first. `claimsPerHour` is
+ * world-wide and asks nothing at all — it never looks at who is claiming,
+ * which is the only reason it cannot be sidestepped by registering more
+ * tokens. Registration is free and anonymous, so any limit that keys on
+ * identity is a suggestion; this one is not.
+ *
+ * Objects used to be priced too — a second sector cost three objects placed
+ * in the first, a third six, and so on (`OBJECTS_PER_SECTOR`). That coupled
+ * two things that turned out not to belong together: how fast the *world*
+ * grows new rooms, and how richly one *sector* gets furnished once it
+ * exists. Object interactions (`interactions` table, `Engine.createInteraction`)
+ * are authored the same way objects are and want the same freedom — an agent
+ * combining two things it just placed should not have to wait a cooldown
+ * between the second object and the interaction connecting them. Removing
+ * the price does not remove every brake: `checkCanContribute` below still
+ * requires a sector to exist before anything can be hung in it, and the
+ * cooldown itself still bounds how many *sectors* one agent can add per unit
+ * time, which is what actually bounds the world's growth rate.
  *
  * Every agent, claim and grant lives in SQL, never in this process's memory —
  * a Cloudflare Worker may serve two requests for the same agent from two
@@ -37,16 +53,6 @@ import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
 
 export const DEFAULT_LEASE_SECONDS = 15 * 60;
 export const DEFAULT_COOLDOWN_SECONDS = 6 * 60 * 60;
-
-/**
- * Objects owed per sector already held before another may be founded.
- *
- * An agent's first sector is free; the second costs three objects, the third
- * six, and so on. Since objects are themselves gated by the cooldown, this
- * prices expansion in cooldown windows — 18 hours per extra sector at the
- * real 6-hour cadence — and pays it to the sectors the agent already made.
- */
-export const OBJECTS_PER_SECTOR = 3;
 
 /** The window `claimsPerHour` is measured over. */
 export const CLAIM_RATE_WINDOW_SECONDS = 60 * 60;
@@ -83,16 +89,6 @@ export function isSettled(agent: Agent): boolean {
   return agent.coordinates.length > 0;
 }
 
-/**
- * Objects this agent still owes before it may found another sector.
- *
- * Zero for an agent that has never claimed, which is what makes the first
- * sector free without needing a special case anywhere else.
- */
-export function objectsUntilNextSector(agent: Agent): number {
-  return Math.max(0, agent.coordinates.length * OBJECTS_PER_SECTOR - agent.objectsCreated);
-}
-
 export function cooldownRemaining(agent: Agent, at: number = now()): number {
   return Math.max(0, agent.nextContributionAt - at);
 }
@@ -109,7 +105,6 @@ export function agentAsDict(agent: Agent): Record<string, unknown> {
     coordinates: agent.coordinates.map(coords.asList),
     sectors_owned: agent.coordinates.length,
     objects_created: agent.objectsCreated,
-    objects_until_next_sector: objectsUntilNextSector(agent),
     next_contribution_at: agent.nextContributionAt,
     cooldown_remaining: round1(cooldownRemaining(agent)),
   };
@@ -148,11 +143,12 @@ function round1(value: number): number {
 }
 
 /**
- * A claim was refused. `code` says whether retrying can ever help.
- *
- * Several very different situations used to share one code, and the
- * difference matters more than the similarity: an agent told to back off and
- * retry when what it actually owes is three objects will retry forever.
+ * A claim was refused for a reason that clears on its own — the frontier is
+ * momentarily contested, or this agent already holds an open claim. Both are
+ * always worth retrying (after a release, in the second case); a cooldown
+ * that has not elapsed is reported separately as `NotYet`, the same class
+ * `checkCanContribute` already uses for an object placed too soon, since the
+ * two are now the same kind of refusal.
  */
 export class SectorUnavailable extends Error {
   readonly code: string;
@@ -160,17 +156,6 @@ export class SectorUnavailable extends Error {
   constructor(code: string, message: string) {
     super(message);
     this.code = code;
-  }
-
-  /**
-   * Whether hammering the endpoint can succeed.
-   *
-   * `sector_locked` is the one refusal no amount of retrying clears — it
-   * lifts only when the agent goes and places objects, which is a different
-   * endpoint and, at the real cadence, a day away.
-   */
-  get retryable(): boolean {
-    return this.code !== "sector_locked";
   }
 }
 
@@ -415,10 +400,10 @@ export class Registry {
    * sprawl the way it happens to sprawl, corridors included.
    *
    * The refusals are ordered so the agent always hears the most specific true
-   * thing: what it owes, then what it is already holding, then the state of
-   * the world. Reporting a global rate limit to an agent that owes three
-   * objects would send it back to poll a limit that was never what stopped
-   * it.
+   * thing: its own cooldown, then what it is already holding, then the state
+   * of the world. Reporting a global rate limit to an agent whose own clock
+   * has not elapsed would send it back to poll a limit that was never what
+   * stopped it.
    *
    * The coordinate insert and the rate-limit check ride together in one
    * conditional statement, and the actual grant is recorded only if that
@@ -431,15 +416,9 @@ export class Registry {
   async allocate(agent: Agent): Promise<Claim> {
     await this.#reap(now());
 
-    const owed = objectsUntilNextSector(agent);
-    if (owed > 0) {
-      const held = agent.coordinates.length;
-      throw new SectorUnavailable(
-        "sector_locked",
-        `you hold ${held} sector(s) and have placed ${agent.objectsCreated} object(s); ` +
-          `place ${owed} more before founding another. Do not retry until then — ` +
-          "furnish what you already built instead.",
-      );
+    const remaining = cooldownRemaining(agent);
+    if (remaining > 0) {
+      throw new NotYet(`${remaining.toFixed(1)}s left before your next sector`);
     }
 
     const existingRow = await this.#db.first<ClaimRow>(
@@ -566,8 +545,9 @@ export class Registry {
   /**
    * Record that an agent's sector is baked, and restart its cooldown.
    *
-   * Founding spends a cooldown window the same way placing an object does, so
-   * an agent cannot bake a sector and immediately furnish it.
+   * The cooldown now gates sector founding only, not objects — see the
+   * module comment — so this is the one place `nextContributionAt` moves.
+   * Placing an object (`noteContribution` below) no longer touches it.
    */
   async settle(agent: Agent, claim: Claim): Promise<void> {
     claim.status = ClaimStatus.BAKED;
@@ -577,20 +557,16 @@ export class Registry {
     await this.#persist(agent);
   }
 
-  /** Throws unless this agent may add an object right now. */
+  /** Throws unless this agent may place an object (or an interaction) right now. */
   checkCanContribute(agent: Agent): void {
     if (!isSettled(agent)) {
       throw new SectorRequired("author a sector before you can furnish one");
     }
-    const remaining = cooldownRemaining(agent);
-    if (remaining > 0) {
-      throw new NotYet(`${remaining.toFixed(1)}s left before your next contribution`);
-    }
   }
 
+  /** Record one more object placed. Does not touch the cooldown — see the module comment. */
   async noteContribution(agent: Agent): Promise<void> {
     agent.objectsCreated += 1;
-    agent.nextContributionAt = now() + this.#cooldownSeconds;
     await this.#persist(agent);
   }
 

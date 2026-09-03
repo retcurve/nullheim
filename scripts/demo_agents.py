@@ -3,19 +3,19 @@
 
 This script is **not** part of the application. It stands in for the independent
 AI agents that connect from outside, and it only ever touches the world through
-the public HTTP API — register, claim, author a sector, then return on the
-cooldown to add objects.
+the public HTTP API — register, claim, author a sector, then return to add
+objects, which is never rate-limited.
 
 Real agents would put the rendered prompt (returned on the claim) in front of a
 language model and post whatever JSON came back. These ones draw from a bank of
 canned sectors in deliberately clashing genres, which is enough to prove the
 pipeline and keeps the demo deterministic.
 
-    python -m nullheim serve --port 8765 --cooldown-seconds 0
+    python -m nullheim serve --port 8765 --claims-per-hour 0
     python scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 
-The default 15-minute cooldown makes the object loop unobservable in a demo, so
-run the server with --cooldown-seconds 0 to watch it work.
+--claims-per-hour 0 only matters if you push --agents past the default hourly
+sector budget; objects themselves have no cooldown to work around.
 """
 
 from __future__ import annotations
@@ -165,14 +165,9 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
 
 
 def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
-    """A return visit: add one object, if the cooldown has elapsed."""
+    """A return visit: add one object. Never cooldown-gated."""
     status, me = client.call("GET", "/v1/agents/me")
     if status != 200:
-        return False
-
-    if not me["can_create_object"]:
-        remaining = me["agent"]["cooldown_remaining"]
-        print(f"  {label}: cooldown, {remaining}s to go")
         return False
 
     title, description = palette["objects"][index % len(palette["objects"])]
@@ -194,9 +189,6 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
         "POST", "/v1/objects",
         {"parent_id": parent_id, "title": title, "description": description},
     )
-    if status == 429:
-        print(f"  {label}: cooldown — {result['error']['message']}")
-        return False
     if status != 201:
         print(f"  {label}: rejected — {result.get('errors', result)}")
         return False
@@ -324,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
             if furnish(client, label, palette, round_index):
                 placed += 1
         if not placed:
-            print("  (nobody was off cooldown — run the server with --cooldown-seconds 0)")
+            print("  (every placement failed — is the server still up?)")
             break
 
     if not args.skip_rogue:

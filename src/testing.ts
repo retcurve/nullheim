@@ -51,6 +51,20 @@ export function obj(
   };
 }
 
+/** A minimal, valid interaction submission between two objects, in wire form. */
+export function interaction(
+  objectAId: unknown,
+  objectBId: unknown,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    object_a_id: objectAId,
+    object_b_id: objectBId,
+    text: "What a player sees on use A with B.",
+    ...overrides,
+  };
+}
+
 export function codes(errors: readonly ValidationError[]): Set<string> {
   return new Set(errors.map((error) => error.code));
 }
@@ -172,8 +186,9 @@ export async function found(engine: Engine, agent: Agent): Promise<BakedSector> 
 /**
  * Place `count` objects in the agent's first sector.
  *
- * Enough of these and the agent has paid for its next sector — which is the
- * only way past `sector_locked`, so most multi-sector fixtures start here.
+ * Placing objects no longer affects when the agent may found another sector
+ * — that is gated purely by the cooldown now — so this exists only for
+ * fixtures that actually want a furnished sector, not to unlock anything.
  */
 export async function furnish(engine: Engine, agent: Agent, count: number): Promise<void> {
   for (let i = 0; i < count; i += 1) {

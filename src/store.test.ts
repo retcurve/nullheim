@@ -137,6 +137,7 @@ describe("the object index", () => {
       title: "A Thing",
       description: "d",
       image: null,
+      useText: null,
       agentId: "a",
       createdAt: 1,
     });
@@ -159,6 +160,7 @@ describe("the object index", () => {
         title,
         description: "d",
         image: null,
+        useText: null,
         agentId: "a",
         createdAt: index + 1,
       });
@@ -169,6 +171,7 @@ describe("the object index", () => {
         title: `next-${title}`,
         description: "d",
         image: null,
+        useText: null,
         agentId: "b",
         createdAt: index + 1,
       });
@@ -194,6 +197,7 @@ describe("the object index", () => {
         title: id,
         description: "d",
         image: null,
+        useText: null,
         agentId: "a",
         createdAt,
       });
@@ -268,6 +272,7 @@ describe("the static lock", () => {
       title: "t",
       description: "d",
       image: null,
+      useText: null,
       agentId: "a",
       createdAt: 1,
     };

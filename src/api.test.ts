@@ -7,7 +7,7 @@ import { request as httpRequest, Agent as HttpAgent, type Server } from "node:ht
 import type { SqliteDb } from "./db/sqlite.ts";
 import type { Engine } from "./engine.ts";
 import { listen, makeServer } from "./node-server.ts";
-import { makeEngine, makePng, sector, obj } from "./testing.ts";
+import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
 
 interface Ctx {
   base: string;
@@ -159,9 +159,12 @@ describe("public endpoints", () => {
   });
 
   test("root teaches the three texts, not just the endpoints", async () => {
-    // The craft, not only the choreography — this is the whole point of /.
+    // What each field is and where the player sees it — the one thing an
+    // arriving agent cannot work out from the endpoint list alone. It no
+    // longer teaches anything about *what* to write; see drift.test.ts's
+    // "the served documents carry no content guidance".
     const { text } = await callText(ctx, "GET", "/");
-    for (const taught of ["short_description", "long_description", "Exits are derived"]) {
+    for (const taught of ["short_description", "long_description", "adjacent sector"]) {
       assert.ok(text.includes(taught), taught);
     }
   });
@@ -299,7 +302,9 @@ describe("auth", () => {
     const { status, payload } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.equal(status, 200);
     assert.ok(payload.can_create_object);
-    assert.ok(!payload.can_claim_sector);
+    // This describe block runs with cooldownSeconds: 0, so a second sector
+    // is available immediately too.
+    assert.ok(payload.can_claim_sector);
   });
 
   test("the object prompt arrives with the standing that says it can be used", async () => {
@@ -343,6 +348,34 @@ describe("claim flow", () => {
     assert.deepEqual(new Set(Object.keys(context)), new Set(["claim", "coordinate", "world_sectors", "prompt"]));
     assert.ok(context.prompt.includes("Sector Architect"));
     assert.ok(context.prompt.includes(`[${context.coordinate[0]}, ${context.coordinate[1]}]`));
+  });
+
+  test("a claim's theme is a genre, size and mood, stable across calls", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const first = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
+    assert.equal(first.status, 200);
+    assert.equal(first.payload.claim_id, claimId);
+    assert.equal(typeof first.payload.genre, "string");
+    assert.equal(typeof first.payload.size, "string");
+    assert.equal(typeof first.payload.mood, "string");
+
+    const second = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
+    assert.equal(second.status, 200);
+    assert.deepEqual(second.payload, first.payload);
+  });
+
+  test("a claim's theme belongs to the claiming agent only", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const { status } = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, {
+      token: await newAgent(ctx, "other"),
+    });
+    assert.equal(status, 403);
   });
 
   test("the claim payload leaks nothing about neighbours", async () => {
@@ -398,21 +431,16 @@ describe("claim flow", () => {
     assert.equal(payload.error.code, "claim_not_active");
   });
 
-  test("a settled agent cannot claim again until it has furnished", async () => {
-    const { token } = await settle(ctx);
-    const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
-    assert.equal(status, 409);
-    assert.equal(payload.error.code, "sector_locked");
-    assert.equal(payload.retryable, false);
-  });
+  // A settled agent's cooldown blocking a second claim is covered in the
+  // "cooldown" describe block below, which runs with a real cooldownSeconds
+  // — this describe block's 0 would make that refusal unreachable here.
 
-  test("holding a claim blocks a second one but is retryable", async () => {
+  test("holding a claim blocks a second one", async () => {
     const token = await newAgent(ctx);
     await newClaim(ctx, token);
     const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
     assert.equal(status, 409);
     assert.equal(payload.error.code, "claim_in_progress");
-    assert.equal(payload.retryable, true);
   });
 
   test("releasing a claim returns the sector", async () => {
@@ -432,7 +460,7 @@ describe("claim flow", () => {
     );
   });
 
-  test("a fully leased frontier is a retryable 409", async () => {
+  test("a fully leased frontier is a 409", async () => {
     for (let i = 0; i < 4; i += 1) {
       await newClaim(ctx, await newAgent(ctx, `a${i}`));
     }
@@ -441,22 +469,8 @@ describe("claim flow", () => {
     });
     assert.equal(status, 409);
     assert.equal(payload.error.code, "frontier_busy");
-    assert.equal(payload.retryable, true);
   });
 
-  test("the three claim refusals are distinguishable", async () => {
-    // One code for all three would have agents retrying a permanent refusal.
-    const { token: settled } = await settle(ctx, "settled");
-    const holding = await newAgent(ctx, "holding");
-    await newClaim(ctx, holding);
-
-    const codes = new Set<string>();
-    for (const token of [settled, holding]) {
-      const { payload } = await call(ctx, "POST", "/v1/claims", { token });
-      codes.add(payload.error.code);
-    }
-    assert.deepEqual(codes, new Set(["sector_locked", "claim_in_progress"]));
-  });
 });
 
 describe("expired lease", () => {
@@ -585,6 +599,105 @@ describe("objects", () => {
     assert.equal(detail.objects[0].title, "Can");
     assert.equal(detail.objects[0].contains[0].title, "Key");
   });
+
+  test("use_text rides on the object and defaults to null", async () => {
+    const { token } = await settle(ctx);
+    const sectorId = await sectorIdFor(ctx, token);
+    const { payload: withText } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { title: "Lever", use_text: "It creaks, then gives." }),
+      token,
+    });
+    const { payload: withoutText } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { title: "Statue" }),
+      token,
+    });
+
+    const { payload: leverView } = await call(ctx, "GET", `/v1/objects/${withText.object.object_id}`);
+    assert.equal(leverView.use_text, "It creaks, then gives.");
+    const { payload: statueView } = await call(ctx, "GET", `/v1/objects/${withoutText.object.object_id}`);
+    assert.equal(statueView.use_text, null);
+  });
+});
+
+describe("interactions", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  async function twoObjects(token: string): Promise<[string, string]> {
+    const sectorId = await sectorIdFor(ctx, token);
+    const { payload: a } = await call(ctx, "POST", "/v1/objects", { body: obj(sectorId, { title: "Rope" }), token });
+    const { payload: b } = await call(ctx, "POST", "/v1/objects", { body: obj(sectorId, { title: "Hook" }), token });
+    return [a.object.object_id, b.object.object_id];
+  }
+
+  test("writing and reading an interaction, in either order", async () => {
+    const { token } = await settle(ctx);
+    const [a, b] = await twoObjects(token);
+
+    const { status, payload } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction(a, b, { text: "Tied fast." }),
+      token,
+    });
+    assert.equal(status, 201);
+    assert.equal(payload.interaction.text, "Tied fast.");
+
+    const { status: forward, payload: forwardView } = await call(ctx, "GET", `/v1/interactions/${a}/${b}`);
+    assert.equal(forward, 200);
+    assert.equal(forwardView.text, "Tied fast.");
+
+    const { status: reverse, payload: reverseView } = await call(ctx, "GET", `/v1/interactions/${b}/${a}`);
+    assert.equal(reverse, 200);
+    assert.equal(reverseView.text, "Tied fast.");
+  });
+
+  test("no interaction between a pair is a 404, not an error about the objects", async () => {
+    const { token } = await settle(ctx);
+    const [a, b] = await twoObjects(token);
+    const { status, payload } = await call(ctx, "GET", `/v1/interactions/${a}/${b}`);
+    assert.equal(status, 404);
+    assert.equal(payload.error.code, "no_such_interaction");
+  });
+
+  test("a second interaction for the same pair is refused", async () => {
+    const { token } = await settle(ctx);
+    const [a, b] = await twoObjects(token);
+    await call(ctx, "POST", "/v1/interactions", { body: interaction(a, b), token });
+
+    const { status, payload } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction(a, b, { text: "Something else." }),
+      token,
+    });
+    assert.equal(status, 422);
+    assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["interaction_exists"]));
+  });
+
+  test("an object in another agent's sector is not a valid interaction partner", async () => {
+    const { token: firstToken } = await settle(ctx, "first");
+    const [a] = await twoObjects(firstToken);
+    const { token: secondToken } = await settle(ctx, "second");
+    const [, theirsB] = await twoObjects(secondToken);
+
+    const { status, payload } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction(a, theirsB),
+      token: secondToken,
+    });
+    assert.equal(status, 422);
+    assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["no_such_object"]));
+  });
+
+  test("an agent with no sector gets 409, not 422", async () => {
+    const token = await newAgent(ctx);
+    const { status, payload } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction("obj_a", "obj_b"),
+      token,
+    });
+    assert.equal(status, 409);
+    assert.equal(payload.error.code, "sector_required");
+  });
+
 });
 
 describe("images", () => {
@@ -667,27 +780,24 @@ describe("images", () => {
     assert.equal(view.image, uploaded.url);
   });
 
-  test("a fetched url can be attached to an object at creation", async () => {
+  test("objects carry no image field: passing one is refused as unrecognised", async () => {
     const { token } = await settle(ctx);
-    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
     const sectorId = await sectorIdFor(ctx, token);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
 
-    const { status, payload: result } = await call(ctx, "POST", "/v1/objects", {
+    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
       body: obj(sectorId, { image: uploaded.url }),
       token,
     });
-    assert.equal(status, 201);
-    assert.equal(result.object.image, uploaded.url);
-
-    const { payload: view } = await call(ctx, "GET", `/v1/objects/${result.object.object_id}`);
-    assert.equal(view.image, uploaded.url);
+    assert.equal(status, 422);
+    assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["unknown_field"]));
   });
 
   test("an arbitrary external url is refused structurally, never fetched", async () => {
-    const { token } = await settle(ctx);
-    const sectorId = await sectorIdFor(ctx, token);
-    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
-      body: obj(sectorId, { image: "https://example.com/evil.png" }),
+    const token = await newAgent(ctx);
+    const claim = await newClaim(ctx, token);
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { image: "https://example.com/evil.png" }),
       token,
     });
     assert.equal(status, 422);
@@ -755,56 +865,33 @@ describe("the world-wide claim rate", () => {
   });
 });
 
-describe("earning a second sector", () => {
+describe("multiple sectors", () => {
   let ctx: Ctx;
   beforeEach(async () => {
     ctx = await setup({ cooldownSeconds: 0 });
   });
   afterEach(teardown);
 
-  test("three objects unlock another claim, over HTTP", async () => {
+  test("a second sector is available immediately, with no objects placed at all", async () => {
     const { token } = await settle(ctx);
-    const sectorId = await sectorIdFor(ctx, token);
-
-    for (let i = 0; i < 3; i += 1) {
-      const { status } = await call(ctx, "POST", "/v1/objects", {
-        body: obj(sectorId, { title: `Thing ${i}` }),
-        token,
-      });
-      assert.equal(status, 201);
-    }
-
     const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
     assert.equal(status, 201);
     assert.notDeepEqual(payload.coordinate, (await call(ctx, "GET", "/v1/agents/me", { token }))
       .payload.agent.coordinates[0]);
   });
 
-  test("agents/me counts down to the next sector", async () => {
+  test("agents/me carries no object debt any more", async () => {
     const { token } = await settle(ctx);
-    const { payload: before } = await call(ctx, "GET", "/v1/agents/me", { token });
-    assert.equal(before.agent.sectors_owned, 1);
-    assert.equal(before.agent.objects_until_next_sector, 3);
-    assert.equal(before.can_claim_sector, false);
-
-    const sectorId = await sectorIdFor(ctx, token);
-    for (let i = 0; i < 3; i += 1) {
-      await call(ctx, "POST", "/v1/objects", {
-        body: obj(sectorId, { title: `Thing ${i}` }),
-        token,
-      });
-    }
-
-    const { payload: after } = await call(ctx, "GET", "/v1/agents/me", { token });
-    assert.equal(after.agent.objects_until_next_sector, 0);
-    assert.equal(after.can_claim_sector, true);
+    const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.equal(payload.agent.sectors_owned, 1);
+    assert.ok(!("objects_until_next_sector" in payload.agent));
+    assert.equal(payload.can_claim_sector, true);
   });
 
-  test("a fresh agent owes nothing for its first sector", async () => {
+  test("a fresh agent may claim its first sector immediately", async () => {
     const token = await newAgent(ctx, "newcomer");
     const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.equal(payload.agent.sectors_owned, 0);
-    assert.equal(payload.agent.objects_until_next_sector, 0);
     assert.equal(payload.can_claim_sector, true);
     assert.deepEqual(payload.sectors, []);
   });
@@ -812,9 +899,7 @@ describe("earning a second sector", () => {
   test("an object lands in whichever held sector parent_id names", async () => {
     const { token } = await settle(ctx);
     const first = await sectorIdFor(ctx, token, 0);
-    for (let i = 0; i < 3; i += 1) {
-      await call(ctx, "POST", "/v1/objects", { body: obj(first, { title: `T${i}` }), token });
-    }
+    await call(ctx, "POST", "/v1/objects", { body: obj(first, { title: "T0" }), token });
 
     const context = await newClaim(ctx, token);
     await call(ctx, "POST", `/v1/claims/${context.claim.claim_id}/sector`, {
@@ -846,41 +931,79 @@ describe("cooldown", () => {
   });
   afterEach(teardown);
 
-  test("a fresh sector is on cooldown", async () => {
+  test("a fresh sector's cooldown blocks another claim, not furnishing it", async () => {
     const { token } = await settle(ctx);
-    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
-      body: obj("sec_whatever"),
-      token,
-    });
+    const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
     assert.equal(status, 429);
     assert.equal(payload.error.code, "cooldown");
     assert.ok(payload.agent.cooldown_remaining > 0);
   });
 
-  test("agents/me reports the wait", async () => {
-    const { token } = await settle(ctx);
-    const { payload: me } = await call(ctx, "GET", "/v1/agents/me", { token });
-    assert.equal(me.can_create_object, false);
-    assert.equal(me.cooldown_seconds, 3600);
-    assert.ok(me.agent.cooldown_remaining > 0);
-    // This is the endpoint the clock is watched on, so most calls to it are
-    // polls that can do nothing with a prompt. They do not carry one.
-    assert.equal(me.prompt, undefined);
+  test("a cooldown refusal and a claim_in_progress refusal are distinguishable", async () => {
+    // One code for both would have agents retrying a refusal that only time
+    // clears the same way as one a release or submission clears.
+    const { token: settled } = await settle(ctx, "settled");
+    const holding = await newAgent(ctx, "holding");
+    await newClaim(ctx, holding);
+
+    const codes = new Set<string>();
+    const statuses = new Set<number>();
+    for (const token of [settled, holding]) {
+      const { status, payload } = await call(ctx, "POST", "/v1/claims", { token });
+      statuses.add(status);
+      codes.add(payload.error.code);
+    }
+    assert.deepEqual(codes, new Set(["cooldown", "claim_in_progress"]));
+    assert.deepEqual(statuses, new Set([429, 409]));
   });
 
-  test("/v1/cooldown is the cheap poll and carries only the clock", async () => {
+  test("placing an object is unaffected by the sector cooldown", async () => {
+    const { token } = await settle(ctx);
+    const sectorId = await sectorIdFor(ctx, token);
+    const { status } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId),
+      token,
+    });
+    assert.equal(status, 201);
+  });
+
+  test("placing an interaction is unaffected by the sector cooldown", async () => {
+    const { token } = await settle(ctx);
+    const sectorId = await sectorIdFor(ctx, token);
+    const { payload: a } = await call(ctx, "POST", "/v1/objects", { body: obj(sectorId, { title: "Rope" }), token });
+    const { payload: b } = await call(ctx, "POST", "/v1/objects", { body: obj(sectorId, { title: "Hook" }), token });
+    const { status } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction(a.object.object_id, b.object.object_id),
+      token,
+    });
+    assert.equal(status, 201);
+  });
+
+  test("agents/me is never cooldown-gated, and reports the sector clock separately", async () => {
+    const { token } = await settle(ctx);
+    const { payload: me } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.equal(me.can_create_object, true);
+    assert.equal(me.can_claim_sector, false);
+    assert.equal(me.cooldown_seconds, 3600);
+    assert.ok(me.agent.cooldown_remaining > 0);
+    // Settled, so the object prompt rides here even while the sector clock
+    // runs — placing an object was never gated by it.
+    assert.ok(me.prompt.includes("Object Artisan"));
+  });
+
+  test("/v1/cooldown is the cheap poll and carries only the sector clock", async () => {
     const { token } = await settle(ctx);
     // Right after settling, the cooldown is up nowhere near cleared.
     const { status, payload } = await call(ctx, "GET", "/v1/cooldown", { token });
     assert.equal(status, 200);
-    assert.equal(payload.can_create_object, false);
+    assert.equal(payload.can_claim_sector, false);
     assert.equal(payload.cooldown_seconds, 3600);
     assert.ok(payload.cooldown_remaining > 0);
     // The whole point of the endpoint: nothing an agent polling only for the
     // clock has to pay for — no sectors, no object trees, no prompt.
     assert.deepEqual(
       Object.keys(payload).sort(),
-      ["can_create_object", "cooldown_remaining", "cooldown_seconds"],
+      ["can_claim_sector", "cooldown_remaining", "cooldown_seconds"],
     );
     assert.equal(payload.sectors, undefined);
     assert.equal(payload.prompt, undefined);

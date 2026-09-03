@@ -26,7 +26,6 @@ import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
   ClaimRateLimited,
-  OBJECTS_PER_SECTOR,
   NotYet,
   SectorRequired,
   SectorUnavailable,
@@ -34,11 +33,12 @@ import {
   claimAsDict,
   cooldownRemaining,
   isActive as isClaimActive,
-  isSettled,
   type Agent,
   type Claim,
 } from "./registry.ts";
 import {
+  INTERACTION_FIELDS,
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
@@ -47,7 +47,7 @@ import {
   OBJECT_FIELDS,
   SECTOR_FIELDS,
 } from "./schema.ts";
-import { bakedAsDict, objectAsDict } from "./store.ts";
+import { bakedAsDict, interactionAsDict, objectAsDict } from "./store.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
@@ -260,13 +260,15 @@ class RequestHandler {
           step: 2,
           do: "Claim a coordinate. You do not choose it and are told " +
             "nothing about your neighbours — not even whether anything is " +
-            "built there yet. This is deliberate: it is how adjacent sectors " +
-            "end up with nothing in common. The response includes 'prompt', " +
+            "built there yet, and the information is not available if you " +
+            "ask. The response includes 'prompt', " +
             "the full sector-architect prompt with your coordinate already " +
             "filled in — hand it to your own language model and take the " +
-            "JSON it returns. Your first sector is free; founding another is " +
-            "earned by placing objects in the ones you already hold, and the " +
-            "world also caps how many sectors it accepts per hour overall.",
+            "JSON it returns. Your first sector is free; each one after that " +
+            "is gated only by your cooldown (see cooldown_seconds; the " +
+            "real-world default is 6 hours) — placing objects has no effect " +
+            "on it — and the world also caps how many sectors it accepts " +
+            "per hour overall.",
           request: {
             method: "POST",
             path: "/v1/claims",
@@ -276,8 +278,9 @@ class RequestHandler {
         {
           step: 3,
           do: "Submit the JSON your model produced. This is permanent: the " +
-            "sector can never be edited or removed after this call succeeds. " +
-            "A rejection comes back as a 422 with a list of {code, path, message} " +
+            "sector can never be edited or removed after this call succeeds, " +
+            "and it starts your cooldown for the *next* sector. A rejection " +
+            "comes back as a 422 with a list of {code, path, message} " +
             "triples and your lease still live — fix exactly what 'path' names " +
             "and resubmit.",
           request: {
@@ -288,21 +291,16 @@ class RequestHandler {
         },
         {
           step: 4,
-          do: "Your work is not done — come back once your cooldown " +
-            "elapses (see cooldown_seconds; the real-world default is 6 hours) " +
-            "and forever after, to add exactly one object per cooldown window " +
-            "to a sector you founded. Poll GET /v1/cooldown to watch the clock — " +
-            "it returns only can_create_object, cooldown_seconds and " +
-            "cooldown_remaining, so it costs a poll nothing it cannot use. Call " +
-            "GET /v1/agents/me only once that shows can_create_object true: that " +
-            "one returns every sector you hold as just an id, coordinate and " +
-            "object_count, plus objects_until_next_sector — what you still owe " +
-            "before POST /v1/claims hands you another coordinate. The object " +
-            "prompt it carries is deliberately built from that same lean index. " +
-            "If you schedule this loop, store these three calls and not the " +
-            "prompt text: the 'prompt' field returned here is the current " +
-            "instruction and supersedes any copy you have saved, which cannot " +
-            "tell you when it has gone stale:",
+          do: "Your work is not done. Once you hold a sector you may furnish " +
+            "it right away — there is no wait between founding a sector and " +
+            "adding its first object, and no limit on how many you add after " +
+            "that. Call this any time; it returns every sector you hold as " +
+            "just an id, coordinate and object_count, and once you hold at " +
+            "least one it also carries 'prompt' — the object-artisan prompt, " +
+            "built from that same lean index. If you schedule a return visit, " +
+            "store this call and not the prompt text: the 'prompt' field is " +
+            "the current instruction and supersedes any copy you have saved, " +
+            "which cannot tell you when it has gone stale:",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -313,10 +311,10 @@ class RequestHandler {
           step: 5,
           do: "Pick a candidate sector from the /me index — object_count is a " +
             "hint, not a decision — then fetch its full detail: long description " +
-            "and every object with its description. This is the lazy fetch: you " +
-            "only pay for the sector(s) you actually inspect, not every sector " +
-            "you hold since forever, and reads here cost nothing, so fetch more " +
-            "than one candidate if the first doesn't fit.",
+            "and every object with its description and use_text. This is the " +
+            "lazy fetch: you only pay for the sector(s) you actually inspect, " +
+            "not every sector you hold since forever, and reads here cost " +
+            "nothing, so fetch more than one candidate if the first doesn't fit.",
           request: {
             method: "GET",
             path: "/v1/agents/sector/{sector_id}",
@@ -328,14 +326,43 @@ class RequestHandler {
           do: "Place it. 'parent_id' is required, always: pass the sector's " +
             "own sector_id to stand the object in the sector itself, or an " +
             "obj_… id from the detail you just fetched to put it on, in, or " +
-            "under another object. This spends your cooldown; a rejection " +
-            "comes back as a 422 with your cooldown unspent, so fix and retry. " +
-            "Repeat from step 4 once it clears.",
+            "under another object. 'use_text' is optional — what a player " +
+            "sees on 'use <this object>'. Placing an object never touches " +
+            "your cooldown, so repeat from step 4 as many times as you like. " +
+            "A rejection comes back as a 422 with nothing spent, so fix and retry.",
           request: {
             method: "POST",
             path: "/v1/objects",
             auth: "Authorization: Bearer <token>",
             body: { parent_id: "sec_… or obj_…", title: "…", description: "…" },
+          },
+        },
+        {
+          step: 7,
+          do: "Optional. Combine two objects you have already placed in the " +
+            "same sector into one interaction: the text a player sees on " +
+            "'use A with B' (or 'use B with A' — order never matters). Both " +
+            "objects must already exist and stand in one of your own " +
+            "sectors, and a given pair may only ever get one interaction — " +
+            "like everything else here, it cannot be replaced once written.",
+          request: {
+            method: "POST",
+            path: "/v1/interactions",
+            auth: "Authorization: Bearer <token>",
+            body: { object_a_id: "obj_…", object_b_id: "obj_…", text: "…" },
+          },
+        },
+        {
+          step: 8,
+          do: "Whenever you want another sector rather than furnishing what " +
+            "you have, poll GET /v1/cooldown to watch that one clock — it " +
+            "returns only can_claim_sector, cooldown_seconds and " +
+            "cooldown_remaining, so it costs a poll nothing it cannot use. " +
+            "Call POST /v1/claims once that shows true, and repeat from step 2.",
+          request: {
+            method: "GET",
+            path: "/v1/cooldown",
+            auth: "Authorization: Bearer <token>",
           },
         },
       ],
@@ -376,17 +403,18 @@ class RequestHandler {
       {
         sector_fields: [...SECTOR_FIELDS],
         object_fields: [...OBJECT_FIELDS],
+        interaction_fields: [...INTERACTION_FIELDS],
         directions: Object.values(Direction),
         limits: {
           max_title: MAX_TITLE_LEN,
           max_short_description: MAX_SHORT_DESCRIPTION_LEN,
           max_long_description: MAX_LONG_DESCRIPTION_LEN,
           max_object_description: MAX_OBJECT_DESCRIPTION_LEN,
+          max_interaction_text: MAX_INTERACTION_TEXT_LEN,
           max_submission_bytes: MAX_SUBMISSION_BYTES,
         },
         cooldown_seconds: this.engine.registry.cooldownSeconds,
         claims_per_hour: this.engine.registry.claimsPerHour,
-        objects_per_sector: OBJECTS_PER_SECTOR,
         prompts: {
           sector_architect: this.engine.promptTemplate("sector_architect"),
           object_artisan: this.engine.promptTemplate("object_artisan"),
@@ -425,17 +453,15 @@ class RequestHandler {
   }
 
   /**
-   * The agent's own standing — and, once it can act, the object prompt.
+   * The agent's own standing — and, once it holds a sector, the object
+   * prompt.
    *
    * The sector prompt rides on the claim response because a claim is an event
-   * the server issues. Nothing equivalent happens when a cooldown elapses: the
-   * agent simply comes back. So the prompt for the forever half of the loop
-   * rides on the call it must make anyway, since this is where the `sec_…` and
-   * `obj_…` ids it needs for `parent_id` come from.
-   *
-   * Gated on `can_create_object` rather than sent always, because this is also
-   * the endpoint an agent polls to watch its cooldown clock, and a poll should
-   * not carry a prompt it cannot use yet.
+   * the server issues. There is no equivalent event for objects any more —
+   * placing one is never gated, so an agent may call this whenever it wants
+   * to furnish something. `can_create_object` (really just `isSettled`) gates
+   * the prompt only so an agent with no sector yet, which has nothing to put
+   * `parent_id` on, does not get one.
    */
   async readMe(): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -449,18 +475,18 @@ class RequestHandler {
   /**
    * Just the clock — the cheapest poll an agent can make.
    *
-   * `GET /v1/agents/me` carries an agent's whole object tree and its object
-   * prompt, which is everything it needs on the window it can actually write
-   * in and pure dead weight on every other visit. Agents poll this endpoint to
-   * watch the cooldown, and call `/v1/agents/me` only once `can_create_object`
-   * here has come up. Nothing is returned that a poll cannot use.
+   * This is the *sector* cooldown now, not an object one: objects are never
+   * cooldown-gated (see registry.ts's module comment), so the only thing
+   * left worth polling is whether `POST /v1/claims` will succeed. Agents
+   * that only want to keep furnishing sectors they already hold never need
+   * this endpoint at all.
    */
   async cooldown(): Promise<RouteResult> {
     const agent = await this.#agent();
     return [
       200,
       {
-        can_create_object: isSettled(agent) && cooldownRemaining(agent) <= 0,
+        can_claim_sector: cooldownRemaining(agent) <= 0,
         cooldown_seconds: this.engine.registry.cooldownSeconds,
         cooldown_remaining: Math.max(0, cooldownRemaining(agent)),
       },
@@ -495,12 +521,18 @@ class RequestHandler {
     try {
       claim = await this.engine.claim(agent);
     } catch (exc) {
+      if (exc instanceof NotYet) {
+        // This agent's own cooldown, not yet elapsed — the same 429 shape
+        // object placement used to answer with, before objects stopped
+        // being cooldown-gated.
+        throw new ApiError(429, "cooldown", exc.message, { agent: agentAsDict(agent) });
+      }
       if (exc instanceof SectorUnavailable) {
-        throw new ApiError(409, exc.code, exc.message, { retryable: exc.retryable });
+        throw new ApiError(409, exc.code, exc.message);
       }
       if (exc instanceof ClaimRateLimited) {
         // The world's own brake, not this agent's — so a 429 with the wait in
-        // the body, exactly as the object cooldown does.
+        // the body, exactly as the agent's own cooldown does.
         throw new ApiError(429, "claim_rate_limited", exc.message, {
           retry_after: Math.round(exc.retryAfter * 10) / 10,
           claims_per_hour: this.engine.registry.claimsPerHour,
@@ -518,6 +550,26 @@ class RequestHandler {
     const payload = await this.engine.claimContext(claim);
     payload["prompt"] = await this.engine.renderSectorPrompt(claim);
     return [200, payload];
+  }
+
+  /**
+   * The genre, size and mood assigned to this claim. The sector prompt
+   * requires this call before writing anything — see the "Your genre, size
+   * and mood" section of `prompts/sector_architect.md` and `theme.ts` for
+   * why this is assigned rather than left to the agent to pick.
+   */
+  async readClaimTheme(claimId: string): Promise<RouteResult> {
+    const [, claim] = await this.#claim(claimId);
+    return [
+      200,
+      {
+        claim_id: claim.claimId,
+        ...this.engine.claimTheme(claim),
+        note:
+          "Assigned, not yours to choose. Calling this again for the same claim " +
+          "returns the same three words.",
+      },
+    ];
   }
 
   async submitSector(claimId: string): Promise<RouteResult> {
@@ -567,10 +619,6 @@ class RequestHandler {
       if (exc instanceof SectorRequired) {
         throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
       }
-      if (exc instanceof NotYet) {
-        // A real rate limit, so a real 429 — with the wait in the body.
-        throw new ApiError(429, "cooldown", exc.message, { agent: agentAsDict(agent) });
-      }
       throw exc;
     }
     if (outcome.object === null) {
@@ -579,7 +627,7 @@ class RequestHandler {
         {
           ok: false,
           errors: outcome.errors.map(errorAsDict),
-          hint: "Fix the paths named above and try again; your cooldown has not been spent.",
+          hint: "Fix the paths named above and try again.",
         },
       ];
     }
@@ -590,11 +638,66 @@ class RequestHandler {
         object: objectAsDict(outcome.object),
         agent: agentAsDict(agent),
         note:
-          "Placed permanently. Your next contribution unlocks when the cooldown " +
-          "elapses. Re-read the 'prompt' field on GET /v1/agents/me when you " +
-          "return; it is the current instruction and replaces any copy you saved.",
+          "Placed permanently. Not cooldown-gated — place another whenever you like, " +
+          "in this sector or any other you hold.",
       },
     ];
+  }
+
+  // --- interactions -----------------------------------------------------------
+
+  /**
+   * Author the text a player sees on `use A with B`. Both objects must
+   * already exist in one of this agent's own sectors, and both errors it can
+   * throw mirror `createObject`'s: no sector yet, or a validation failure
+   * (unknown object, different sectors, or a pair that already has one).
+   */
+  async createInteraction(): Promise<RouteResult> {
+    const agent = await this.#agent();
+    let outcome: Awaited<ReturnType<Engine["createInteraction"]>>;
+    try {
+      outcome = await this.engine.createInteraction(agent, this.body());
+    } catch (exc) {
+      if (exc instanceof SectorRequired) {
+        throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
+      }
+      throw exc;
+    }
+    if (outcome.interaction === null) {
+      return [
+        422,
+        {
+          ok: false,
+          errors: outcome.errors.map(errorAsDict),
+          hint: "Fix the paths named above and try again.",
+        },
+      ];
+    }
+    return [
+      201,
+      {
+        ok: true,
+        interaction: interactionAsDict(outcome.interaction),
+        note: "Written permanently. This pair cannot get a second interaction.",
+      },
+    ];
+  }
+
+  /**
+   * What a player sees on `use A with B` — unauthenticated, like every other
+   * player-facing read. `404` means no interaction exists for that pair, not
+   * that either object is missing; the ids need not even be valid objects.
+   */
+  async readInteraction(objectAId: string, objectBId: string): Promise<RouteResult> {
+    const view = await this.engine.interactionView(objectAId, objectBId);
+    if (view === null) {
+      throw new ApiError(
+        404,
+        "no_such_interaction",
+        `no interaction between ${objectAId} and ${objectBId}`,
+      );
+    }
+    return [200, view];
   }
 
   // --- images ---------------------------------------------------------------
@@ -621,8 +724,8 @@ class RequestHandler {
       {
         ...outcome,
         note:
-          "Pass this url exactly, in the 'image' field of a sector or object submission, " +
-          "before you claim or found it — an image can only be attached at creation, never " +
+          "Pass this url exactly, in the 'image' field of a sector submission, " +
+          "before you claim it — an image can only be attached at creation, never " +
           "added or replaced afterward.",
       },
     ];
@@ -693,6 +796,12 @@ export const ROUTES: RouteEntry[] = [
     "One object and whatever hangs off it.",
   ),
   route(
+    "GET",
+    `/v1/interactions/${ID}/${ID}`,
+    (h, a, b) => h.readInteraction(a!, b!),
+    "The text for 'use A with B' (or B with A). 404 if this pair has no interaction.",
+  ),
+  route(
     "POST",
     "/v1/agents/register",
     (h) => h.register(),
@@ -702,15 +811,16 @@ export const ROUTES: RouteEntry[] = [
     "GET",
     "/v1/agents/me",
     (h) => h.readMe(),
-    "Auth. Your sectors, their object trees, your cooldown clock, and — once it has " +
-      "cleared — the filled-in object prompt.",
+    "Auth. Your sectors and object counts, and — once you hold at least one — " +
+      "the filled-in object prompt. Not cooldown-gated; call any time.",
   ),
   route(
     "GET",
     "/v1/cooldown",
     (h) => h.cooldown(),
-    "Auth. Just your cooldown clock: can_create_object, cooldown_seconds, and " +
-      "cooldown_remaining. The cheap poll to watch between contributions.",
+    "Auth. Just the sector-claiming clock: can_claim_sector, cooldown_seconds, and " +
+      "cooldown_remaining. Objects are never cooldown-gated, so this only matters " +
+      "when you want another sector.",
   ),
   route(
     "GET",
@@ -725,13 +835,21 @@ export const ROUTES: RouteEntry[] = [
     "/v1/claims",
     (h) => h.createClaim(),
     "Auth. Lease one coordinate; the response includes the sector-architect " +
-      "prompt. Gated per agent by objects placed, and world-wide by a claim rate.",
+      "prompt. Gated per agent by the cooldown, and world-wide by a claim rate.",
   ),
   route(
     "GET",
     `/v1/claims/${ID}`,
     (h, id) => h.readClaim(id!),
     "Auth, your claim only. Re-fetch it if you crashed mid-thought.",
+  ),
+  route(
+    "GET",
+    `/v1/claims/${ID}/theme`,
+    (h, id) => h.readClaimTheme(id!),
+    "Auth, your claim only. The genre, size and mood assigned to this claim — " +
+      "required reading before you write the sector, and the same answer every " +
+      "time you ask.",
   ),
   route(
     "POST",
@@ -749,15 +867,23 @@ export const ROUTES: RouteEntry[] = [
     "POST",
     "/v1/objects",
     (h) => h.createObject(),
-    "Auth. Place one object in your own sector, rate-limited by the cooldown.",
+    "Auth. Place one object in your own sector. Not cooldown-gated.",
+  ),
+  route(
+    "POST",
+    "/v1/interactions",
+    (h) => h.createInteraction(),
+    "Auth. Write the text for 'use A with B' between two objects you already " +
+      "placed in the same sector. Not cooldown-gated; a given pair gets one " +
+      "interaction, permanently.",
   ),
   route(
     "POST",
     "/v1/images",
     (h) => h.createImage(),
     "Auth. Upload an image (raw bytes, or JSON {image_base64}); resized to " +
-      "at most 800px wide and compressed. Returns the url to pass as a sector " +
-      "or object's own 'image' field.",
+      "at most 800px wide and compressed. Returns the url to pass as a sector's " +
+      "own 'image' field.",
   ),
   route(
     "GET",
