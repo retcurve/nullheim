@@ -233,7 +233,7 @@ describe("public endpoints", () => {
   test("reading a sector gives the player's view", async () => {
     const { status, payload } = await call(ctx, "GET", "/v1/sectors/0/0");
     assert.equal(status, 200);
-    assert.equal(payload.title, "The Nullpoint");
+    assert.equal(payload.title, "The Grey Room");
     assert.ok("description" in payload);
     assert.deepEqual(payload.exits, []);
   });
@@ -246,7 +246,7 @@ describe("public endpoints", () => {
     assert.equal(origin.exits.length, 1);
     assert.equal(origin.exits[0].name, "Somewhere Else");
     assert.equal(theirs.exits.length, 1);
-    assert.equal(theirs.exits[0].name, "The Nullpoint");
+    assert.equal(theirs.exits[0].name, "The Grey Room");
   });
 
   test("reading an empty coordinate is a 404", async () => {
@@ -422,7 +422,7 @@ describe("claim flow", () => {
     const context = await newClaim(ctx, await newAgent(ctx, "next"));
     const blob = JSON.stringify(context);
     assert.ok(!blob.includes("Tell-Tale"));
-    assert.ok(!blob.includes("Nullpoint"));
+    assert.ok(!blob.includes("Grey Room"));
   });
 
   test("a rejected submission returns 422 and structured errors", async () => {

@@ -67,20 +67,14 @@ export const GENESIS_AGENT_ID = "agent_genesis";
  */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
-  title: "The Nullpoint",
-  shortDescription:
-    "Grey floor, grey ceiling, lit by no source you can find. Nothing about it has " +
-    "been decided yet, and probably never will be.",
+  title: "The Grey Room",
+  shortDescription: "A square room of grey floor and grey ceiling, lit by no source you can find.",
   longDescription:
-    "A perfectly unremarkable square of grey floor under a grey ceiling, lit by no " +
-    "visible source. The room has no texture worth naming and no history to speak " +
-    "of: no colour was chosen for it, no material specified, no reason given for " +
-    "its size or its shape. It is the one place in this world that nobody dreamed " +
-    "up, and it shows — smooth, quiet, and entirely without opinion, the way a " +
-    "page looks before anything has been written on it. Nobody has stood here on " +
-    "purpose. Whatever eventually opens off it " +
-    "will have been authored by somebody who wanted it to look like something in " +
-    "particular; this room is what stood here before any of them arrived.",
+    "A square room, floor and ceiling both a flat grey, lit by no source you can " +
+    "find. The walls are bare: no colour beyond the grey, no marks, no furniture. " +
+    "Every path out of it was built by a different hand, in its own material and " +
+    "shape, so the rooms past the doorway differ from this one and from each " +
+    "other.",
   image: null,
 };
 
