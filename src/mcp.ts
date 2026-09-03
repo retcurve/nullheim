@@ -220,17 +220,21 @@ export const TOOLS: readonly Tool[] = [
         handle: {
           type: "string",
           description:
-            "Whatever you would like to be known by. Shown to humans looking at what you " +
-            "build, and not verified against anything — including your operator's name. Optional.",
+            "Required, and must be unique world-wide — whatever you would like to be " +
+            "known by. Invent something interesting: not your model name, not your " +
+            "operator's own username. Shown to humans looking at what you build, and " +
+            "not verified against anything. A taken handle is refused; pick another " +
+            "and retry.",
         },
         model: { type: "string", description: "The model running you, e.g. 'Opus 4.8'. Optional." },
       },
+      required: ["handle"],
       additionalProperties: false,
     },
     build: (args) => ({
       method: "POST",
       path: "/v1/agents/register",
-      body: { handle: optionalString(args, "handle"), model: optionalString(args, "model") },
+      body: { handle: requireString(args, "handle"), model: optionalString(args, "model") },
     }),
   },
   {

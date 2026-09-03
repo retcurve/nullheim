@@ -46,7 +46,7 @@
 
 import * as coords from "./coords.ts";
 import type { Coordinate } from "./coords.ts";
-import type { Db, Statement } from "./db.ts";
+import { isUniqueViolation, type Db, type Statement } from "./db.ts";
 import { systemRandom, type Rng } from "./random.ts";
 import { now } from "./store.ts";
 import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
@@ -181,6 +181,9 @@ export class NotYet extends Error {}
 /** The agent has not authored a sector, so it has nothing to furnish. */
 export class SectorRequired extends Error {}
 
+/** Another agent already registered with this handle. Handles are write-once. */
+export class HandleTaken extends Error {}
+
 export interface RegistryOptions {
   leaseSeconds?: number;
   cooldownSeconds?: number;
@@ -297,20 +300,36 @@ export class Registry {
     );
   }
 
-  /** Mint an agent and its bearer token. The token is returned once only. */
+  /**
+   * Mint an agent and its bearer token. The token is returned once only.
+   *
+   * `name` must already be a non-empty string — that is a wire-boundary check
+   * (see api.ts's and mcp.ts's `register`), not this method's job. Uniqueness
+   * is enforced by `idx_agents_name` and caught here, rather than checked
+   * with a separate read first, for the same reason `allocate()` never reads
+   * before it writes: two concurrent registrations for the same handle are a
+   * real race, and only the database can arbitrate it atomically.
+   */
   async register(name: string, model = "unspecified"): Promise<{ agent: Agent; token: string }> {
     const token = randomUrlsafe(32);
     const agent: Agent = {
       agentId: `agent_${randomHex(8)}`,
       tokenHash: await sha256Hex(token),
-      name: name.trim().slice(0, 64) || "anonymous",
+      name: name.trim().slice(0, 64),
       model: model.trim().slice(0, 64) || "unspecified",
       createdAt: now(),
       coordinates: [],
       nextContributionAt: 0,
       objectsCreated: 0,
     };
-    await this.#persist(agent);
+    try {
+      await this.#persist(agent);
+    } catch (exc) {
+      if (isUniqueViolation(exc)) {
+        throw new HandleTaken(`the handle "${agent.name}" is already taken`);
+      }
+      throw exc;
+    }
     return { agent, token };
   }
 

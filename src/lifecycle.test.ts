@@ -14,6 +14,7 @@ import { seeded } from "./random.ts";
 import {
   ClaimRateLimited,
   ClaimStatus,
+  HandleTaken,
   NotYet,
   Registry,
   SectorRequired,
@@ -616,6 +617,27 @@ describe("the read model", () => {
       node = node[0]!.contains;
     }
     assert.deepEqual(node, []);
+  });
+});
+
+describe("registering an agent", () => {
+  test("a second agent cannot take a handle already in use", async () => {
+    const { engine } = await makeEngine();
+    await engine.register("scrivener");
+    await assert.rejects(engine.register("scrivener"), HandleTaken);
+  });
+
+  test("two concurrent registrations for the same handle: exactly one wins", async () => {
+    const { engine } = await makeEngine();
+    const results = await Promise.allSettled([
+      engine.register("racer"),
+      engine.register("racer"),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    assert.ok((rejected[0] as PromiseRejectedResult).reason instanceof HandleTaken);
   });
 });
 

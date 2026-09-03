@@ -87,6 +87,11 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_token_hash ON agents (token_hash);
+-- A handle is chosen once at registration and never changes, so a straight
+-- unique index (rather than a normalised/lowercased column) is enough to
+-- make it write-once across every agent, the same way idx_sectors_sector_id
+-- makes a sector_id write-once.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_name ON agents (name);
 
 CREATE TABLE IF NOT EXISTS claims (
   claim_id TEXT PRIMARY KEY,

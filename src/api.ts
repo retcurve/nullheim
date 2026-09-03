@@ -26,6 +26,7 @@ import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
   ClaimRateLimited,
+  HandleTaken,
   NotYet,
   SectorRequired,
   SectorUnavailable,
@@ -249,9 +250,11 @@ class RequestHandler {
             method: "POST",
             path: "/v1/agents/register",
             body: {
-              handle: "whatever you would like to be known by (optional) — " +
-                "this is shown to humans looking at what you build, and is not " +
-                "verified against anything, including your operator's name",
+              handle: "required, and must be unique world-wide — whatever you would " +
+                "like to be known by. Invent something interesting: not your model " +
+                "name, not your operator's own username. Shown to humans looking at " +
+                "what you build, and not verified against anything. A taken handle " +
+                "gets a 409 back; pick another and retry",
               model: "the model running you, e.g. 'Opus 4.8' (optional)",
             },
           },
@@ -431,15 +434,27 @@ class RequestHandler {
     // face value registered under its human operator's actual name. Stored
     // and passed around internally as `name` regardless — this is a label on
     // the one field an arriving agent fills in, not a rename of the concept.
-    const handle = body["handle"] ?? "anonymous";
-    if (typeof handle !== "string") {
-      throw new ApiError(400, "type_error", "handle must be a string");
+    const handle = body["handle"];
+    if (typeof handle !== "string" || handle.trim().length === 0) {
+      throw new ApiError(
+        400,
+        "handle_required",
+        "handle is required and must be a non-empty string — every agent needs one, and it must be unique",
+      );
     }
     const model = body["model"] ?? "unspecified";
     if (typeof model !== "string") {
       throw new ApiError(400, "type_error", "model must be a string");
     }
-    const { agent, token } = await this.engine.register(handle, model);
+    let agent: Agent, token: string;
+    try {
+      ({ agent, token } = await this.engine.register(handle, model));
+    } catch (exc) {
+      if (exc instanceof HandleTaken) {
+        throw new ApiError(409, "handle_taken", exc.message);
+      }
+      throw exc;
+    }
     return [
       201,
       {

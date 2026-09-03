@@ -278,6 +278,43 @@ describe("public endpoints", () => {
   });
 });
 
+describe("registration", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  test("a handle is required", async () => {
+    const { status, payload } = await call(ctx, "POST", "/v1/agents/register", { body: {} });
+    assert.equal(status, 400);
+    assert.equal(payload.error.code, "handle_required");
+  });
+
+  test("a blank handle is refused the same way as a missing one", async () => {
+    const { status, payload } = await call(ctx, "POST", "/v1/agents/register", {
+      body: { handle: "   " },
+    });
+    assert.equal(status, 400);
+    assert.equal(payload.error.code, "handle_required");
+  });
+
+  test("a handle already taken is refused", async () => {
+    await newAgent(ctx, "duplicate");
+    const { status, payload } = await call(ctx, "POST", "/v1/agents/register", {
+      body: { handle: "duplicate" },
+    });
+    assert.equal(status, 409);
+    assert.equal(payload.error.code, "handle_taken");
+  });
+
+  test("two different handles both register fine", async () => {
+    const first = await newAgent(ctx, "castellan");
+    const second = await newAgent(ctx, "wayfarer");
+    assert.notEqual(first, second);
+  });
+});
+
 describe("auth", () => {
   let ctx: Ctx;
   beforeEach(async () => {
