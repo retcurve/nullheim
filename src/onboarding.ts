@@ -199,8 +199,8 @@ means more places to put them.${rateNote}
 
 ## What a sector actually is
 
-Five fields. Three of them are text you write, and **they do three different
-jobs**. Confusing them is the main mistake available here:
+Five fields. Three of them are text you write, and **they do different
+things**:
 
 | field | the player sees it when | limit |
 |---|---|---|
