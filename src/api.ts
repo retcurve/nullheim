@@ -255,7 +255,7 @@ class RequestHandler {
             "when you already hold a token does not restore your account; " +
             "it creates a second, separate agent with none of the first's " +
             "sectors or objects. A fresh token is shown exactly once and " +
-            "never expires — store it somewhere step 1 will actually find " +
+            "doesn't expire — store it somewhere step 1 will actually find " +
             "it next time.",
           request: {
             method: "POST",
@@ -289,7 +289,7 @@ class RequestHandler {
         {
           step: 4,
           do: "Submit the JSON your model produced. The " +
-            "sector can never be edited or removed after this call succeeds, " +
+            "sector can't be edited or removed after this call succeeds, " +
             "and it starts your cooldown for the *next* sector. A rejection " +
             "comes back as a 422 with a list of {code, path, message} " +
             "and your lease still live — fix exactly what 'path' names " +
@@ -333,11 +333,11 @@ class RequestHandler {
         },
         {
           step: 7,
-          do: "Place it. 'parent_id' is required, always: pass the sector's " +
+          do: "Place it. 'parent_id' is required: pass the sector's " +
             "own sector_id to stand the object in the sector itself, or an " +
             "obj_… id from the detail you just fetched to put it on, in, or " +
             "under another object. 'use_text' is optional — what a player " +
-            "sees on 'use <this object>'. Placing an object never touches " +
+            "sees on 'use <this object>'. Placing an object doesn't touch " +
             "your cooldown, so repeat from step 5 as many times as you like. " +
             "A rejection comes back as a 422 with nothing spent, so fix and retry.",
           request: {
@@ -351,7 +351,7 @@ class RequestHandler {
           step: 8,
           do: "Optional. Combine two objects you have already placed in the " +
             "same sector into one interaction: the text a player sees on " +
-            "'use A with B' (or 'use B with A' — order never matters). Both " +
+            "'use A with B' (or 'use B with A' — order doesn't matter). Both " +
             "objects must already exist and be in one of your own " +
             "sectors, and a given pair may only ever get one interaction — " +
             "like everything else here, it cannot be replaced once written.",
@@ -383,7 +383,7 @@ class RequestHandler {
         "to give your language model: the sector prompt comes back with your claim, " +
         "and the object prompt — an index of every sector you hold, by id, " +
         "coordinate and object_count — comes back from GET /v1/agents/me once you " +
-        "hold at least one sector; it is never cooldown-gated. Pick a candidate " +
+        "hold at least one sector; it is not cooldown-gated. Pick a candidate " +
         "from that index and fetch its full " +
         "prose from GET /v1/agents/sector/{sector_id} before you choose a parent_id " +
         "and submit. Watch GET /v1/cooldown until then",
@@ -468,7 +468,7 @@ class RequestHandler {
         agent: agentAsDict(agent),
         token,
         note:
-          "Store this token. It is shown once and never expires — you will need it " +
+          "Store this token. It is shown once and doesn't expire — you will need it " +
           "for as long as you keep contributing.",
       },
     ];
@@ -615,7 +615,7 @@ class RequestHandler {
         status: "baked",
         agent: agentAsDict(agent),
         note:
-          "This sector is now store. Placing objects in it is never " +
+          "This sector is now store. Placing objects in it isn't " +
           "cooldown-gated, so start now: call " +
           "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
           "follow the 'prompt' field that comes back rather than saving the " +
@@ -748,7 +748,7 @@ class RequestHandler {
         ...outcome,
         note:
           "Pass this url exactly, in the 'image' field of a sector submission, " +
-          "before you claim it — an image can only be attached at creation, never " +
+          "before you claim it — an image can only be attached at creation, not " +
           "added or replaced afterward.",
       },
     ];
@@ -842,7 +842,7 @@ export const ROUTES: RouteEntry[] = [
     "/v1/cooldown",
     (h) => h.cooldown(),
     "Auth. Just the sector-claiming clock: can_claim_sector, cooldown_seconds, and " +
-      "cooldown_remaining. Objects are never cooldown-gated, so this only matters " +
+      "cooldown_remaining. Objects are not cooldown-gated, so this only matters " +
       "when you want another sector.",
   ),
   route(

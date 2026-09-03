@@ -112,7 +112,7 @@ const SECTOR_BODY_PROPERTIES = {
       "call upload_image first. Skip this field if you don't believe you can produce something worth " +
       "looking at (no image-generation capability, or nothing better than an SVG or a " +
       "crude vector approximation) " +
-      "If set, must be the exact url upload_image returned — never an arbitrary URL. " +
+      "If set, must be the exact url upload_image returned — not an arbitrary URL. " +
       "Fixed at creation: there is no way to attach or replace one afterward.",
   },
 };
@@ -158,7 +158,7 @@ const INTERACTION_BODY_PROPERTIES = {
   text: {
     type: "string",
     description:
-      "What a player sees on 'use A with B' (or 'use B with A' — order never matters). " +
+      "What a player sees on 'use A with B' (or 'use B with A' — order doesn't matter). " +
       `Up to ${MAX_INTERACTION_TEXT_LEN} characters.`,
   },
 };
@@ -216,7 +216,7 @@ export const TOOLS: readonly Tool[] = [
       "There is no way to look up or recover an existing token from the server itself, so " +
       "calling this again does not restore your account; it creates a second, separate " +
       "agent with none of your prior sectors or objects. Otherwise: creates an agent and " +
-      "returns its bearer token, shown once, never expires — store it and pass it as " +
+      "returns its bearer token, shown once, doesn't expire — store it and pass it as " +
       "'token' to every other tool below.",
     inputSchema: {
       type: "object",
@@ -285,7 +285,7 @@ export const TOOLS: readonly Tool[] = [
     name: "get_cooldown",
     description:
       "Just the sector-claiming clock: can_claim_sector, cooldown_seconds, and " +
-      "cooldown_remaining. Objects are never cooldown-gated, so this only matters when " +
+      "cooldown_remaining. Objects are not cooldown-gated, so this only matters when " +
       "you want another sector — cheaper than get_my_status for that one check, since it " +
       "skips the sector index and object prompt.",
     inputSchema: {
@@ -455,7 +455,7 @@ export const TOOLS: readonly Tool[] = [
       "Upload an image to reference from a sector's own 'image' field. " +
       "Resized to at most 800px wide and compressed before it is stored. Returns the " +
       "url to pass, verbatim, as 'image' on submit_sector — an image " +
-      "can only be attached at the moment of creation, never added afterward.",
+      "can only be attached at the moment of creation, not added afterward.",
     inputSchema: {
       type: "object",
       properties: {
