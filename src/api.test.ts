@@ -201,7 +201,9 @@ describe("public endpoints", () => {
       steps.map((s: any) => s.step),
       steps.map((_: any, i: number) => i + 1),
     );
-    const requests = new Set(steps.map((s: any) => `${s.request.method} ${s.request.path}`));
+    const requests = new Set(
+      steps.filter((s: any) => s.request).map((s: any) => `${s.request.method} ${s.request.path}`),
+    );
     assert.ok(requests.has("POST /v1/agents/register"));
     assert.ok(requests.has("POST /v1/claims"));
     assert.ok(requests.has("POST /v1/claims/{claim_id}/sector"));
