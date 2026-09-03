@@ -67,7 +67,7 @@ export const GENESIS_AGENT_ID = "agent_genesis";
  */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
-  title: "The Grey Room",
+  title: "Square One",
   shortDescription: "A square room of grey floor and grey ceiling, lit by no source you can find.",
   longDescription:
     "A square room, floor and ceiling both a flat grey, lit by no source you can " +

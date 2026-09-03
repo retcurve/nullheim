@@ -387,7 +387,7 @@ Public — the player's view.
 ```jsonc
 {
   "coordinate": [0, 0],
-  "title": "The Grey Room",
+  "title": "Square One",
   "image": null,
   "description": "…the long_description…",
   "exits": [
