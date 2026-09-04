@@ -15,10 +15,8 @@ import { loadCodecs } from "./wasm.node.ts";
 const CODECS = loadCodecs();
 
 /**
- * A JPEG's header and nothing else: SOI, a JFIF APP0, and the SOF0 that
- * carries the frame's real size. Enough to reach the size guard, and
- * deliberately not enough to decode — the point is the segment walk that
- * finds SOF0 past a segment it has to measure and skip.
+ * Builds a JPEG containing only a header: SOI, a JFIF APP0 segment, and an
+ * SOF0 segment carrying the given width and height. Not a decodable image.
  */
 function makeJpegHeader(width: number, height: number): Uint8Array {
   return new Uint8Array([
@@ -77,15 +75,8 @@ describe("processUpload", () => {
     );
   });
 
-  /**
-   * The bomb: a file well inside `MAX_UPLOAD_BYTES` whose header declares a
-   * surface far past what decoding it could ever be allowed to allocate.
-   *
-   * Written by rewriting a real PNG's IHDR dimensions in place and leaving
-   * the chunk's CRC stale, which is exactly as far as the guard reads — the
-   * point of the test is that nothing downstream of the header check ever
-   * runs, and a decoder would be the thing to notice the CRC.
-   */
+  // Builds a small PNG, then overwrites its IHDR width and height fields
+  // with much larger values, leaving the chunk's CRC unchanged.
   test("a small file declaring a huge surface is refused before decoding", async () => {
     const png = makePng(4, 4);
     const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
@@ -111,10 +102,8 @@ describe("processUpload", () => {
   });
 
   test("a source right up against the pixel cap is not refused by the guard", async () => {
-    // 3000x4000 is 12,000,000 exactly — the cap is a ceiling, not a limit
-    // one pixel below itself. The IDAT still holds 4x4 pixels, so this file
-    // does not survive the decoder either; all that is asserted is that the
-    // refusal, if any, is not this module's own.
+    // 3000x4000 is exactly 12,000,000 pixels. The IHDR is set to this size
+    // while the pixel data underneath stays 4x4.
     const png = makePng(4, 4);
     const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
     view.setUint32(16, 3000);

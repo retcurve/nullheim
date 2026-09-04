@@ -10,6 +10,15 @@ This file exists for the things that are *not* obvious from the code: choices th
 were made deliberately after weighing an alternative, and limits that were measured
 rather than assumed.
 
+## Comment convention
+
+Comments in `src/` (including tests) state what the code does, in plain English —
+not why it does it, not what was tried before, not what a test guards against.
+That reasoning belongs here, in this file, indexed by the code it explains. A
+comment and this file used to duplicate each other; now the split is: code and its
+comments say what happens, CLAUDE.md says why. If you're explaining a decision,
+add or extend an entry below instead of writing it into the source.
+
 ## Deliberate decisions
 
 Each of these looks like something worth changing until you know why it is that way.

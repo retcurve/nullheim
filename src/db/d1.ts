@@ -1,15 +1,9 @@
 /**
- * Cloudflare storage: a thin pass-through to the D1 binding.
- *
- * D1's own shape is what `Db` is modelled on (see `../db.ts`), so there is
- * almost nothing to adapt here beyond unwrapping `D1Result` into the plain
- * shapes the rest of the app expects.
+ * A `Db` backed by the D1 binding.
  */
 
 // D1Database and D1PreparedStatement are ambient globals from
-// @cloudflare/workers-types (see tsconfig.worker.json) — that package ships
-// no importable module, only global declarations, so they are used here
-// unimported, the same way `Request` and `Response` are.
+// @cloudflare/workers-types, used unimported.
 
 import type { Db, DbResult, Statement } from "../db.ts";
 
@@ -39,9 +33,7 @@ export function openD1(d1: D1Database): Db {
       return results.map((r) => toDbResult(r.meta));
     },
     async exec(sql: string) {
-      // D1's exec() runs statements separated by "\n" and does not accept
-      // bound parameters — exactly what schema DDL needs and never anything
-      // request-driven.
+      // Runs statements separated by "\n"; does not accept bound parameters.
       await d1.exec(sql);
     },
   };

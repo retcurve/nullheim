@@ -1,12 +1,9 @@
 /**
  * The Node transport: a `node:http` server in front of `handleFetchRequest`.
  *
- * Everything agent-facing is handled by the shared, runtime-agnostic core in
- * `api.ts` — this file's only job is bridging `IncomingMessage`/
- * `ServerResponse` to `Request`/`Response`, and serving `public/` under
- * `/enter/*`, which is a Node-only (node:fs) concern with no Workers
- * equivalent in this module (Cloudflare serves it from the Assets binding
- * instead — see `worker.ts`).
+ * Agent-facing requests are handled by the shared core in `api.ts`. This file
+ * bridges `IncomingMessage`/`ServerResponse` to `Request`/`Response`, and
+ * serves `public/` under `/enter/*` from disk.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -20,10 +17,8 @@ import type { Engine } from "./engine.ts";
 
 // --- the human player frontend ----------------------------------------------
 //
-// `public/` is plain static HTML/CSS/JS — no build step, no framework, no new
-// dependency — served under `/enter/*` and touching nothing that agents talk
-// to. It reads the world exclusively through `GET /v1/sectors/{x}/{y}` and
-// `GET /v1/objects/{id}`, the same public reads any other client can make.
+// `public/` is plain static HTML/CSS/JS, served under `/enter/*`. It reads
+// the world through `GET /v1/sectors/{x}/{y}` and `GET /v1/objects/{id}`.
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const ENTER_PREFIX = "/enter";
@@ -38,17 +33,14 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
 
 /**
  * Serves one file from `public/` under `/enter/*`. Returns false on any miss.
- *
- * `method === "HEAD"` skips the body but still computes and sends the ETag —
- * that's what lets app.js poll its own ETag cheaply (see checkForUpdate in
- * app.js) without re-downloading itself on every check.
+ * A `HEAD` request skips the body but still computes and sends the ETag.
  */
 async function serveStatic(pathname: string, res: ServerResponse, method: string): Promise<boolean> {
   let rel = pathname.slice(ENTER_PREFIX.length);
   if (rel === "" || rel === "/") {
     rel = "/index.html";
   }
-  // Collapse any ".." before joining, so a crafted path can't escape PUBLIC_DIR.
+  // Collapse any ".." segments before joining onto PUBLIC_DIR.
   const segments = rel.split("/").filter((s) => s !== "" && s !== ".");
   const cleaned: string[] = [];
   for (const segment of segments) {
@@ -68,22 +60,13 @@ async function serveStatic(pathname: string, res: ServerResponse, method: string
     res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": data.length,
-      // The same set api.ts puts on every response, plus the frontend's own
-      // policy — see ENTER_CSP there. Static files are routed before the
-      // shared core is ever called, so they would otherwise carry none.
+      // Security headers, matching the set api.ts puts on every response.
       "Content-Security-Policy": ENTER_CSP,
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "X-Frame-Options": "DENY",
-      // Without this a browser heuristically caches these — there is no ETag
-      // or Last-Modified to revalidate against — and an edited app.js keeps
-      // serving stale on refresh. There is no build step and no fingerprinted
-      // filename to fall back on, so say it explicitly.
       "Cache-Control": "no-cache, no-store, must-revalidate",
-      // A content hash, not a file timestamp — the frontend polls this (see
-      // app.js's checkForUpdates) to notice when public/ has changed under a
-      // tab that's still open, the same way the Workers Assets binding
-      // already hands back a content-addressed ETag in production.
+      // A hash of the file's contents, used by the frontend to detect changes.
       ETag: `"${createHash("sha1").update(data).digest("hex")}"`,
     });
     res.end(method === "HEAD" ? undefined : data);
@@ -96,10 +79,8 @@ async function serveStatic(pathname: string, res: ServerResponse, method: string
 // --- the IncomingMessage <-> Request/Response bridge -------------------------
 
 /**
- * Read the body eagerly, up to `MAX_BODY_BYTES`, and refuse (closing the
- * connection) anything declared larger without reading it — the request is
- * on a keep-alive socket, and a body left unread would desync the next
- * request parsed off the same connection.
+ * Reads the request body, up to `maxBytes`. A body declared larger is
+ * refused without being read, and the connection is closed.
  */
 function readNodeBody(
   req: IncomingMessage,
@@ -171,10 +152,9 @@ async function sendWebResponse(res: ServerResponse, response: Response): Promise
 }
 
 /**
- * The body is read up front — a raw error (bad Content-Length, or a body too
- * large to accept) is answered directly here, closing the connection, before
- * a `Request` is even built. Everything else becomes one `Request` and is
- * handed to the shared, transport-agnostic core.
+ * Reads the body first. A bad Content-Length or an over-large body is
+ * answered directly, closing the connection, before a `Request` is built.
+ * Everything else is turned into a `Request` and handed to the shared core.
  */
 async function handleNodeRequest(
   engine: Engine,

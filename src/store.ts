@@ -1,18 +1,12 @@
 /**
  * World persistence: sectors and objects, backed by SQL.
  *
- * Sectors are nodes on a flat lattice, keyed by coordinate rather than a
- * synthetic id — the schema comment in `db/schema.sql` says why. Exits are
- * *not* stored — they are derived from adjacency every time they are asked
- * for, which is why no two neighbouring agents can ever disagree about a
- * doorway. Objects hang off sectors and off each other in a tree.
+ * Sectors are keyed by coordinate. Exits are not stored; they are computed
+ * from adjacency whenever they are read. Objects form a tree, attached to
+ * sectors and to each other.
  *
- * Every method here is async: the same store runs against a local SQLite
- * file (node:sqlite, effectively synchronous under the hood) and against
- * Cloudflare D1 (a real network round trip), and nothing in this module may
- * assume which. See `db.ts` for what that buys and what it costs — in
- * particular, why `bake()` is one `batch()` call rather than a read followed
- * by a write.
+ * Every method here is async, so the same store works against a local
+ * SQLite file or Cloudflare D1.
  */
 
 import * as coords from "./coords.ts";
@@ -64,9 +58,8 @@ export function objectAsDict(o: WorldObject): Record<string, unknown> {
 }
 
 /**
- * A written `use A with B` interaction. `objectAId`/`objectBId` are always
- * stored with the lexicographically smaller object id first (see
- * `pairKey()`), so a lookup never has to try both orderings.
+ * A written `use A with B` interaction. `objectAId` and `objectBId` are
+ * always stored with the lexicographically smaller object id first.
  */
 export interface Interaction {
   readonly interactionId: string;
@@ -88,7 +81,7 @@ export function interactionAsDict(i: Interaction): Record<string, unknown> {
   };
 }
 
-/** The canonical (smaller, larger) ordering every interaction is stored and looked up by. */
+/** Returns the two object ids in (smaller, larger) order. */
 export function pairKey(objectAId: string, objectBId: string): [string, string] {
   return objectAId < objectBId ? [objectAId, objectBId] : [objectBId, objectAId];
 }
@@ -191,7 +184,7 @@ function rowToModeratedImage(row: ImageRow): ModeratedImage {
   };
 }
 
-/** The bare key a `/v1/images/{key}` url was built from — the shape `images.image_key` and `claims.image_key` are both keyed by. */
+/** Extracts the bare key from a `/v1/images/{key}` url. */
 export function imageKeyFromUrl(url: string): string {
   return url.slice(url.lastIndexOf("/") + 1);
 }
@@ -216,7 +209,7 @@ function rowToInteraction(row: InteractionRow): Interaction {
   };
 }
 
-/** SQL-backed world: sectors, objects, and the frontier index. */
+/** Stores sectors, objects, and the frontier index in SQL. */
 export class WorldStore {
   readonly #db: Db;
 
@@ -241,44 +234,14 @@ export class WorldStore {
     return row === null ? null : rowToBaked(row);
   }
 
-  /**
-   * Write a sector permanently and fold it into the frontier, atomically.
-   *
-   * The static lock and the frontier update ride in one `batch()`: the
-   * sector insert either succeeds or collides with the `(x, y)` primary key
-   * (a concurrent bake of the same coordinate, or a genuine rewrite attempt),
-   * and either way the frontier statements below it must not run on their
-   * own — a frontier update with no matching sector would corrupt the index.
-   *
-   * Exactly five coordinates can change: the one just filled, no longer a
-   * frontier slot, and its four neighbours, any of which may now touch the
-   * world for the first time. Each neighbour insert is itself conditional
-   * (`WHERE NOT EXISTS (… sectors …)`) so a neighbour that is already baked
-   * is never re-added — the read and the write are one statement, not two,
-   * which is what keeps this race-free under concurrent claims.
-   */
-  /**
-   * Is this image url referenced by a sector?
-   *
-   * Which is the same as asking whether it is permanent: a sector can never
-   * be rewritten, so an image it shows can never stop being shown — and the
-   * reaper refuses to delete one, for that reason. An unreferenced image is
-   * either still in flight or already garbage, and either way may be gone
-   * within the minute.
-   */
+  /** Returns whether a sector references this image url. */
   async imageIsReferenced(url: string): Promise<boolean> {
     return (await this.#db.first("SELECT 1 FROM sectors WHERE image = ? LIMIT 1", [url])) !== null;
   }
 
   // --- image moderation -----------------------------------------------------
 
-  /**
-   * Record a freshly uploaded image's verdict — `published` for clean,
-   * `pending` for unsure. Never `rejected`: nothing here writes that state
-   * automatically, only a human does, through `rejectImage` below. See
-   * `moderation.ts`'s module comment for why there is no automated third
-   * verdict that skips storing the image at all.
-   */
+  /** Records a freshly uploaded image's verdict: `published` or `pending`. */
   async recordImage(
     key: string,
     claimId: string,
@@ -291,13 +254,7 @@ export class WorldStore {
     );
   }
 
-  /**
-   * Whether a stored image may be served. A missing row is treated as
-   * published: every upload since this table existed writes one in the same
-   * request that writes the blob, so a missing row only ever means an image
-   * that predates moderation — which was already public before this shipped,
-   * and 404ing it now would be a regression, not a safety improvement.
-   */
+  /** Returns whether a stored image may be served. A missing row counts as published. */
   async imageIsPublished(key: string): Promise<boolean> {
     const row = await this.#db.first<{ state: ImageModerationState }>(
       "SELECT state FROM images WHERE image_key = ?",
@@ -306,7 +263,7 @@ export class WorldStore {
     return row === null || row.state === "published";
   }
 
-  /** The review queue, oldest first — every state if `state` is omitted. */
+  /** Returns images in the given state, oldest first, or every image if `state` is omitted. */
   async listImages(state?: ImageModerationState): Promise<ModeratedImage[]> {
     const rows =
       state === undefined
@@ -318,7 +275,7 @@ export class WorldStore {
     return rows.map(rowToModeratedImage);
   }
 
-  /** A human clears a `pending` image to show. False if it wasn't pending (including if there is no such image at all). */
+  /** Marks a `pending` image as published. Returns false if it was not pending. */
   async approveImage(key: string): Promise<boolean> {
     const result = await this.#db.run(
       "UPDATE images SET state = 'published', reviewed_at = ? WHERE image_key = ? AND state = 'pending'",
@@ -328,13 +285,8 @@ export class WorldStore {
   }
 
   /**
-   * A human refuses an image, whatever state it was in — including one a
-   * sector already shows. This is this world's only takedown path (see
-   * CLAUDE.md): both statements ride one `batch()` so a sector never ends up
-   * showing a url this table calls rejected, or vice versa. Returns false if
-   * there was no such image at all; the caller still owes an `ImageStore`
-   * delete either way, since a blob can exist with no row (one uploaded
-   * before this table did).
+   * Marks an image rejected and clears it from any sector showing it.
+   * Returns false if there was no such image.
    */
   async rejectImage(key: string): Promise<boolean> {
     const url = `/v1/images/${key}`;
@@ -348,21 +300,18 @@ export class WorldStore {
     return results[0]!.changes > 0;
   }
 
+  /**
+   * Writes a sector permanently and updates the frontier in one atomic
+   * batch: removes the sector's own coordinate from the frontier and adds
+   * any of its neighbours not already baked. If `claimId` is given, the
+   * insert only runs while that claim is still open and unexpired.
+   */
   async bake(baked: BakedSector, claimId: string | null): Promise<void> {
     const { x, y } = baked.sector.coordinate;
     const statements: Statement[] = [
       {
-        // Conditional on the claim still being live, in the same statement as
-        // the write. The caller checked that already, but a check followed by
-        // a separate write is exactly the shape this file avoids everywhere
-        // else: a lease can lapse during the validation pass in between, and a
-        // sector baked on a dead lease is a sector on a coordinate the world
-        // has already offered to somebody else — and, since 0007, one whose
-        // image the reaper may have decided was garbage.
-        //
-        // `claimId` is null only for a sector the system authors — genesis,
-        // and the direct bakes tests use to lay out a world. Those answer to
-        // no lease, so there is nothing to re-check.
+        // Only inserts while the named claim is still open and unexpired,
+        // when claimId is given.
         sql:
           "INSERT INTO sectors (x, y, sector_id, agent_id, title, short_description, " +
           "long_description, image, baked_at) " +
@@ -410,8 +359,7 @@ export class WorldStore {
       }
       throw exc;
     }
-    // A taken coordinate raises above; an insert that simply matched nothing
-    // means the guard failed, which can only be the claim.
+    // No rows changed means the claim guard did not match.
     if (results[0]!.changes === 0) {
       throw new ClaimNotLive(`claim ${claimId} is no longer live, so nothing was baked`);
     }
@@ -438,13 +386,8 @@ export class WorldStore {
   // --- derived exits ------------------------------------------------------
 
   /**
-   * Every side with a neighbour is an exit. Nobody declares these.
-   *
-   * The label a player reads on the door is the neighbour's own `title`, and
-   * examining the door without walking through shows the neighbour's
-   * `shortDescription`. So each sector writes the sign on the outside of its
-   * own front door, and its neighbours never get a say — which is how two
-   * rooms that agree on nothing still join up cleanly.
+   * Returns one exit for each neighbouring coordinate that is baked, labelled
+   * with that neighbour's own title and short description.
    */
   async exitsFrom(coordinate: Coordinate): Promise<Exit[]> {
     const entries = coords.neighbours(coordinate);
@@ -465,18 +408,7 @@ export class WorldStore {
     return found;
   }
 
-  /**
-   * Unbaked, in-bounds coordinates touching at least one baked sector.
-   *
-   * This is the frontier, and the only rule is adjacency — a slot beside a
-   * sector with three neighbours already is worth exactly as much as a slot
-   * beside a lonely one. The world is allowed to grow a corridor if that is
-   * where the dice fall.
-   *
-   * Backed by the `frontier` table, maintained incrementally in `bake()`. A
-   * query that scanned every sector to answer this was measured at 213ms a
-   * claim at 20k sectors; the frontier itself only grows as about 7.6·√N.
-   */
+  /** Returns the unbaked, in-bounds coordinates that touch at least one baked sector. */
   async openSlots(): Promise<Set<CoordKey>> {
     const rows = await this.#db.all<{ x: number; y: number }>("SELECT x, y FROM frontier");
     return new Set(rows.map((r) => coords.key(coords.coord(r.x, r.y))));
@@ -532,12 +464,7 @@ export class WorldStore {
     return row === null ? null : rowToObject(row);
   }
 
-  /**
-   * Everything standing in one sector, oldest first.
-   *
-   * Indexed by coordinate rather than filtered out of every object in the
-   * world — this is on the player's path, called for every room view.
-   */
+  /** Returns every object standing in one sector, oldest first. */
   async objectsIn(coordinate: Coordinate): Promise<WorldObject[]> {
     const rows = await this.#db.all<ObjectRow>(
       "SELECT * FROM objects WHERE x = ? AND y = ? ORDER BY created_at ASC",
@@ -555,14 +482,7 @@ export class WorldStore {
     return row?.c ?? 0;
   }
 
-  /**
-   * How many objects stand in one sector, without fetching them.
-   *
-   * Rides the same coordinate index as `objectsIn()`, so an agent's `/me`
-   * index can report every held sector's size without ever pulling the rows
-   * themselves — the count is O(1) per sector regardless of how many objects
-   * it holds.
-   */
+  /** Counts objects in one sector, without fetching them. */
   async objectCountIn(coordinate: Coordinate): Promise<number> {
     const row = await this.#db.first<{ c: number }>(
       "SELECT COUNT(*) AS c FROM objects WHERE x = ? AND y = ?",
@@ -571,12 +491,7 @@ export class WorldStore {
     return row?.c ?? 0;
   }
 
-  /**
-   * Every object in the world, in creation order.
-   *
-   * Exists for tests that need to check the whole store's contents directly,
-   * and to compare the coordinate index against a full scan.
-   */
+  /** Returns every object in the world, in creation order. */
   async allObjects(): Promise<WorldObject[]> {
     const rows = await this.#db.all<ObjectRow>("SELECT * FROM objects ORDER BY created_at ASC");
     return rows.map(rowToObject);
@@ -584,13 +499,7 @@ export class WorldStore {
 
   // --- interactions ---------------------------------------------------------
 
-  /**
-   * Write one `use A with B` interaction, permanently.
-   *
-   * Ids are normalised to `pairKey()`'s canonical order before the insert,
-   * so `idx_interactions_pair`'s uniqueness catches a duplicate regardless
-   * of which order the caller happened to name the two objects in.
-   */
+  /** Writes one `use A with B` interaction, normalising the object ids to canonical order. */
   async addInteraction(i: Interaction): Promise<void> {
     const [objectAId, objectBId] = pairKey(i.objectAId, i.objectBId);
     try {
@@ -627,30 +536,13 @@ export class WorldStore {
   }
 }
 
-/**
- * Raised when a sector would be rewritten. Its own class so the engine can
- * tell it from any other failure.
- */
+/** Raised when a sector would be rewritten. */
 export class AlreadyBaked extends Error {}
 
-/**
- * The claim was no longer live when the sector insert ran.
- *
- * Distinct from `AlreadyBaked`, which is about the *coordinate*. This one is
- * about the lease: a submission checks its claim is active on the way in and
- * then does a validation pass before writing, so the lease can lapse in
- * between. The insert re-checks it in the same statement rather than trusting
- * that read — see `bake()`.
- */
+/** Raised when a claim was no longer live when the sector insert ran. */
 export class ClaimNotLive extends Error {}
 
-/**
- * Seconds since the epoch, as a float.
- *
- * Kept as this app's one timestamp spelling throughout — sectors, objects,
- * claims and agents all store it this way, so a REAL column holds it without
- * conversion at either end.
- */
+/** Returns the current time in seconds since the epoch, as a float. */
 export function now(): number {
   return Date.now() / 1000;
 }

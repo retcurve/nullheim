@@ -39,7 +39,7 @@ async function callTool(ctx: Ctx, name: string, args: Record<string, unknown> = 
   return payload.result;
 }
 
-/** Every tool result carries `{status, body}` as its one text content block, JSON-encoded. */
+/** Parses the JSON-encoded `{status, body}` out of a tool result's one text content block. */
 function unwrap(result: any): { status: number; body: any } {
   assert.equal(result.content.length, 1);
   assert.equal(result.content[0].type, "text");
@@ -90,14 +90,6 @@ describe("the MCP body cap", () => {
   });
   afterEach(teardown);
 
-  /**
-   * /mcp is one route among many and is capped like one. It used to read its
-   * own body after the point where every other route's was already bounded,
-   * which on a runtime that hands over a live stream rather than a buffer —
-   * Workers — meant a tool call could be arbitrarily large.
-   *
-   * The cap is the image-sized one, since `upload_image` arrives here too.
-   */
   test("a body past the cap is refused, not buffered", async () => {
     const response = await fetch(`${ctx.base}/mcp`, {
       method: "POST",
@@ -109,7 +101,6 @@ describe("the MCP body cap", () => {
 
   test("a tool call carrying an image is still inside it", async () => {
     const token = await registerAgent(ctx, "uploader");
-    // upload_image needs the claim the image is for — see api.ts's createImage.
     assert.equal(unwrap(await callTool(ctx, "create_claim", { token })).status, 201);
     const result = await callTool(ctx, "upload_image", {
       token,

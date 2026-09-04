@@ -1,21 +1,14 @@
 /**
- * Blob storage for processed image uploads — the same split as `db.ts`.
+ * Blob storage for processed image uploads.
  *
- * `R2Bucket`'s own shape (`put(key, value, options)`, `get(key)` returning
- * an object whose body is read separately) is the one imposed by the
- * platform, so this interface is modelled on it directly; `src/images/r2.ts`
- * is close to a pass-through and `src/images/fs.ts` is the adapter doing
- * real work for local dev, writing to a plain directory on disk.
+ * The interface follows `R2Bucket`'s own shape (`put(key, value, options)`,
+ * `get(key)` returning an object whose body is read separately).
+ * `src/images/r2.ts` is close to a pass-through; `src/images/fs.ts` adapts
+ * this to a plain directory on disk for local dev.
  *
- * There is no metadata table alongside *this* interface the way
- * `sectors`/`objects` have one — R2 (and its fs stand-in) already carries the
- * content type as metadata on the object itself, and nothing here needs more
- * than put/get/delete by key. That is no longer the whole story for an image,
- * though: `images` (the SQL table, `WorldStore`'s moderation methods) exists
- * precisely because moderation gave one something to query by — `state`,
- * `score`, who reviewed it and when — that this blob store was never meant
- * to carry. The two are deliberately separate: this file answers "what are
- * the bytes", the other answers "may they be shown".
+ * This store holds only the bytes and content type of an image, keyed by
+ * name. Moderation state (`state`, `score`, reviewer) is tracked separately,
+ * in the `images` SQL table via `WorldStore`.
  */
 
 export interface StoredImage {
@@ -27,13 +20,8 @@ export interface ImageStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   get(key: string): Promise<StoredImage | null>;
   /**
-   * Remove one object, or many in a single call — R2 takes a whole array,
-   * which is what keeps a reaper sweep two round trips rather than two per
-   * image (see `Engine.reapImages`).
-   *
-   * Idempotent: deleting a key that is not there is not an error, which is
-   * what lets a sweep re-run over a key whose blob went but whose claim row
-   * did not get cleared.
+   * Removes one object, or many in a single call. Deleting a key that does
+   * not exist is not an error.
    */
   delete(keys: string | string[]): Promise<void>;
 }

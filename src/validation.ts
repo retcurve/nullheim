@@ -1,13 +1,6 @@
 /**
- * Semantic validation — the gate between a well-formed payload and the world.
- *
- * There is very little left to check, and that is the design working rather than
- * a gap. Exits are derived from adjacency instead of declared, so there are no
- * borders to disagree about. An object's parent must already exist, so the
- * object graph is a tree by construction and there is no cycle to hunt for.
- *
- * What remains is ownership and identity: is this the sector you claimed, and is
- * that parent really yours?
+ * Semantic validation for a sector, object, or interaction submission: checks
+ * ownership and identity against the world's current state.
  */
 
 import * as coords from "./coords.ts";
@@ -15,22 +8,13 @@ import type { Coordinate } from "./coords.ts";
 import { Collector, type ValidationError } from "./errors.ts";
 import type { InteractionDraft, ObjectDraft, Sector } from "./schema.ts";
 
-/**
- * Quote a string in single quotes, escaping backslashes and the quote itself.
- *
- * Used by the two `no_such_parent` messages below to quote an agent-supplied id.
- */
+/** Quotes a string in single quotes, escaping backslashes and the quote itself. */
 function repr(value: string): string {
   const escaped = value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   return `'${escaped}'`;
 }
 
-/**
- * The slice of the store validation actually needs.
- *
- * Narrow on purpose: validation asks four questions and must not grow the
- * ability to ask more. Python passed the whole store and relied on discipline.
- */
+/** The four store operations `validateSector` and `validateObject` use. */
 export interface ValidationStore {
   get(coordinate: Coordinate): { sectorId: string } | null;
   getObject(objectId: string): { coordinate: Coordinate } | null;
@@ -73,9 +57,7 @@ export function validateSector(
     );
   }
 
-  // Allocation only ever hands out coordinates touching the existing world, so
-  // this should be unreachable. It is asserted anyway: an orphan sector would be
-  // permanently unreachable by players and impossible to repair.
+  // Checks that the coordinate touches at least one already-baked neighbour.
   const touchesWorld = coords
     .neighbours(sector.coordinate)
     .some(([, neighbour]) => store.isBaked(neighbour));
@@ -92,15 +74,9 @@ export function validateSector(
 }
 
 /**
- * Rules for an object submission.
- *
- * `parentId` is required and must name something that already exists in one of
- * this agent's own sectors: either a sector's own id, or an object standing in
- * one of them. Both checks are really the same one: an agent may furnish the
- * rooms it built and nobody else's.
- *
- * `parentId` is also what *selects* the sector — an agent holding several is
- * never asked which one it means, because the parent already says.
+ * Rules for an object submission. `parentId` must name a sector, or an
+ * object inside a sector, that already exists among the given
+ * `sectorCoordinates`.
  */
 export function validateObject(
   draft: ObjectDraft,
@@ -110,15 +86,14 @@ export function validateObject(
   const errors = new Collector();
 
   if (!draft.parentId) {
-    // parseObject already reported this as a type_error; piling on a
-    // no_such_parent for the empty string it fell back to is just noise.
+    // Empty parentId is already reported elsewhere as a type_error.
     return errors.errors;
   }
 
   for (const coordinate of sectorCoordinates) {
     const baked = store.get(coordinate);
     if (baked !== null && draft.parentId === baked.sectorId) {
-      return errors.errors; // hanging it on a sector of your own is always fine
+      return errors.errors; // parentId names one of the caller's own sectors
     }
   }
 
@@ -130,8 +105,8 @@ export function validateObject(
       `there is no object or sector ${repr(draft.parentId)} in the world`,
     );
   } else if (!sectorCoordinates.some((c) => coords.equals(parent.coordinate, c))) {
-    // Deliberately the same message as a missing parent. An agent has no
-    // business learning what stands in somebody else's sector.
+    // Uses the same message as a missing parent, for an object that exists
+    // but stands in a sector the caller does not hold.
     errors.add(
       "no_such_parent",
       "$.parent_id",
@@ -142,26 +117,16 @@ export function validateObject(
   return errors.errors;
 }
 
-/**
- * The slice of the store `validateInteraction` needs — its own narrow
- * facade rather than a growth of `ValidationStore` above, the same "ask
- * only what this form needs" discipline applied per form rather than
- * globally.
- */
+/** The two store operations `validateInteraction` uses. */
 export interface InteractionValidationStore {
   getObject(objectId: string): { coordinate: Coordinate } | null;
   interactionExists(objectAId: string, objectBId: string): boolean;
 }
 
 /**
- * Rules for an interaction submission.
- *
- * Both objects must already exist, both must stand in the same sector, and
- * that sector must be one of the caller's own — exactly the ownership check
- * `validateObject` applies to a single object, since every object in a
- * sector was necessarily placed by whoever holds it. A pair may only ever
- * get one interaction: like a sector or an object, once written it cannot
- * be replaced.
+ * Rules for an interaction submission. Both objects must already exist,
+ * both must stand in the same sector, that sector must be one of
+ * `sectorCoordinates`, and this pair must not already have an interaction.
  */
 export function validateInteraction(
   draft: InteractionDraft,
@@ -171,8 +136,7 @@ export function validateInteraction(
   const errors = new Collector();
 
   if (!draft.objectAId || !draft.objectBId) {
-    // parseInteraction already reported this; piling on for the empty
-    // string either fell back to is just noise.
+    // Empty ids are already reported elsewhere.
     return errors.errors;
   }
 

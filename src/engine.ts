@@ -1,17 +1,11 @@
 /**
  * World engine — claiming, baking, furnishing, and the read model players see.
  *
- * This is the only module that mutates the world, and it is where the static
- * lock lives: once a sector bakes it is permanent, and once an object is
- * placed it stays placed. What is no longer permanent is the agent — it keeps
- * its token and comes back every 6 hours to add one more thing.
- *
- * Every method that touches the store or the registry is async, since both
- * are backed by SQL that may be a real network round trip (D1) rather than an
- * in-process call. `validation.ts` stays synchronous on purpose — it is pure
- * logic with no business making a database call — so the two "check" methods
- * below prefetch exactly what a validation needs and hand it a small
- * in-memory facade rather than the live, async store.
+ * This is the module that writes to the world: sectors, objects, and
+ * interactions. Every method that touches the store or the registry is
+ * async. The "check" methods (`checkSector`, `checkObject`,
+ * `checkInteraction`) fetch what validation needs into a small in-memory
+ * facade and pass that to the synchronous functions in `validation.ts`.
  */
 
 import * as coords from "./coords.ts";
@@ -63,28 +57,10 @@ import {
 
 export const GENESIS_AGENT_ID = "agent_genesis";
 
-/**
- * How many images one sweep reclaims.
- *
- * This is R2's own ceiling on keys per delete call, not a tuned number:
- * a sweep is one bulk delete plus one `UPDATE … IN (…)`, so the cost of
- * raising it is nothing until it stops fitting in a single R2 request.
- * Whatever a sweep does not reach is still reapable a minute later.
- *
- * It bounds a sweep, not the backlog — and the backlog has its own bound
- * upstream: an image needs a claim, and claims are capped world-wide by
- * `claimsPerHour` (1000 by default). So the worst case anyone can create is
- * ~1000 abandoned images an hour, against a drain of up to 1000 a *minute*.
- * If the claim rate is ever raised past this, that is the number to compare
- * against, not this one.
- */
+/** Maximum number of images deleted in one reap sweep. */
 export const IMAGE_REAP_LIMIT = 1000;
 
-/**
- * The one sector the system authors. It exists only to give the frontier
- * somewhere to start, and its text is deliberately blank-canvas so it imposes
- * no theme on the agents who build outward from it.
- */
+/** The starting sector, authored by the system rather than an agent. */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
   title: "The Grey Expanse",
@@ -99,14 +75,7 @@ export const GENESIS: Sector = {
   image: "/v1/images/548324a7-47d1-46e8-b99a-eb7d71a17a8e.webp",
 };
 
-/**
- * The one object the system authors, standing in `GENESIS` itself.
- *
- * Every other object is written by an agent about the sector it holds; this
- * one is written about the world as a whole, for the human reading it rather
- * than for the fiction — it is the one place a new player is told what they
- * are looking at and how to drive.
- */
+/** The one object standing in `GENESIS`, explaining the world to a new player. */
 const GENESIS_OBJECT_TITLE = "A Faint Pulse";
 const GENESIS_OBJECT_DESCRIPTION =
   "This world is Nullheim. It is built one sector at a time by independent " +
@@ -120,12 +89,9 @@ const GENESIS_OBJECT_DESCRIPTION =
   "\n\nType **help** to see the full list of commands, and **about** for more information on this project.";
 
 /**
- * Bake the genesis sector, and furnish it with its one sign, if the world is
- * empty. Idempotent and safe to call on every cold start: a second caller
- * racing this one collides on the sector's primary key and simply gets
- * `AlreadyBaked` back, which is exactly the outcome that means nothing needs
- * to happen — including the object, since it never runs without the sector
- * having just been baked by this same call.
+ * Bake the genesis sector and add its one object, if the world is empty.
+ * Safe to call more than once: if the sector is already baked, this catches
+ * `AlreadyBaked` and returns without adding the object again.
  */
 export async function ensureGenesis(store: WorldStore): Promise<void> {
   if ((await store.count()) > 0) {
@@ -199,45 +165,20 @@ export class Engine {
   }
 
   /**
-   * Resize, compress, classify and store one uploaded image, returning the
-   * url a sector submission's own `image` field must then match exactly
-   * (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws `UnsupportedImage` for
-   * anything too large or not a real JPEG/PNG/WebP.
-   *
-   * Classification runs on `processed.classification` — a small copy built
-   * for the classifier, never the stored image — before the claim's image
-   * slot is spent. See `moderation.ts`'s module comment for why a
-   * classifier failure (a network error, not a verdict) must not cost an
-   * agent its one shot at an image the same way a malformed upload already
-   * doesn't.
-   * Whichever of the two verdicts comes back, the image is stored and the
-   * slot is spent exactly as it already was before moderation existed: only
-   * a `pending` verdict withholds the url's `image` from the player-facing
-   * reads (`readImage`, `sectorView`) until a human clears it.
-   *
-   * The returned `state` says which of those two happened. This is not the
-   * same concession as answering `GET /v1/images/{id}` with anything but a
-   * 404 for a pending image — that read is unauthenticated and public, so
-   * telling it apart from "no such image" would let anyone probe a url for
-   * moderation state. This return goes only to the agent holding the claim
-   * that spent its own image slot on this exact upload, which is to say the
-   * one caller who already knows the image exists because it just sent the
-   * bytes.
+   * Resize, compress, classify and store one uploaded image, returning its
+   * url. Throws `UnsupportedImage` for anything too large or not a real
+   * JPEG/PNG/WebP. The classifier runs on a small downscaled copy, not the
+   * stored image. The image is stored and the claim's image slot is spent
+   * either way; a `pending` verdict withholds the image from player-facing
+   * reads until a human clears it. Returns which of the two states resulted.
    */
   async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string; state: "published" | "pending" }> {
-    // Refused before the decode, which is the expensive half — and before it
-    // for the cheap reason too: an agent that cannot attach an image to
-    // anything right now should hear that first, not after the work.
     const claim = await this.registry.checkCanUploadImage(agent);
     const processed = await processUpload(bytes, this.#codecs);
     const { verdict, score } = await this.#moderator.check(
       processed.classification.bytes,
       processed.classification.contentType,
     );
-    // Then the real gate, and only then the write. Taking the claim's image
-    // before storing means a lost race (two uploads on one lease, or a lease
-    // that expired during the decode) leaves nothing behind in the store;
-    // storing first would leave a blob nothing can ever reference.
     const key = `img_${randomHex(12)}`;
     if (!(await this.registry.takeClaimImage(claim, key))) {
       throw new UploadRefused(
@@ -253,14 +194,8 @@ export class Engine {
   }
 
   /**
-   * A human refuses an image, whatever state it was in — including one a
-   * sector already shows, which is this world's only takedown path (see
-   * CLAUDE.md). The blob goes first and the record of it second, the same
-   * order `reapImages` uses and for the same reason: an interruption between
-   * them leaves a state naming a blob that is already gone, which the next
-   * attempt resolves for free (deleting an absent key is a no-op); clearing
-   * the record first would leave nothing telling a retry the blob still
-   * needs deleting.
+   * Delete an image and mark it rejected, whatever state it was in before.
+   * Deletes the blob first, then clears the record.
    */
   async rejectImage(key: string): Promise<boolean> {
     await this.images.delete(key);
@@ -268,29 +203,11 @@ export class Engine {
   }
 
   /**
-   * Delete stored images that no claim can put anywhere any more.
-   *
-   * An upload outlives its claim: the blob is written, the url is returned,
-   * and if the agent never bakes a sector referencing it, nothing here used
-   * to reclaim it. That is a free image host — abandoning a claim costs only
-   * the wait for the next one — so this runs on a schedule (a Cloudflare
-   * cron trigger, `worker.ts`'s `scheduled`; `nullheim reap` locally) rather
-   * than being anybody's request path.
-   *
-   * `reapableImages` decides what is garbage and states the rule; this only
-   * carries it out. The order is the whole of the correctness here: the blobs
-   * go first and the columns are cleared second, so an interruption between
-   * them leaves keys naming objects that are already gone — which the next
-   * sweep resolves, since deleting an absent key is a no-op. Clearing first
-   * would drop the only record of the blobs and leak them permanently, which
-   * is the exact failure this function exists to prevent.
-   *
-   * Two round trips, whatever the size of the sweep: R2 deletes a whole array
-   * of keys in one call and the claims are cleared in one statement. An
-   * earlier version deleted one at a time, which is what made the sweep size
-   * a number worth tuning — and made it a number that had to be kept in step
-   * with the cron interval, which is exactly the kind of arithmetic that goes
-   * stale unnoticed.
+   * Delete stored images that no claim can put anywhere any more, up to the
+   * given limit (`IMAGE_REAP_LIMIT` by default). Runs on a schedule (a
+   * Cloudflare cron trigger, or `nullheim reap` locally). Fetches the
+   * candidate keys, deletes the blobs, then clears the claim rows — two
+   * round trips regardless of how many images are reaped.
    */
   async reapImages(options: { limit?: number } = {}): Promise<{ deleted: number }> {
     const candidates = await this.registry.reapableImages(options.limit ?? IMAGE_REAP_LIMIT);
@@ -312,15 +229,7 @@ export class Engine {
     return this.registry.allocate(agent);
   }
 
-  /**
-   * Everything an agent is told about its sector before authoring it.
-   *
-   * Which is: where it is, and how long it has. Nothing about what stands on
-   * any side of it — not a title, not a doorway, not even how many
-   * neighbours exist. An agent that knows nothing cannot hedge toward its
-   * neighbours, and the tonal collision between adjacent sectors is the whole
-   * reason players walk around.
-   */
+  /** The coordinate, claim data, and world sector count for a claim, and nothing else. */
   async claimContext(claim: Claim): Promise<Record<string, unknown>> {
     return {
       claim: claimAsDict(claim),
@@ -385,11 +294,7 @@ export class Engine {
     return this.registry.release(claim);
   }
 
-  /**
-   * The genre, size and mood assigned to this claim — never chosen by the
-   * agent, and the same three words every time this claim's theme is asked
-   * for. See `theme.ts` for why this is assigned rather than self-selected.
-   */
+  /** The genre, size, and mood assigned to this claim. Deterministic per claim id. */
   claimTheme(claim: Claim): Record<string, unknown> {
     return themeAsDict(themeForClaim(claim.claimId));
   }
@@ -411,13 +316,7 @@ export class Engine {
     };
   }
 
-  /**
-   * Which of the agent's sectors a validated `parentId` points into.
-   *
-   * Only ever called after `validateObject` has passed, so one of these
-   * branches always matches — an agent holding several sectors picks between
-   * them by naming a parent, never by naming a coordinate.
-   */
+  /** Finds which of the agent's sectors a validated `parentId` points into. */
   async #sectorFor(agent: Agent, parentId: string): Promise<BakedSector> {
     for (const coordinate of agent.coordinates) {
       const baked = await this.store.get(coordinate);
@@ -430,12 +329,8 @@ export class Engine {
   }
 
   /**
-   * Place one object, in whichever of the agent's sectors `parent_id` names.
-   *
-   * Throws SectorRequired if the agent has not built one yet. Not otherwise
-   * rate-limited: the cooldown now gates only the *next sector*, not what
-   * goes inside the ones an agent already holds — see registry.ts's module
-   * comment.
+   * Place one object in whichever of the agent's sectors `parent_id` names.
+   * Throws `SectorRequired` if the agent has not built a sector yet.
    */
   async createObject(
     agent: Agent,
@@ -449,8 +344,7 @@ export class Engine {
     }
 
     const baked = await this.#sectorFor(agent, draft.parentId);
-    // Internally the sector itself is still represented as parentId=null —
-    // the sector's own id is only the agent-facing spelling of "the root".
+    // A parentId equal to the sector's own id is stored as null.
     const parentId = draft.parentId === baked.sectorId ? null : draft.parentId;
     const world_object: WorldObject = {
       objectId: `obj_${randomHex(8)}`,
@@ -485,11 +379,7 @@ export class Engine {
     };
   }
 
-  /**
-   * Everything `validateInteraction` might need to ask, prefetched into a
-   * synchronous facade: the two named objects, if they exist, and whether
-   * this pair already has an interaction.
-   */
+  /** Fetches the two named objects and whether this pair already has an interaction. */
   async #interactionValidationStore(
     objectAId: string,
     objectBId: string,
@@ -506,11 +396,9 @@ export class Engine {
   }
 
   /**
-   * Author the text shown for `use A with B` (or `use B with A`) between two
-   * objects already standing in one of the agent's own sectors. Not
-   * cooldown-gated, the same as `createObject` — see registry.ts's module
-   * comment. A pair may only ever get one interaction, permanently:
-   * `validateInteraction` refuses a second one for the same two objects.
+   * Record the text shown for `use A with B` between two objects already
+   * standing in one of the agent's own sectors. A pair can only get one
+   * interaction; `validateInteraction` refuses a second.
    */
   async createInteraction(
     agent: Agent,
@@ -535,21 +423,13 @@ export class Engine {
     return { interaction, errors: [] };
   }
 
-  /**
-   * What a player sees on `use A with B` — public, unauthenticated, like
-   * every other player-facing read. Order never matters: `WorldStore`
-   * normalises both ids before looking the pair up.
-   */
+  /** What a player sees on `use A with B`. Object order does not matter. */
   async interactionView(objectAId: string, objectBId: string): Promise<Record<string, unknown> | null> {
     const interaction = await this.store.interactionBetween(objectAId, objectBId);
     return interaction === null ? null : interactionAsDict(interaction);
   }
 
-  /**
-   * Everything `validateSector` might need to ask, prefetched into a
-   * synchronous facade: whether the claimed coordinate (and each of its four
-   * neighbours) is already baked, and the world's sector count.
-   */
+  /** Fetches whether the coordinate and its four neighbours are baked, and the sector count. */
   async #sectorValidationStore(coordinate: Coordinate): Promise<ValidationStore> {
     const checked = [coordinate, ...coords.neighbours(coordinate).map(([, n]) => n)];
     const [flags, count] = await Promise.all([
@@ -565,13 +445,7 @@ export class Engine {
     };
   }
 
-  /**
-   * Everything `validateObject` might need to ask, prefetched into a
-   * synchronous facade: the agent's own sectors (to recognise a `parentId`
-   * naming one of them directly) and whatever `parentId` itself names, if
-   * anything. `validateObject` only ever looks up that one id, so this is
-   * the whole of what it can ask for.
-   */
+  /** Fetches the agent's own sectors and whatever `parentId` names, if anything. */
   async #objectValidationStore(agent: Agent, parentId: string): Promise<ValidationStore> {
     const [sectors, parent] = await Promise.all([
       Promise.all(agent.coordinates.map((c) => this.store.get(c))),
@@ -589,24 +463,11 @@ export class Engine {
   // --- the read model players see -----------------------------------------
 
   /**
-   * What a player sees standing in a sector.
-   *
-   * Exits are computed here, not stored. Each one is labelled with the
-   * neighbour's own title and, on closer examination, its short description.
-   *
-   * `created_at`/`last_updated_at`/`creator` carry the `info` command's data
-   * on the same fetch as `look` — one round trip either way, since `info`
-   * follows the "never serve from the frontend's cached model" rule too and
-   * always re-fetches the sector fresh. `last_updated_at` is the newest
-   * object's `created_at` anywhere in the sector (objects come back
-   * oldest-first from `objectsIn`, so the last one is the newest), or the
-   * bake time itself when nothing has been added yet.
-   *
-   * A sector may bake referencing an image a human has not cleared yet (see
-   * `uploadImage`'s `pending` verdict) — this is what keeps that image out of
-   * a player's view until they do: the indexed lookup costs one query on a
-   * path that already makes several, which buys correctness on a row that
-   * can never be rewritten.
+   * What a player sees standing in a sector. Exits are computed from
+   * neighbouring sectors, each labelled with that neighbour's title and
+   * short description. `last_updated_at` is the newest object's
+   * `created_at` in the sector, or the bake time if it has no objects. The
+   * `image` field is omitted unless the image is published.
    */
   async sectorView(coordinate: Coordinate): Promise<Record<string, unknown> | null> {
     const baked = await this.store.get(coordinate);
@@ -660,17 +521,8 @@ export class Engine {
   }
 
   /**
-   * The full object tree in one sector — what its own author may see.
-   *
-   * The sector's objects are fetched once and bucketed by parent, rather than
-   * re-querying per node. An agent contributing every 6 hours for a year
-   * has tens of thousands of objects here, and re-querying per node would
-   * make walking them quadratic.
-   *
-   * Only `sectorContext()` calls this now — the /me index and the object
-   * prompt carry a per-sector count instead (`WorldStore.objectCountIn()`),
-   * precisely so neither has to pull every object in every held sector just
-   * to report how many there are.
+   * The full object tree in one sector. Fetches all of the sector's objects
+   * once and buckets them by parent, then builds the tree recursively.
    */
   async objectTree(coordinate: Coordinate): Promise<ObjectNode[]> {
     const byParent = new Map<string | null, WorldObject[]>();
@@ -695,24 +547,8 @@ export class Engine {
   }
 
   /**
-   * The full detail of one of the agent's own sectors — the prose and object
-   * tree the slim object prompt deliberately leaves out.
-   *
-   * The object prompt now carries only a count per sector, so the model can
-   * pick a candidate cheaply (an under-furnished sector, say) without
-   * dragging any sector's contents along. Reads are free — nothing here is
-   * cooldown-gated — so it may fetch this endpoint for more than one
-   * candidate before committing. Once it has chosen, this returns that one
-   * sector's full `long_description` and its complete object tree —
-   * descriptions included — to decide both what to make and its `parent_id`.
-   * Nothing about neighbouring sectors is returned, for the same reason the
-   * object prompt withholds neighbours: an agent must not be able to hedge
-   * toward them.
-   *
-   * Returns `null` when the sector does not exist or is not the agent's own —
-   * the caller turns that into the same shape as an unknown id, so an agent
-   * can never learn that a `sec_…` id it saw mentioned belongs to another
-   * agent.
+   * The full description and object tree of one of the agent's own sectors.
+   * Returns `null` if the sector does not exist or is not this agent's own.
    */
   async sectorContext(agent: Agent, sectorId: string): Promise<Record<string, unknown> | null> {
     const baked = await this.store.getById(sectorId);
@@ -727,17 +563,8 @@ export class Engine {
     };
   }
 
-  /** An agent's own standing: a lean index of its sectors plus its clock. */
+  /** An agent's own standing: an index of its sectors (id, coordinate, object count) plus its cooldown clock. */
   async agentView(agent: Agent): Promise<Record<string, unknown>> {
-    // The index is deliberately just an id, a coordinate and a count — no
-    // title, no long_description, no object tree. A count is a COUNT(*) on
-    // the coordinate index (WorldStore.objectCountIn()), not a fetch of the
-    // rows themselves, so this stays O(sectors held) no matter how many
-    // objects stand in any of them. Sector count itself grows only as fast
-    // as the cooldown allows — one every `cooldown_seconds`, at most — which
-    // is what actually bounds /me and the object prompt it carries — see
-    // renderObjectPrompt. Full prose and the object tree are served
-    // per-sector, on demand, by sectorContext().
     const sectors: Record<string, unknown>[] = [];
     for (const coordinate of agent.coordinates) {
       const baked = await this.store.get(coordinate);
@@ -751,10 +578,6 @@ export class Engine {
     }
     return {
       agent: agentAsDict(agent),
-      // A fresh agent's cooldown starts at zero, so its first sector is free
-      // without needing a special case here. can_create_object needs only a
-      // sector to exist — objects are never cooldown-gated, only the next
-      // sector is (see registry.ts's module comment).
       can_claim_sector: cooldownRemaining(agent) <= 0,
       can_create_object: isSettled(agent),
       cooldown_seconds: this.registry.cooldownSeconds,
@@ -791,32 +614,7 @@ export class Engine {
     return this.#prompts[name] ?? "";
   }
 
-  /**
-   * The sector prompt. It carries the coordinate and the claim, and nothing
-   * about anything else in the world — including the agent's own back
-   * catalogue.
-   *
-   * A `{{held}}` list of the agent's previous sectors used to be interpolated
-   * here, under a rule to repeat none of them. It was removed because it
-   * produced the opposite of its intent. Handing a model a list of what it
-   * has already made is an invitation to continue the series, not to break
-   * from it, and the label on the list does not decide which one happens:
-   * `463e089` had already found exactly this on the object side, where an
-   * agent must read its own back catalogue before every object and "rhymes"
-   * with it, "which is why the objects are so much the more uniform of the
-   * two". The preview world agrees. The most prolific agent's sectors before
-   * the list was added are a canyon strung with kites, a low-gravity wreck
-   * grown over with vacuum-coral, a hollowed fungus and a room where gravity
-   * runs forty degrees off true; after it, a uniform run of plain industrial
-   * rooms.
-   *
-   * The case for the list was that an agent returning in a fresh session has
-   * no memory of what it built, so its seventh prompt is byte-identical to
-   * its first. That is true and is now deliberate: an identical prompt is a
-   * cold start, which is the condition under which this world got its widest
-   * writing. An agent claiming a second sector in the same session still has
-   * the first one in its own context, so the list was redundant there anyway.
-   */
+  /** The sector prompt: the coordinate and the claim id, and nothing else about the world. */
   async renderSectorPrompt(claim: Claim): Promise<string> {
     return this.promptTemplate("sector_architect")
       .replaceAll("{{coordinate}}", coords.toString(claim.coordinate))
@@ -824,21 +622,9 @@ export class Engine {
   }
 
   /**
-   * The object prompt — a lean index of every sector this agent holds.
-   *
-   * Each sector appears as one line: its id, its coordinate, and how many
-   * objects already stand in it. No title, no prose, no object tree — those
-   * come from `GET /v1/agents/sector/{sector_id}` once a sector is chosen.
-   * A count is what keeps this bounded: it costs one `COUNT(*)` per held
-   * sector (`WorldStore.objectCountIn()`), never a fetch of the objects
-   * themselves, so the prompt stays small by sector count — which itself
-   * grows sublinearly — no matter how many objects any one sector holds.
-   *
-   * `view` is an already-computed `agentView()` for this agent. The only
-   * caller in production has just built one — this prompt is served from the
-   * same response — and rebuilding it would re-count every sector a second
-   * time, which on D1 is a second set of round trips for an answer already
-   * in hand.
+   * The object prompt: one line per sector the agent holds, giving its id,
+   * coordinate, and object count. `view` may pass an already-computed
+   * `agentView()` result to avoid recomputing it.
    */
   async renderObjectPrompt(agent: Agent, view?: Record<string, unknown>): Promise<string> {
     const resolved = view ?? (await this.agentView(agent));

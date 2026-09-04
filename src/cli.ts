@@ -64,11 +64,7 @@ function usage(): never {
   process.exit(2);
 }
 
-/**
- * One sweep of `Engine.reapImages`, then exit — the local stand-in for the
- * Worker's cron trigger. Bounded and idempotent, so running it twice is
- * harmless and running it never costs only disk.
- */
+/** Runs one sweep of `Engine.reapImages`, then exits. */
 async function reap(argv: string[]): Promise<number> {
   const { values } = parseArgs({ args: argv, options: { db: { type: "string" } } });
   const dbPath = values.db ?? ":memory:";
@@ -89,15 +85,9 @@ async function reap(argv: string[]): Promise<number> {
 }
 
 /**
- * The human half of moderation. Runs straight against the database — see
- * `usage()` for why there is no HTTP route — so on Cloudflare this means
- * running it with `--db` pointed at a local copy, or against the D1/R2
- * bindings directly some other way; deciding that is out of scope here.
- */
-/**
- * Where a deployed world is, and the token to reach it. Flags win over the
- * environment; the token is environment-only, because a flag would put an
- * account-wide credential into shell history and into every `ps` on the box.
+ * Where a deployed world is, and the token to reach it. Flags take
+ * precedence over environment variables; the token is read only from the
+ * environment, never from a flag.
  */
 function remoteTarget(values: { account?: string; database?: string; bucket?: string }) {
   const account = values.account ?? process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -214,8 +204,7 @@ async function main(argv: string[]): Promise<number> {
     registrationsPerHour,
   });
   await ensureGenesis(store);
-  // Nothing durable to write images alongside an in-memory world either —
-  // see images/fs.ts.
+  // An in-memory world stores images in memory too, not on disk.
   const imagesDir = dbPath === ":memory:" ? null : `${dbPath}.images`;
   const engine = new Engine({
     store,
@@ -240,13 +229,7 @@ async function main(argv: string[]): Promise<number> {
   );
 
   return new Promise((resolve) => {
-    // Guarded against re-entry: server.close() only drains connections that
-    // finish on their own, so an open keep-alive socket (a browser tab left
-    // on /enter is enough) can leave it waiting indefinitely. Signalling again
-    // is the natural reaction to a shutdown that appears to hang — and
-    // without this guard, each repeat call to server.close() stacks another
-    // 'close' listener on the server rather than doing anything new, which is
-    // how you get Node's own MaxListenersExceededWarning shouting about it.
+    // Ignores a second SIGINT/SIGTERM once shutdown has started.
     let shuttingDown = false;
     const shutdown = () => {
       if (shuttingDown) {

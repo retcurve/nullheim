@@ -1,13 +1,7 @@
 /**
- * The one part of the REST adapter that is not a pass-through: turning a
- * parameterised statement into an inlined one, which `batch` has to do
- * because Cloudflare's endpoint refuses `params` alongside multiple
- * statements (see the file's own comment).
- *
- * Inlining is the codebase's least favourite operation, so it gets the
- * scrutiny to match. `literal` is exported for these tests; the substitution
- * is reached through `openD1Http().batch` with a fake `fetch`, so what is
- * asserted is the SQL that would really go over the wire.
+ * Tests for `literal`, which turns a value into an inlined SQL literal, and
+ * for `openD1Http().batch`, which inlines a statement's parameters before
+ * sending it. Requests are captured with a fake `fetch`.
  */
 
 import { test, describe, mock } from "node:test";
@@ -19,8 +13,6 @@ describe("inlining a SQL literal", () => {
   test("strings are quoted and internal quotes doubled", () => {
     assert.equal(literal("img_abc"), "'img_abc'");
     assert.equal(literal("O'Brien"), "'O''Brien'");
-    // The shape an injection attempt takes: the closing quote has to survive
-    // as data rather than ending the literal.
     assert.equal(literal("'; DROP TABLE sectors; --"), "'''; DROP TABLE sectors; --'");
     assert.equal(literal(""), "''");
   });
@@ -42,7 +34,7 @@ describe("inlining a SQL literal", () => {
   });
 });
 
-/** Captures the request bodies a `Db` call would send, answering each one. */
+/** Replaces global fetch with a stub that records each request body and returns `results`. */
 function fakeFetch(results: unknown[] = [{ success: true, meta: { changes: 1, last_row_id: 0 } }]) {
   const sent: { sql: string; params?: unknown[] }[] = [];
   const fetcher = mock.method(globalThis, "fetch", async (_url: unknown, init: { body: string }) => {
@@ -74,8 +66,6 @@ describe("the REST adapter", () => {
     ]);
     let results;
     try {
-      // The real `WorldStore.rejectImage` batch, which is the only one this
-      // adapter is ever asked for.
       results = await openD1Http(target).batch([
         {
           sql: "UPDATE images SET state = 'rejected', reviewed_at = ? WHERE image_key = ?",
@@ -93,18 +83,12 @@ describe("the REST adapter", () => {
       "UPDATE images SET state = 'rejected', reviewed_at = 1788547321.814 WHERE image_key = 'img_x'" +
         ";\nUPDATE sectors SET image = NULL WHERE image = '/v1/images/img_x'",
     );
-    // Positional, like every other backend's batch.
     assert.deepEqual(
       results.map((r) => r.changes),
       [1, 2],
     );
   });
 
-  /**
-   * The substitution walks quoted strings rather than blindly replacing every
-   * `?`, so a literal question mark already in the SQL is left alone instead
-   * of eating a parameter and shifting every later one.
-   */
   test("a question mark inside a quoted string is not a placeholder", async () => {
     const { sent, restore } = fakeFetch([{ success: true }, { success: true }]);
     try {

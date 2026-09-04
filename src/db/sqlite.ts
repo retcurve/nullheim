@@ -1,15 +1,8 @@
 /**
- * Local storage: node:sqlite, wrapped to the same shape D1 hands out.
+ * Local storage: node:sqlite, wrapped to the same `Db` shape as D1.
  *
- * node:sqlite is synchronous — there is no I/O to await, the file is memory
- * mapped and every call blocks for microseconds. The `Promise.resolve` wraps
- * below exist only so callers never have to know that; the same `Engine`
- * built against this adapter or against `db/d1.ts` behaves identically.
- *
- * Still experimental in Node 22 (a warning on import, not on use). It is the
- * only stdlib option that needs no dependency and no native build step for a
- * project with "no runtime dependencies" as a stated goal; better-sqlite3
- * would be the fallback if that warning ever becomes a hard blocker.
+ * node:sqlite is synchronous; every method here returns a resolved promise
+ * to match the async `Db` interface.
  */
 
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
@@ -20,12 +13,7 @@ export interface SqliteDb extends Db {
   close(): void;
 }
 
-/**
- * Every value this app ever binds is a string, a number, or null (the same
- * three JSON-safe primitives the wire format itself is limited to) — this
- * just says so to the type checker, which knows `SQLInputValue` as a wider
- * type than `unknown` only by name.
- */
+/** Casts bound parameters to the types node:sqlite accepts (string, number, or null). */
 function toSqlParams(params: readonly unknown[]): SQLInputValue[] {
   return params as SQLInputValue[];
 }

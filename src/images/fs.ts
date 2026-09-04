@@ -1,11 +1,9 @@
 /**
- * Local-dev storage: plain files on disk, or an in-memory `Map` when the
- * world itself is in-memory (`--db :memory:`, `cli.ts`'s default) — nothing
- * durable to write images alongside in that case either.
+ * An `ImageStore` backed by plain files on disk, or by an in-memory `Map`
+ * when no directory is given.
  *
- * The content type has nowhere to live in a bare file the way R2 carries it
- * as object metadata, so it's written to a `.type` sidecar next to the
- * image bytes.
+ * On disk, each image's content type is written to a `.type` sidecar file
+ * next to its bytes.
  */
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -38,10 +36,8 @@ export function openFsImages(dir: string | null): ImageStore {
       await writeFile(join(dir, `${key}.type`), contentType, "utf-8");
     },
     async delete(keys) {
-      // Both the bytes and the content-type sidecar, for every key, and none
-      // missing is an error — see the interface note on idempotence. R2 does
-      // this in one request; a local directory has no equivalent, so the fan
-      // out lives here rather than in the caller.
+      // Removes both the bytes and the content-type sidecar for each key.
+      // A missing file is not an error.
       await Promise.all(
         (typeof keys === "string" ? [keys] : keys).flatMap((key) => [
           rm(join(dir, key), { force: true }),

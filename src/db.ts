@@ -2,20 +2,15 @@
  * The storage abstraction that lets the same engine run against a local
  * SQLite file and against Cloudflare D1.
  *
- * D1's own binding shape (`prepare(sql).bind(...).run()/.first()/.all()`) is
- * the one that cannot be adapted away — it is imposed by the platform — so
- * this interface is modelled on it directly rather than on node:sqlite's.
- * `src/db/d1.ts` is close to a pass-through; `src/db/sqlite.ts` is the
- * adapter that does real work, wrapping node:sqlite's synchronous calls in
- * resolved promises so callers never need to know which backend they have.
+ * The interface follows D1's own binding shape
+ * (`prepare(sql).bind(...).run()/.first()/.all()`). `src/db/d1.ts` is close
+ * to a pass-through; `src/db/sqlite.ts` adapts node:sqlite's synchronous
+ * calls into resolved promises.
  *
- * Every write that has to happen atomically — the static lock on a sector,
- * the frontier update that rides along with it, the world-wide claim rate —
- * is expressed as a single statement (via a conditional `INSERT … SELECT …
- * WHERE`) or as one `batch()` call, never as a read followed by a separate
- * write. Both D1 and node:sqlite execute a single statement, and a single
- * `batch()`, as one atomic unit; splitting a check-then-act across two
- * separate `run()` calls would reopen exactly the race this buys safety from.
+ * Writes that must happen atomically — a sector's static lock and frontier
+ * update, the world-wide claim rate — are each expressed as one statement
+ * (a conditional `INSERT … SELECT … WHERE`) or one `batch()` call, never as
+ * a read followed by a separate write.
  */
 
 export interface DbResult {
@@ -44,12 +39,7 @@ export interface Db {
   exec(sql: string): Promise<void>;
 }
 
-/**
- * Both SQLite dialects report a primary-key or unique-index collision this
- * way. Used to turn "the row already exists" into a typed refusal (like
- * `AlreadyBaked`) instead of a raw database error leaking past the storage
- * layer.
- */
+/** True if `exc` is a primary-key or unique-index collision from either SQLite dialect. */
 export function isUniqueViolation(exc: unknown): boolean {
   const message = exc instanceof Error ? exc.message : String(exc);
   return message.includes("UNIQUE constraint failed") || message.includes("SQLITE_CONSTRAINT");

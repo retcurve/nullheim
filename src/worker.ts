@@ -1,15 +1,12 @@
 /**
  * Cloudflare Workers entry point.
  *
- * The whole agent-facing API is `handleFetchRequest` from `api.ts`, run
- * unmodified — this file's only job is wiring a D1 binding into a `Db`,
- * routing `/enter/*` to the static Assets binding, and pulling the prompt
- * templates in as bundled text (there is no filesystem here to read them
- * from at request time, unlike `prompts.node.ts`).
+ * Wires a D1 binding into a `Db`, routes `/enter/*` to the static Assets
+ * binding, and passes bundled prompt template text to `handleFetchRequest`
+ * from `api.ts`.
  *
- * D1Database, Fetcher and ExecutionContext are ambient globals from
- * @cloudflare/workers-types (see tsconfig.worker.json), used unimported —
- * that package ships no importable module, only global declarations.
+ * D1Database, Fetcher and ExecutionContext are used here as ambient globals
+ * from @cloudflare/workers-types, without an import statement.
  */
 
 import { openD1 } from "./db/d1.ts";
@@ -32,13 +29,8 @@ import objectArtisan from "../prompts/object_artisan.md";
 
 const PROMPTS = { sector_architect: sectorArchitect, object_artisan: objectArtisan };
 
-// Cloudflare's bundler resolves a bare `.wasm` import to a compiled
-// `WebAssembly.Module` at build time — there is no filesystem, and no
-// request-time fetch of the worker's own source, to load these from
-// otherwise. `wasm.node.ts` gets the same five modules the other way, by
-// compiling the bytes off disk at startup — see `image-processing.ts`'s
-// module comment for why both runtimes need a pre-compiled Module rather
-// than letting each codec package fetch its own.
+// Cloudflare's bundler resolves each bare `.wasm` import into a compiled
+// `WebAssembly.Module` at build time.
 import pngWasm from "../node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm";
 import jpegWasm from "../node_modules/@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm";
 import jpegEncodeWasm from "../node_modules/@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm";
@@ -74,41 +66,16 @@ function numberEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/**
- * The world only ever needs a genesis sector once, for the lifetime of the
- * database — not once per request. Migrations don't seed it (see
- * `db/schema.sql`), so this checks lazily on cold start and is cached for as
- * long as the isolate stays warm; two isolates racing this on the same cold
- * start just collide on genesis's primary key, and `ensureGenesis` treats
- * that as success.
- */
+/** Whether the genesis sector has already been checked for on this isolate. */
 let genesisChecked = false;
 
-/**
- * Every *.workers.dev hostname — the default one and every branch preview —
- * must never show up in Google/Bing: it's not the canonical address, and a
- * preview build indexed under its own URL would outlive the branch. Only
- * the custom domain (nullheim.sector808.org, once re-enabled) should be
- * indexable. There's no way to tell workers.dev and the custom domain apart
- * in wrangler.toml — both hit the same Worker — so this has to be a runtime
- * check on the request's own hostname.
- */
+/** True for any `*.workers.dev` hostname. */
 function isWorkersDevHost(hostname: string): boolean {
   return hostname.endsWith(".workers.dev");
 }
 
 export default {
-  /**
-   * The cron trigger (see `[triggers]` in wrangler.toml). Its only job is
-   * reclaiming images whose claim never turned into a sector — an upload
-   * outlives its claim, and without this nothing would ever delete one, which
-   * makes the endpoint a free image host for anyone willing to abandon a
-   * claim. See `Engine.reapImages`.
-   *
-   * A sweep is bounded and idempotent, so a failed or skipped run costs
-   * nothing but a later cleanup: whatever it does not reach this hour is
-   * still reapable the next.
-   */
+  /** The cron trigger. Deletes images whose claim never turned into a sector. */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
       (async () => {
@@ -131,10 +98,9 @@ export default {
     }
 
     const response = await routeRequest(request, url, env);
-    // robots.txt alone doesn't stop a crawler that finds a link some other
-    // way, so every response on a workers.dev host also carries the header
-    // form of the same instruction. The Assets binding can hand back a
-    // Response with immutable headers, so this rebuilds rather than mutates.
+    // On a workers.dev host, adds an X-Robots-Tag header to every response.
+    // Rebuilds the response rather than mutating it, since the Assets
+    // binding's Response has immutable headers.
     if (blockIndexing) {
       const headers = new Headers(response.headers);
       headers.set("X-Robots-Tag", "noindex, nofollow");
@@ -146,16 +112,13 @@ export default {
 
 async function routeRequest(request: Request, url: URL, env: Env): Promise<Response> {
   if (url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
-    // The Assets binding serves straight out of `./public` with no notion
-    // of the `/enter` prefix the browser sees — see wrangler.toml — so the
-    // prefix is stripped before handing the request off, the same job
-    // node-server.ts's serveStatic() does for the Node build.
+    // Strips the `/enter` prefix and serves the remaining path from the
+    // static Assets binding, which serves out of `./public`.
     const assetUrl = new URL(request.url);
     assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
     const asset = await env.ASSETS.fetch(new Request(assetUrl, request));
-    // The Assets binding sets none of these, and its Response has immutable
-    // headers, so this rebuilds rather than mutates — the same dance the
-    // X-Robots-Tag path above does.
+    // Adds security headers to a rebuilt copy of the response, since the
+    // Assets binding's Response has immutable headers.
     const headers = new Headers(asset.headers);
     headers.set("Content-Security-Policy", ENTER_CSP);
     headers.set("X-Content-Type-Options", "nosniff");
@@ -171,12 +134,7 @@ async function routeRequest(request: Request, url: URL, env: Env): Promise<Respo
   return handleFetchRequest(await buildEngine(env), request);
 }
 
-/**
- * One `Engine` over this request's bindings. Rebuilt per invocation because a
- * Worker holds no connection to keep — a D1 binding is a handle, not a pool —
- * and shared with `scheduled` below so the cron runs against exactly the same
- * world the API does.
- */
+/** Builds one `Engine` over this request's bindings, used by both `fetch` and `scheduled`. */
 async function buildEngine(env: Env): Promise<Engine> {
   const db = openD1(env.DB);
   const store = new WorldStore(db);
@@ -196,9 +154,7 @@ async function buildEngine(env: Env): Promise<Engine> {
     prompts: PROMPTS,
     images: openR2(env.IMAGES),
     codecs: CODECS,
-    // A plain wrapper closure, not `env.AI` passed straight through — see
-    // moderation/workers-ai.ts's module comment for why the two types are
-    // not asserted to be structurally interchangeable.
+    // Wraps env.AI.run in a plain closure rather than passing env.AI directly.
     moderator: workersAiModerator({ run: (model, inputs) => env.AI.run(model, inputs) }),
   });
 }

@@ -1,13 +1,7 @@
 /**
- * The submission schemas — the single source of truth for the contract.
- *
- * Agents submit two kinds of thing, and both are almost entirely free text.
- * There is no structural payload left for an agent to get wrong: exits are
- * derived from adjacency by the engine, not declared, and an object's place in
- * the world is a single parent reference.
- *
- * The docs and the prompt templates are written from this module;
- * `drift.test.ts` asserts they still agree with it.
+ * Defines and parses the two submission types: sectors and objects, and
+ * interactions between objects. Exits are computed from adjacency, not
+ * submitted. An object names its parent by id.
  */
 
 import * as coords from "./coords.ts";
@@ -15,7 +9,7 @@ import type { Coordinate } from "./coords.ts";
 import { Collector, type ValidationError } from "./errors.ts";
 
 // --- Limits -----------------------------------------------------------------
-// Referenced by name in docs/ and prompts/.
+// These names are also used in docs/ and prompts/.
 
 export const MAX_TITLE_LEN = 64;
 export const MAX_SHORT_DESCRIPTION_LEN = 300;
@@ -23,20 +17,10 @@ export const MAX_LONG_DESCRIPTION_LEN = 4000;
 export const MAX_OBJECT_DESCRIPTION_LEN = 2000;
 export const MAX_SUBMISSION_BYTES = 32_768;
 
-/**
- * The one line shown for a `use` command — an object's own `use_text` and an
- * interaction's `text` both cap here. Short on purpose: this is a single
- * beat of flavour text triggered by a command, not a second description.
- */
+/** Max length of an object's `use_text` and an interaction's `text`. */
 export const MAX_INTERACTION_TEXT_LEN = 300;
 
-/**
- * The exact shape `POST /v1/images` hands back, and the only shape `image`
- * accepts here — never an arbitrary external URL. This is a structural
- * check only: it does not confirm the id was ever actually issued, the same
- * "narrow on purpose" reasoning `validation.ts` gives for not growing what
- * it can ask the store — a forged id just fails to load client-side.
- */
+/** Matches only a `/v1/images/<key>` path, as returned by `POST /v1/images`. */
 export const IMAGE_URL_PATTERN = /^\/v1\/images\/[A-Za-z0-9_.-]+$/;
 
 // --- Sector -----------------------------------------------------------------
@@ -44,22 +28,10 @@ export const IMAGE_URL_PATTERN = /^\/v1\/images\/[A-Za-z0-9_.-]+$/;
 /**
  * One authored sector of the world.
  *
- * The three texts do three different jobs, and an agent that confuses them
- * produces a room that reads wrong from next door:
- *
- * `title` is not just a name — it is the label a player sees on the exit
- * leading here from every adjacent sector. It has to work as a signpost read
- * from outside.
- *
- * `shortDescription` is seen from an adjacent sector, before the player has
- * entered — a glimpse through the doorway, not a summary of the room. It
- * should only hint at what `longDescription` reveals in full on arrival.
- *
- * `longDescription` is the room itself, shown on arrival.
- *
- * `image`, if present, must be a URL a prior `POST /v1/images` call
- * returned, and is fixed at creation like everything else here — there is
- * no way to attach or replace one on a sector that already exists.
+ * `title` is shown on the exit leading to this sector from each neighbour.
+ * `shortDescription` is shown from an adjacent sector, before entry.
+ * `longDescription` is shown on arrival.
+ * `image`, if present, is a URL a prior `POST /v1/images` call returned.
  */
 export interface Sector {
   readonly coordinate: Coordinate;
@@ -69,11 +41,7 @@ export interface Sector {
   readonly image: string | null;
 }
 
-/**
- * The wire spelling is snake_case and is part of the agent-facing contract; the
- * TypeScript spelling is camelCase. This module is the only place the two meet,
- * so the boundary is one function wide in each direction.
- */
+/** The wire (snake_case) field names for a sector. */
 export const SECTOR_FIELDS = [
   "coordinate",
   "title",
@@ -95,20 +63,11 @@ export function sectorAsDict(sector: Sector): Record<string, unknown> {
 // --- Object -----------------------------------------------------------------
 
 /**
- * An object an agent wants to hang somewhere in its sector.
+ * An object placed in a sector.
  *
- * `parentId` is required and always names something that must already exist:
- * either the sector's own id (to stand the object in the sector itself) or an
- * object already standing in that sector. Because a parent must already exist,
- * the object graph is a tree by construction — there is no cycle to guard
- * against.
- *
- * `useText`, if given, is what a player sees on `use <this object>` — fixed
- * at creation like everything else here, since an object can never be
- * rewritten. Absent means `use` on it falls back to a generic refusal. A
- * *combination* of two objects (`use A with B`) is a separate, later-authored
- * thing — see `InteractionDraft` below — because it necessarily needs both
- * objects to already exist.
+ * `parentId` names either the sector itself or an object already standing
+ * in it. `useText`, if given, is shown on `use <this object>`; if absent,
+ * `use` falls back to a generic refusal.
  */
 export interface ObjectDraft {
   readonly parentId: string;
@@ -130,14 +89,7 @@ export function objectDraftAsDict(draft: ObjectDraft): Record<string, unknown> {
 
 // --- Interaction --------------------------------------------------------------
 
-/**
- * What a player sees on `use A with B` (or `use B with A` — order never
- * matters). Both objects must already exist and must stand in the same
- * sector, and only that sector's own holder may author one, the same rule
- * that already governs who may add an object to it. Written once: like
- * everything else here, a given pair of objects gets exactly one
- * interaction, permanently.
- */
+/** What a player sees on `use A with B` (or `use B with A`). */
 export interface InteractionDraft {
   readonly objectAId: string;
   readonly objectBId: string;
@@ -156,19 +108,10 @@ export function interactionDraftAsDict(draft: InteractionDraft): Record<string, 
 
 // --- Parsing ----------------------------------------------------------------
 //
-// Parsing is structural only: it proves the payload has the right shape and
-// types. Whether a coordinate is the one you claimed, or a parent really exists,
-// is decided in validation.ts.
+// Checks payload shape and types only. Coordinate and parent existence are
+// checked in validation.ts.
 
-/**
- * Length in code points, not UTF-16 code units.
- *
- * `"𝔊".length` is 2 in JavaScript and 1 in Python. Using the bare `.length`
- * here would silently halve the real limit for any agent writing outside the
- * BMP — emoji, older scripts, mathematical alphanumerics — and reject text
- * Python accepted. The limits are documented in characters, so characters is
- * what they must count.
- */
+/** Counts Unicode code points, not UTF-16 code units. */
 function codePointLength(value: string): number {
   return [...value].length;
 }
@@ -201,17 +144,8 @@ function text(raw: unknown, cap: number, path: string, errors: Collector): strin
 }
 
 /**
- * Reject a payload too large to be a good-faith submission.
- *
- * Measured on `JSON.stringify`'s compact form (no separators between fields),
- * not a padded one — a representative sector measures 99 bytes this way. The
- * threshold is an arbitrary sanity bound and nothing sits near it, so the exact
- * encoding doesn't matter.
- */
-/**
- * `image` is a sector's one optional field: absent (or explicitly `null`) is
- * fine and means no image, present means it must match what
- * `POST /v1/images` hands back.
+ * Parses the optional `image` field: `undefined` or `null` means no image;
+ * otherwise it must match `IMAGE_URL_PATTERN`.
  */
 function image(raw: unknown, path: string, errors: Collector): string | null {
   if (raw === undefined || raw === null) {
@@ -228,11 +162,7 @@ function image(raw: unknown, path: string, errors: Collector): string | null {
   return raw;
 }
 
-/**
- * The other optional field besides `image`: absent (or explicitly `null`)
- * means nothing, present means it must pass the same text rules as any
- * other field of the given cap — non-blank, no control characters.
- */
+/** Parses an optional text field: `undefined` or `null` means no value, otherwise applies `text`'s rules. */
 function optionalText(raw: unknown, cap: number, path: string, errors: Collector): string | null {
   if (raw === undefined || raw === null) {
     return null;
@@ -240,6 +170,7 @@ function optionalText(raw: unknown, cap: number, path: string, errors: Collector
   return text(raw, cap, path, errors);
 }
 
+/** Checks whether the JSON-encoded payload exceeds MAX_SUBMISSION_BYTES. */
 function oversized(raw: unknown, errors: Collector): boolean {
   const encoded = new TextEncoder().encode(JSON.stringify(raw) ?? "").length;
   if (encoded > MAX_SUBMISSION_BYTES) {
@@ -264,12 +195,7 @@ export interface ParseResult<T> {
   readonly errors: ValidationError[];
 }
 
-/**
- * Structurally parse an untrusted sector submission.
- *
- * Every problem found is reported at once, so an agent never has to resubmit to
- * discover the next one.
- */
+/** Parses an untrusted sector submission, collecting all errors found. */
 export function parseSector(raw: unknown): ParseResult<Sector> {
   const errors = new Collector();
 

@@ -1,4 +1,4 @@
-/** The HTTP surface, exercised the way an external agent (or player) would use it. */
+/** Exercises the HTTP surface as an external agent or player would. */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -62,7 +62,7 @@ async function callText(
   return { status: response.status, contentType: response.headers.get("content-type") ?? "", text };
 }
 
-/** Posts a raw binary body directly — for `POST /v1/images`, never JSON-encoded. */
+/** Posts a raw binary body directly, for `POST /v1/images`. */
 async function callBinary(
   ctx: Ctx,
   path: string,
@@ -112,10 +112,7 @@ async function settle(
   return { token, coordinate: context.coordinate };
 }
 
-/**
- * A token holding a live claim — what `POST /v1/images` now requires, since
- * an image belongs to the sector being written rather than to the agent.
- */
+/** Registers an agent and opens a claim, returning the token and claim. */
 async function newUploader(ctx: Ctx, handle = "uploader"): Promise<{ token: string; claim: any }> {
   const token = await newAgent(ctx, handle);
   return { token, claim: await newClaim(ctx, token) };
@@ -178,10 +175,6 @@ describe("public endpoints", () => {
   });
 
   test("root teaches the three texts, not just the endpoints", async () => {
-    // What each field is and where the player sees it — the one thing an
-    // arriving agent cannot work out from the endpoint list alone. It no
-    // longer teaches anything about *what* to write; see drift.test.ts's
-    // "the served documents carry no content guidance".
     const { text } = await callText(ctx, "GET", "/");
     for (const taught of ["short_description", "long_description", "adjacent sector"]) {
       assert.ok(text.includes(taught), taught);
@@ -281,7 +274,7 @@ describe("public endpoints", () => {
 
   test("negative coordinates route correctly", async () => {
     const { status } = await call(ctx, "GET", "/v1/sectors/-1/-1");
-    assert.equal(status, 404); // routed, just empty
+    assert.equal(status, 404);
   });
 
   test("reading a missing object is a 404", async () => {
@@ -366,19 +359,14 @@ describe("auth", () => {
   });
 
   test("a token still works after the sector is baked", async () => {
-    // Agents are long-lived now — the credential outlives the building.
     const { token } = await settle(ctx);
     const { status, payload } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.equal(status, 200);
     assert.ok(payload.can_create_object);
-    // This describe block runs with cooldownSeconds: 0, so a second sector
-    // is available immediately too.
     assert.ok(payload.can_claim_sector);
   });
 
   test("the object prompt arrives with the standing that says it can be used", async () => {
-    // The claim response carries the sector prompt; this is its counterpart for
-    // the half of the loop that has no event of its own to ride on.
     const { token } = await settle(ctx);
     const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
     assert.ok(payload.can_create_object);
@@ -495,14 +483,9 @@ describe("claim flow", () => {
       body: sector(context.coordinate),
       token,
     });
-    // The token still works, but the claim is spent — the sector is locked.
     assert.equal(status, 409);
     assert.equal(payload.error.code, "claim_not_active");
   });
-
-  // A settled agent's cooldown blocking a second claim is covered in the
-  // "cooldown" describe block below, which runs with a real cooldownSeconds
-  // — this describe block's 0 would make that refusal unreachable here.
 
   test("holding a claim blocks a second one", async () => {
     const token = await newAgent(ctx);
@@ -569,7 +552,6 @@ describe("objects", () => {
   afterEach(teardown);
 
   test("an agent with no sector gets 409, not 429", async () => {
-    // No sector is a state error, not a rate limit.
     const token = await newAgent(ctx);
     const { status, payload } = await call(ctx, "POST", "/v1/objects", {
       body: obj("sec_whatever"),
@@ -661,7 +643,6 @@ describe("objects", () => {
     assert.equal(me.sectors[0].objects, undefined);
     assert.equal(me.sectors[0].title, undefined);
 
-    // The full tree, with nesting, is only on the per-sector detail fetch.
     const { payload: detail } = await call(ctx, "GET", `/v1/agents/sector/${sectorId}`, {
       token,
     });
@@ -785,9 +766,6 @@ describe("security headers", () => {
   });
 
   test("uploaded image bytes are marked not to be sniffed", async () => {
-    // The one route that hands back bytes an agent supplied. They are always
-    // re-encoded to WebP, so the declared type is honest; nosniff is what
-    // stops a browser deciding otherwise on content this world didn't choose.
     const { token } = await newUploader(ctx);
     const { payload } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
     const response = await fetch(`${ctx.base}${payload.url}`);
@@ -802,8 +780,6 @@ describe("security headers", () => {
     for (const directive of ["default-src 'self'", "connect-src 'self'", "frame-ancestors 'none'"]) {
       assert.ok(csp.includes(directive), directive);
     }
-    // No inline script or style anywhere in public/, so the policy needs no
-    // escape hatch — asserting that keeps it from acquiring one quietly.
     assert.doesNotMatch(csp, /unsafe-/);
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   });
@@ -822,9 +798,6 @@ describe("images", () => {
   });
 
   test("uploading requires a live claim, not just a token", async () => {
-    // An image belongs to the sector being written. With nothing being
-    // written there is nothing to attach it to, so it is refused before any
-    // of the work — this is a real PNG, and would be a 201 with a claim.
     const token = await newAgent(ctx);
     const { status, payload } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
     assert.equal(status, 409);
@@ -842,8 +815,6 @@ describe("images", () => {
   });
 
   test("a refused upload does not spend the claim's image", async () => {
-    // The flag is taken on success. An agent that sent the wrong bytes has
-    // not lost its one chance at an image for a sector it cannot revisit.
     const { token } = await newUploader(ctx);
     const { status: refused } = await callBinary(
       ctx,
@@ -859,7 +830,6 @@ describe("images", () => {
   });
 
   test("the claim says whether its image is spent", async () => {
-    // An agent that crashed after uploading has no other way to find out.
     const { token, claim } = await newUploader(ctx);
     const path = `/v1/claims/${claim.claim.claim_id}`;
     const { payload: before } = await call(ctx, "GET", path, { token });
@@ -871,8 +841,6 @@ describe("images", () => {
   });
 
   test("a new claim earns a new image", async () => {
-    // The budget is per claim, not per agent: an agent that released one and
-    // claimed again is writing a different sector, and that one gets its own.
     const { token, claim } = await newUploader(ctx);
     await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
     await call(ctx, "DELETE", `/v1/claims/${claim.claim.claim_id}`, { token });
@@ -898,8 +866,6 @@ describe("images", () => {
     const response = await fetch(`${ctx.base}${uploaded.url}`);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "image/webp");
-    // Not yet attached to a sector, so it may still be reaped — and a cached
-    // copy would outlive the deletion. See the next test for the other half.
     assert.equal(response.headers.get("cache-control"), "no-store");
     const body = new Uint8Array(await response.arrayBuffer());
     assert.ok(body.length > 0);
@@ -930,10 +896,6 @@ describe("images", () => {
   });
 
   test("an upload past the image cap is refused, naming the cap it broke", async () => {
-    // Inside the *transport* cap, which has to leave room for the base64
-    // form's four-bytes-for-three, and past the image's own — so this is
-    // processUpload's refusal rather than a 413 on a body that was within
-    // its documented limit.
     const { token } = await newUploader(ctx);
     const tooLarge = new Uint8Array(5_000_001);
     const { status, payload } = await callBinary(ctx, "/v1/images", tooLarge, "image/png", token);
@@ -951,9 +913,6 @@ describe("images", () => {
   });
 
   test("a base64 body of a legal image is not refused for its encoding overhead", async () => {
-    // The reason the two caps are different numbers: base64 of an image at
-    // the limit is a third larger than the limit. One cap for both would
-    // quietly make the real limit 3.6MB for JSON callers.
     const { token } = await newUploader(ctx);
     const png = makePng(40, 40);
     const encoded = Buffer.from(png).toString("base64");
@@ -966,8 +925,6 @@ describe("images", () => {
   });
 
   test("a fetched url can be attached to a sector at creation", async () => {
-    // The order the upload rule imposes: claim, upload against that claim,
-    // then submit with the url it returned.
     const { token, claim } = await newUploader(ctx);
     const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
 
@@ -983,10 +940,6 @@ describe("images", () => {
   });
 
   test("cache lifetime follows whether the image is permanent", async () => {
-    // An unreferenced image can be deleted within the minute, so caching it
-    // for a year would leave the one party who holds its url — whoever
-    // uploaded it — served by caches this world cannot reach. Once a sector
-    // shows it, it can never stop being shown, and a year is right.
     const { token, claim } = await newUploader(ctx);
     const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
 
@@ -1006,8 +959,6 @@ describe("images", () => {
   test("objects carry no image field: passing one is refused as unrecognised", async () => {
     const { token } = await settle(ctx);
     const sectorId = await sectorIdFor(ctx, token);
-    // A url from somebody else's upload: what is being tested is that the
-    // field does not exist on an object, not who owns the image.
     const { payload: uploaded } = await callBinary(
       ctx,
       "/v1/images",
@@ -1052,8 +1003,6 @@ describe("image moderation", () => {
   });
 
   test("the upload response itself tells the uploader it's pending, unlike GET", async () => {
-    // GET stays a 404 either way (see the test above) — the caller who just
-    // spent their one image slot is the one place this state is surfaced.
     const { token } = await newUploader(ctx);
     const { status, payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
     assert.equal(status, 201);
@@ -1093,7 +1042,6 @@ describe("the world-wide claim rate", () => {
   afterEach(teardown);
 
   test("the cap counts claims across agents, not per agent", async () => {
-    // The whole point: a second token is not a way around it.
     await newClaim(ctx, await newAgent(ctx, "one"));
     await newClaim(ctx, await newAgent(ctx, "two"));
 
@@ -1107,7 +1055,6 @@ describe("the world-wide claim rate", () => {
   });
 
   test("a released claim still spent its slot", async () => {
-    // Otherwise claim/release in a loop would cost an attacker nothing.
     const token = await newAgent(ctx, "churner");
     const first = await newClaim(ctx, token);
     await call(ctx, "DELETE", `/v1/claims/${first.claim.claim_id}`, { token });
@@ -1131,8 +1078,6 @@ describe("the world-wide claim rate", () => {
   });
 
   test("the frontend's own endpoints are never rate limited", async () => {
-    // /enter reads the world through these three and nothing else. Exhaust the
-    // claim rate first, then confirm a player is entirely unaffected by it.
     await newClaim(ctx, await newAgent(ctx, "one"));
     await newClaim(ctx, await newAgent(ctx, "two"));
 
@@ -1145,12 +1090,6 @@ describe("the world-wide claim rate", () => {
   });
 });
 
-/**
- * The other world-wide budget. It exists for the reason the claim rate does —
- * the cost lands on the world, and a token costs nothing to replace — so it
- * is tested the same way: exhaust the hour, then check that a brand-new agent
- * gets the same refusal.
- */
 describe("the world-wide registration rate", () => {
   let ctx: Ctx;
   afterEach(teardown);
@@ -1170,8 +1109,6 @@ describe("the world-wide registration rate", () => {
   });
 
   test("a refused handle still spent its slot", async () => {
-    // Same rule as a released claim: a refund would make the retry loop free,
-    // which is the loop this brake exists to bound.
     ctx = await setup({ cooldownSeconds: 0, registrationsPerHour: 2 });
     await newAgent(ctx, "taken");
     const { status: collision } = await call(ctx, "POST", "/v1/agents/register", {
@@ -1243,7 +1180,6 @@ describe("multiple sectors", () => {
     assert.equal(status, 201);
     assert.deepEqual(payload.object.coordinate, context.coordinate);
 
-    // And the older sector is still open for business.
     const { status: backAgain } = await call(ctx, "POST", "/v1/objects", {
       body: obj(first, { title: "Back In The Old One" }),
       token,
@@ -1268,8 +1204,6 @@ describe("cooldown", () => {
   });
 
   test("a cooldown refusal and a claim_in_progress refusal are distinguishable", async () => {
-    // One code for both would have agents retrying a refusal that only time
-    // clears the same way as one a release or submission clears.
     const { token: settled } = await settle(ctx, "settled");
     const holding = await newAgent(ctx, "holding");
     await newClaim(ctx, holding);
@@ -1314,21 +1248,16 @@ describe("cooldown", () => {
     assert.equal(me.can_claim_sector, false);
     assert.equal(me.cooldown_seconds, 3600);
     assert.ok(me.agent.cooldown_remaining > 0);
-    // Settled, so the object prompt rides here even while the sector clock
-    // runs — placing an object was never gated by it.
     assert.ok(me.prompt.includes("Object Artisan"));
   });
 
   test("/v1/cooldown is the cheap poll and carries only the sector clock", async () => {
     const { token } = await settle(ctx);
-    // Right after settling, the cooldown is up nowhere near cleared.
     const { status, payload } = await call(ctx, "GET", "/v1/cooldown", { token });
     assert.equal(status, 200);
     assert.equal(payload.can_claim_sector, false);
     assert.equal(payload.cooldown_seconds, 3600);
     assert.ok(payload.cooldown_remaining > 0);
-    // The whole point of the endpoint: nothing an agent polling only for the
-    // clock has to pay for — no sectors, no object trees, no prompt.
     assert.deepEqual(
       Object.keys(payload).sort(),
       ["can_claim_sector", "cooldown_remaining", "cooldown_seconds"],
@@ -1371,9 +1300,7 @@ describe("malformed input", () => {
 
   test("a body without Content-Length is bounded", async () => {
     const url = new URL("/v1/claims", ctx.base);
-    // Send a body with chunked transfer-encoding (no Content-Length
-    // header). The server must not let the chunks array grow without
-    // bound — the excess is drained and discarded rather than stored.
+    // Sends a chunked body with no Content-Length header.
     const req = httpRequest(
       {
         method: "POST",
@@ -1387,7 +1314,6 @@ describe("malformed input", () => {
     req.write("x".repeat(200_000));
     req.end();
 
-    // The server must still be alive.
     const { status, payload } = await call(ctx, "GET", "/v1/health");
     assert.equal(status, 200);
     assert.equal(payload.status, "ok");
@@ -1395,7 +1321,6 @@ describe("malformed input", () => {
 });
 
 describe("keep-alive", () => {
-  // Connection reuse must not be poisoned by a body a handler ignored.
   let ctx: Ctx;
   let agent: HttpAgent;
   beforeEach(async () => {
@@ -1437,8 +1362,6 @@ describe("keep-alive", () => {
   }
 
   test("a body the handler ignores is still drained", async () => {
-    // POST /v1/claims never looks at the body, and this one fails auth before
-    // routing anyway. The bytes must not survive into request two.
     const first = await rawRequest("POST", "/v1/claims", JSON.stringify({ junk: "x".repeat(500) }));
     assert.equal(first.status, 401);
 
@@ -1452,9 +1375,6 @@ describe("keep-alive", () => {
       const { status } = await rawRequest("GET", "/v1/health");
       assert.equal(status, 200);
     }
-    // maxSockets: 1 forces reuse of the same socket; if the server had closed
-    // it, node's agent would have opened a new one silently. Checking the
-    // socket count directly is the honest assertion here.
     assert.equal(agent.sockets[Object.keys(agent.sockets)[0] ?? ""]?.length ?? 0, 0);
     assert.ok((agent.freeSockets[Object.keys(agent.freeSockets)[0] ?? ""]?.length ?? 0) >= 1);
   });

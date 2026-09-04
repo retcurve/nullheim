@@ -1,16 +1,8 @@
--- Nullheim world schema.
+-- Nullheim world schema, run against local SQLite by the Node CLI. A copy
+-- of this lives in migrations/0001_init.sql for D1.
 --
--- Portable SQLite: this file is run verbatim against a local file by the Node
--- CLI (via node:sqlite's exec()) and is also the source for the D1 migration
--- in migrations/0001_init.sql. Keep the two in sync — drift.test.ts does not
--- reach into SQL, so this one is checked by hand.
---
--- Coordinates are the primary key everywhere they identify a sector, rather
--- than a synthetic id, because the world is a lattice and "the sector at
--- (x, y)" is already a unique, stable identity. `sector_id` is a separate
--- agent-facing handle (an object's parent_id may name a sector by it) and
--- gets its own unique index rather than being the primary key, so a lookup by
--- coordinate never has to join through it.
+-- Sectors are keyed by (x, y). sector_id is a separate unique-indexed handle
+-- used by agents (an object's parent_id may name a sector by it).
 
 CREATE TABLE IF NOT EXISTS sectors (
   x INTEGER NOT NULL,
@@ -27,15 +19,10 @@ CREATE TABLE IF NOT EXISTS sectors (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sectors_sector_id ON sectors (sector_id);
 
--- Answers "is this image referenced by a sector?", which decides both how
--- long GET /v1/images/{id} may be cached and whether the reaper may delete
--- the object. Partial: most sectors carry no image, and a NULL answers
--- neither question.
+-- Indexes the non-null image values on sectors.
 CREATE INDEX IF NOT EXISTS idx_sectors_image ON sectors (image) WHERE image IS NOT NULL;
 
--- The frontier: unbaked, in-bounds coordinates touching at least one baked
--- sector. Maintained incrementally by WorldStore.bake() — see the comment
--- there — rather than recomputed by scanning every sector on each claim.
+-- Unbaked, in-bounds coordinates that touch at least one baked sector.
 CREATE TABLE IF NOT EXISTS frontier (
   x INTEGER NOT NULL,
   y INTEGER NOT NULL,
@@ -55,17 +42,12 @@ CREATE TABLE IF NOT EXISTS objects (
   created_at REAL NOT NULL
 );
 
--- Every read on the player's path (a room view, an agent's own object tree)
--- is "everything at this coordinate, oldest first" or a further filter by
--- parent_id over that same set, so the index leads with the coordinate.
+-- Indexes objects by coordinate, then by creation order.
 CREATE INDEX IF NOT EXISTS idx_objects_coordinate ON objects (x, y, created_at);
 
--- A `use A with B` interaction between two objects. Order-independent by
--- convention — object_a_id and object_b_id are always stored with the
--- lexicographically smaller id first (WorldStore.addInteraction() enforces
--- this), so the unique index below is what makes a given pair write-once,
--- the same permanence rule as everything else here, and a lookup never has
--- to try both orderings against two separate rows.
+-- A `use A with B` interaction between two objects. object_a_id and
+-- object_b_id are always stored with the lexicographically smaller id
+-- first, so the unique index below makes a given pair write-once.
 CREATE TABLE IF NOT EXISTS interactions (
   interaction_id TEXT PRIMARY KEY,
   object_a_id TEXT NOT NULL,
@@ -78,9 +60,7 @@ CREATE TABLE IF NOT EXISTS interactions (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_interactions_pair ON interactions (object_a_id, object_b_id);
 
 -- An agent's own state. `coordinates` is a JSON array of [x, y] pairs, in the
--- order the agent founded them — small and always read as a whole (an agent
--- view walks every sector it holds), so one JSON column earns its keep over a
--- join table here.
+-- order the agent founded them.
 CREATE TABLE IF NOT EXISTS agents (
   agent_id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL,
@@ -93,18 +73,11 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_token_hash ON agents (token_hash);
--- A handle is chosen once at registration and never changes, so a straight
--- unique index (rather than a normalised/lowercased column) is enough to
--- make it write-once across every agent, the same way idx_sectors_sector_id
--- makes a sector_id write-once.
+-- Makes an agent's handle unique.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_name ON agents (name);
 
--- `image_key` is the whole of the image budget, and the only record of who
--- owns a stored object: an upload needs a live claim, a claim pays for one,
--- and NULL means unspent. Taken by a conditional UPDATE on success
--- (Registry.takeClaimImage), so concurrent uploads on one lease cannot both
--- have it. It is also what lets the reaper decide an image is garbage — see
--- Engine.reapImages().
+-- `image_key` names the image a claim's one upload took, or is NULL if it
+-- hasn't uploaded one yet.
 CREATE TABLE IF NOT EXISTS claims (
   claim_id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -118,21 +91,13 @@ CREATE TABLE IF NOT EXISTS claims (
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);
--- Looked up by coordinate when allocating, to find whether an open claim is
--- already sitting on a frontier slot.
+-- Indexes claims by coordinate and status.
 CREATE INDEX IF NOT EXISTS idx_claims_coordinate ON claims (x, y, status);
--- Partial, so the reaper's sweep is proportional to how many images exist
--- rather than to how many claims have ever been made.
+-- Indexes the non-null image keys on claims.
 CREATE INDEX IF NOT EXISTS idx_claims_image ON claims (image_key) WHERE image_key IS NOT NULL;
 
--- One row per grant against a world-wide hourly budget, so a rate limit can
--- answer "how long until the oldest grant in the window ages out" rather
--- than just "how many". Pruned opportunistically in Registry, not by a
--- trigger.
---
--- `kind` is which budget: 'claim' or 'registration' — the two writes whose
--- cost the world bears rather than the agent. The index leads with it
--- because every read here is "this kind, inside this window".
+-- One row per grant against a rate-limit budget. `kind` names which budget:
+-- 'claim' or 'registration'.
 CREATE TABLE IF NOT EXISTS rate_grants (
   kind TEXT NOT NULL,
   granted_at REAL NOT NULL
@@ -140,8 +105,7 @@ CREATE TABLE IF NOT EXISTS rate_grants (
 
 CREATE INDEX IF NOT EXISTS idx_rate_grants_at ON rate_grants (kind, granted_at);
 
--- What a classifier decided about an upload, before a human might override
--- it. See migrations/0009_image_moderation.sql for the full reasoning.
+-- What a classifier (or a human reviewer) decided about an uploaded image.
 CREATE TABLE IF NOT EXISTS images (
   image_key TEXT PRIMARY KEY,
   claim_id TEXT NOT NULL,

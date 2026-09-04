@@ -1,10 +1,6 @@
 /**
- * The @jsquash/* packages ship typed entry points (decode.d.ts, encode.d.ts,
- * ...) but not for the raw emscripten glue one level below them, or for the
- * WebP-specific `utils.js` helper — `image-processing.ts` imports both
- * directly to bypass the packages' own browser-oriented wasm loading (see
- * its module comment). These are minimal shims for exactly the shapes used
- * there, not a full re-typing of the packages.
+ * Type declarations for two @jsquash/* internal modules that ship no types
+ * of their own, covering only the functions `image-processing.ts` imports.
  */
 declare module "@jsquash/webp/utils.js" {
   export function initEmscriptenModule(

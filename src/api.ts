@@ -1,22 +1,16 @@
 /**
- * HTTP surface — the part of the app expressed on the standard `Request` and
- * `Response` types rather than any one runtime's own server API.
+ * HTTP surface: request routing and handlers built on the standard `Request`
+ * and `Response` types.
  *
- * Agents are external processes. This is the only way they touch the world,
- * so the whole contract — auth, claiming, authoring, the 6-hour clock —
- * is expressed here. `handleFetchRequest` is a plain `(Engine, Request) =>
- * Promise<Response>` function, which is also a Cloudflare Worker's entire
- * `fetch` handler shape — `src/worker.ts` calls it directly. `src/node-
- * server.ts` calls it too, after bridging a Node `IncomingMessage` into a
- * `Request` and a returned `Response` back into a `ServerResponse`; nothing
- * in this file imports `node:http` or touches a socket.
+ * `handleFetchRequest` is a `(Engine, Request) => Promise<Response>`
+ * function. `src/worker.ts` uses it directly as a Cloudflare Worker's
+ * `fetch` handler. `src/node-server.ts` calls it after bridging a Node
+ * `IncomingMessage` into a `Request` and a returned `Response` back into a
+ * `ServerResponse`.
  *
- * The `/v1/sectors/...` and `/v1/objects/...` reads are the player-facing
- * view and are deliberately unauthenticated: the world is meant to be
- * walked. Static files under `/enter/*` are not handled here at all — they
- * are a per-runtime concern (node:fs locally, the Assets binding on
- * Cloudflare) and are routed before either transport ever calls into this
- * module.
+ * `/v1/sectors/...` and `/v1/objects/...` reads require no authentication.
+ * Static files under `/enter/*` are routed before either transport reaches
+ * this module.
  */
 
 import { asDict as errorAsDict } from "./errors.ts";
@@ -55,17 +49,10 @@ import { handleMcpRequest } from "./mcp.ts";
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
 
 /**
- * The transport cap for the two routes that can carry an image.
- *
- * `MAX_UPLOAD_BYTES` bounds the *image*; this bounds the *body* carrying
- * it, and the two cannot be the same number because base64 spends 4 bytes
- * on every 3 — an upload sent as `{"image_base64": "…"}` (the only form the
- * MCP tool can send, and one `POST /v1/images` accepts directly) is a third
- * larger than the image inside it. Capping the body at `MAX_UPLOAD_BYTES`
- * would quietly make the real limit 3.6MB for JSON callers and 5MB for
- * everyone else. An oversized image still gets refused — by `processUpload`,
- * as an `unsupported_image` 422 that says so, rather than as a 413 on a body
- * that was within its own documented limit.
+ * The maximum body size accepted on routes that can carry an image.
+ * Base64-encoded bytes take up a third more space than the raw image, so
+ * this is larger than `MAX_UPLOAD_BYTES`. An oversized image is still
+ * rejected, as an `unsupported_image` 422 from `processUpload`.
  */
 export const MAX_IMAGE_BODY_BYTES = Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 4096;
 
@@ -96,15 +83,9 @@ export class TextResponse {
 }
 
 /**
- * A binary body — the resized image bytes `GET /v1/images/{id}` streams back.
- *
- * `permanent` decides the cache lifetime, and it has to be asked rather than
- * assumed: images used to be forever, and were served `immutable` for a year
- * on that basis. They are not any more — an upload whose claim never became a
- * sector is deleted by the reaper — and a year-long `immutable` on a
- * deletable object means a client that fetched it once keeps serving it long
- * after the origin let it go. Which is precisely the copy an abandoned upload
- * wants: whoever uploaded it is the one party holding the url.
+ * A binary body — the image bytes `GET /v1/images/{id}` streams back.
+ * `permanent` sets the cache lifetime: true for a year, false for no
+ * caching at all.
  */
 export class BinaryResponse {
   readonly bytes: Uint8Array;
@@ -129,13 +110,7 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * A world-wide budget's refusal, in the one shape both report: the wait, and
- * the limit under its own name (`claims_per_hour`, `registrations_per_hour`).
- * The same 429 an agent's own cooldown answers with, since from the caller's
- * side both are "not now" — but this one is not about the caller at all, and
- * a fresh token does not shorten it.
- */
+/** Builds a 429 for a world-wide rate limit, carrying the wait time and the named limit. */
 function rateLimited(exc: RateLimited): ApiError {
   return new ApiError(429, exc.code, exc.message, {
     retry_after: Math.round(exc.retryAfter * 10) / 10,
@@ -194,12 +169,8 @@ class RequestHandler {
   }
 
   /**
-   * The bytes of an image upload — either the raw request body (a plain
-   * HTTP caller sending image bytes directly, `Content-Type` naming the
-   * source format), or `{ "image_base64": "..." }` in a JSON body. The
-   * second form exists only so `mcp.ts`'s `upload_image` tool — whose
-   * arguments are necessarily JSON, never raw bytes — can reach this same
-   * endpoint rather than needing a binary transport of its own.
+   * Returns the bytes of an image upload, either from the raw request body
+   * or from an `image_base64` field in a JSON body.
    */
   imageBytes(): Uint8Array {
     if (this.#bodyError !== null) {
@@ -266,16 +237,10 @@ class RequestHandler {
   // --- meta -----------------------------------------------------------------
 
   /**
-   * Markdown to whoever turned up; JSON only to something that asked for it;
-   * the same document to a browser, with a note pointing it at `/enter` first.
-   *
-   * A bare client sends `*​/*`, names no preference, and is better served the
-   * prose — that's the agent case this document is for. A browser sends
-   * `text/html` explicitly, and a human who typed this URL is almost always
-   * looking for the game, not the build contract, so it gets a short message
-   * ahead of the same content pointing it at `/enter` instead. An explicit
-   * `application/json` still gets the structured form, checked first so it
-   * outranks both.
+   * Serves the onboarding document. Returns JSON if the `Accept` header
+   * names `application/json`. Returns an HTML page with a link to `/enter`
+   * if the header names `text/html`. Otherwise returns the document as plain
+   * text.
    */
   index(): RouteResult {
     const accept = (this.headers.get("accept") ?? "").toLowerCase();
@@ -510,10 +475,7 @@ class RequestHandler {
 
   async register(): Promise<RouteResult> {
     const body = this.body() as Record<string, unknown>;
-    // The wire field is "handle", not "name": an agent that took "name" at
-    // face value registered under its human operator's actual name. Stored
-    // and passed around internally as `name` regardless — this is a label on
-    // the one field an arriving agent fills in, not a rename of the concept.
+    // The wire field is "handle".
     const handle = body["handle"];
     if (typeof handle !== "string" || handle.trim().length === 0) {
       throw new ApiError(
@@ -551,15 +513,8 @@ class RequestHandler {
   }
 
   /**
-   * The agent's own standing — and, once it holds a sector, the object
-   * prompt.
-   *
-   * The sector prompt rides on the claim response because a claim is an event
-   * the server issues. There is no equivalent event for objects any more —
-   * placing one is never gated, so an agent may call this whenever it wants
-   * to furnish something. `can_create_object` (really just `isSettled`) gates
-   * the prompt only so an agent with no sector yet, which has nothing to put
-   * `parent_id` on, does not get one.
+   * The agent's own standing. Includes the object prompt once the agent
+   * holds at least one sector.
    */
   async readMe(): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -570,15 +525,7 @@ class RequestHandler {
     return [200, payload];
   }
 
-  /**
-   * Just the clock — the cheapest poll an agent can make.
-   *
-   * This is the *sector* cooldown now, not an object one: objects are never
-   * cooldown-gated (see registry.ts's module comment), so the only thing
-   * left worth polling is whether `POST /v1/claims` will succeed. Agents
-   * that only want to keep furnishing sectors they already hold never need
-   * this endpoint at all.
-   */
+  /** Reports the agent's sector-claiming cooldown status. */
   async cooldown(): Promise<RouteResult> {
     const agent = await this.#agent();
     return [
@@ -592,13 +539,9 @@ class RequestHandler {
   }
 
   /**
-   * Full detail of one of the agent's own sectors — the prose the object
-   * prompt's lean index leaves out, fetched lazily once a sector is chosen.
-   *
-   * Returns the sector's full `long_description` and its complete object tree
-   * (descriptions included), so the agent can match voice and pick a real
-   * `parent_id`. A `sec_…` id that is not the agent's own answers exactly like
-   * one that does not exist, so nothing can be learned about other agents.
+   * Full detail of one of the agent's own sectors: its long description and
+   * every object it contains. Returns 404 for a sector id that is not the
+   * agent's own, the same as for one that does not exist.
    */
   async readOwnSector(sectorId: string): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -620,17 +563,13 @@ class RequestHandler {
       claim = await this.engine.claim(agent);
     } catch (exc) {
       if (exc instanceof NotYet) {
-        // This agent's own cooldown, not yet elapsed — the same 429 shape
-        // object placement used to answer with, before objects stopped
-        // being cooldown-gated.
+        // The agent's cooldown has not elapsed yet.
         throw new ApiError(429, "cooldown", exc.message, { agent: agentAsDict(agent) });
       }
       if (exc instanceof SectorUnavailable) {
         throw new ApiError(409, exc.code, exc.message);
       }
       if (exc instanceof RateLimited) {
-        // The world's own brake, not this agent's — so a 429 with the wait in
-        // the body, exactly as the agent's own cooldown does.
         throw rateLimited(exc);
       }
       throw exc;
@@ -647,12 +586,7 @@ class RequestHandler {
     return [200, payload];
   }
 
-  /**
-   * The genre, size and mood assigned to this claim. The sector prompt
-   * requires this call before writing anything — see the "Your genre, size
-   * and mood" section of `prompts/sector_architect.md` and `theme.ts` for
-   * why this is assigned rather than left to the agent to pick.
-   */
+  /** The genre, size and mood assigned to this claim. */
   async readClaimTheme(claimId: string): Promise<RouteResult> {
     const [, claim] = await this.#claim(claimId);
     return [
@@ -744,10 +678,8 @@ class RequestHandler {
   // --- interactions -----------------------------------------------------------
 
   /**
-   * Author the text a player sees on `use A with B`. Both objects must
-   * already exist in one of this agent's own sectors, and both errors it can
-   * throw mirror `createObject`'s: no sector yet, or a validation failure
-   * (unknown object, different sectors, or a pair that already has one).
+   * Writes the text for `use A with B`. Both objects must already exist in
+   * one of this agent's own sectors.
    */
   async createInteraction(): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -781,9 +713,9 @@ class RequestHandler {
   }
 
   /**
-   * What a player sees on `use A with B` — unauthenticated, like every other
-   * player-facing read. `404` means no interaction exists for that pair, not
-   * that either object is missing; the ids need not even be valid objects.
+   * Returns the text for `use A with B`, unauthenticated. 404 means no
+   * interaction exists for this pair; the object ids are not checked for
+   * validity separately.
    */
   async readInteraction(objectAId: string, objectBId: string): Promise<RouteResult> {
     const view = await this.engine.interactionView(objectAId, objectBId);
@@ -800,13 +732,8 @@ class RequestHandler {
   // --- images ---------------------------------------------------------------
 
   /**
-   * Auth, and a live claim of the caller's own — one image per claim.
-   *
-   * The claim is found rather than named: an agent can hold only one open
-   * claim at a time, and the raw-bytes form of this request has no JSON body
-   * to carry an id in anyway. What the stored image is *not* is owned — it
-   * is anonymous, content-addressed data, and the claim decides who may
-   * create one, not who may read it.
+   * Uploads an image against the caller's own live claim. The claim is found
+   * from the caller's token rather than named in the request.
    */
   async createImage(): Promise<RouteResult> {
     const agent = await this.#agent();
@@ -838,19 +765,9 @@ class RequestHandler {
   }
 
   /**
-   * Unauthenticated, like every other player-facing read — never rate
-   * limited.
-   *
-   * A `pending` or `rejected` image 404s — never 403, so this endpoint can't
-   * be used to confirm an image exists at all before a human has cleared it.
-   * `imageIsPublished` treats a missing moderation row as published (see its
-   * own comment), so this is a no-op for every image older than moderation.
-   *
-   * The reference lookup costs one indexed query, and only on a cache miss:
-   * once an image is referenced the answer is `immutable` for a year, so a
-   * player walking the world pays for it once per image at most. A url a
-   * player can reach is referenced by definition — a sector view is the only
-   * thing that publishes one — so in practice this is the cached path.
+   * Returns one uploaded image's bytes, unauthenticated. Returns 404 for a
+   * `pending` or `rejected` image. Sets the response's cache lifetime to a
+   * year if a sector references the image, otherwise disables caching.
    */
   async readImage(id: string): Promise<RouteResult> {
     if (!(await this.engine.store.imageIsPublished(id))) {
@@ -1023,17 +940,14 @@ function route(method: string, source: string, handler: Handler, summary: string
 
 // --- transport-agnostic dispatch ---------------------------------------------
 
-/** Match `path` against `ROUTES` and run the handler, translating errors. */
+/** Matches `path` against `ROUTES` and runs the handler, translating errors into a response. */
 export async function dispatch(
   method: string,
   path: string,
   handler: RequestHandler,
 ): Promise<RouteResult> {
-  // HEAD has no route table of its own — per HTTP semantics it gets whatever
-  // GET would have returned, just without a body (handleFetchRequest strips
-  // it). Without this fallback every HEAD request 404s, since ROUTES only
-  // ever registers "GET": a bot or fetch tool that probes with HEAD before
-  // GET-ing sees a dead link and never issues the GET at all.
+  // A HEAD request is dispatched to the matching GET route; the body is
+  // stripped afterward in handleFetchRequest.
   const lookupMethod = method === "HEAD" ? "GET" : method;
   for (const entry of ROUTES) {
     if (entry.method !== lookupMethod) {
@@ -1056,68 +970,26 @@ export async function dispatch(
   return [404, { error: { code: "no_such_route", message: `${method} ${path}` } }];
 }
 
-// Agents call this API from wherever they run, including in-browser tools
-// (a ChatGPT action's fetch, say) that enforce CORS on every cross-origin
-// request — not just ones a browser's same-origin policy would otherwise
-// block reads from. There is no cookie or origin-based auth here, only the
-// bearer token in `Authorization`, so allowing every origin gives away
-// nothing a direct server-to-server call couldn't already do.
+// Allows requests from any origin.
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
-  // Mcp-Protocol-Version and Mcp-Session-Id are the two headers the official
-  // MCP client library attaches to every request once a session is under
-  // way. Neither is used by the plain REST routes, but omitting them here
-  // does not just make mcp.ts ignore them — a browser-based MCP client's
-  // preflight fails outright and the real request is never sent at all,
-  // which is indistinguishable from the server being broken.
   "Access-Control-Allow-Headers": "Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id",
 };
 
-/**
- * Sent on every response this module produces, and on the static frontend
- * too (see the `/enter` branches in `node-server.ts` and `worker.ts`).
- *
- * `nosniff` is the one that does real work here: `GET /v1/images/{id}` hands
- * back bytes an agent uploaded, and while the pipeline re-encodes everything
- * to WebP so the declared type is always honest, a browser that sniffs its
- * way to a different conclusion would be deciding that on content this world
- * did not choose.
- *
- * The rest close off framing, referrer leakage and `<base>` rewriting. None
- * of them is load-bearing today — there is no cross-origin content anywhere,
- * and no agent text reaches an HTML attribute since the linkifier went — but
- * they are the backstop for the next person who adds markup, and the reason
- * an XSS here would have been contained rather than total.
- */
+/** Sent on every response this module produces, and on the static frontend. */
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "X-Frame-Options": "DENY",
 };
 
-/**
- * The API's own CSP. Nothing this module serves loads a subresource — JSON,
- * plain text, image bytes, and one small HTML page whose only styling is an
- * inline `style` attribute — so everything is denied except that.
- *
- * The static frontend is a different document with different needs and gets
- * its own policy; see `ENTER_CSP` below.
- */
+/** The Content-Security-Policy for this module's own responses. */
 const API_CSP =
   "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; " +
   "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/**
- * The player frontend's policy. `public/` is entirely same-origin — its own
- * stylesheet, script, icons and manifest, plus sector images from
- * `/v1/images/…` on this same host — and has no inline script or style at
- * all, so this needs no `unsafe-` escape hatch of any kind.
- *
- * `connect-src 'self'` is what confines `app.js` to this world's own read
- * endpoints: a future edit that tried to send a player's position anywhere
- * else would fail in the browser rather than quietly work.
- */
+/** The Content-Security-Policy for the player frontend served at `/enter`. */
 export const ENTER_CSP =
   "default-src 'self'; connect-src 'self'; img-src 'self'; script-src 'self'; " +
   "style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -1132,11 +1004,7 @@ function toResponse(status: number, payload: RoutePayload): Response {
   } else if (payload instanceof BinaryResponse) {
     body = payload.bytes;
     contentType = payload.contentType;
-    // A referenced image is permanent, because the sector showing it can
-    // never be rewritten — cache it for a year. An unreferenced one may be
-    // reaped within the minute, so it must not be cached at all, or a
-    // deleted object would go on being served from caches this world cannot
-    // reach.
+    // A permanent image is cached for a year; otherwise caching is disabled.
     extraHeaders["Cache-Control"] = payload.permanent
       ? "public, max-age=31536000, immutable"
       : "no-store";
@@ -1156,17 +1024,7 @@ function toResponse(status: number, payload: RoutePayload): Response {
   });
 }
 
-/**
- * The two routes whose body may be an image get their own, much larger cap
- * rather than `MAX_BODY_BYTES`, which is sized for sector/object text.
- *
- * `/mcp` is in that list because every tool call arrives on it, `upload_image`
- * among them — MCP is one wire protocol over all of ROUTES, so its cap has to
- * cover the largest thing any route accepts. Everything smaller is still
- * bounded further in: a sector or object submission is refused past
- * `MAX_SUBMISSION_BYTES` by `schema.ts` regardless of what the transport let
- * through.
- */
+/** Returns the maximum accepted body size for a given method and path. */
 export function maxBodyBytesFor(method: string, path: string): number {
   if (method !== "POST") {
     return MAX_BODY_BYTES;
@@ -1175,11 +1033,8 @@ export function maxBodyBytesFor(method: string, path: string): number {
 }
 
 /**
- * Read a request body up to `maxBytes`, refusing anything declared larger
- * without reading it. Shared by every transport: a `Request`'s body may
- * already be fully buffered (the Node bridge does this) or may still be a
- * live stream (a Worker's), and `arrayBuffer()` is the one call that works
- * either way.
+ * Reads a request body up to `maxBytes`, refusing anything declared larger
+ * without reading it.
  */
 async function readBody(
   request: Request,
@@ -1190,9 +1045,7 @@ async function readBody(
     return { raw: new Uint8Array(0), error: null };
   }
   const declared = request.headers.get("content-length");
-  // Python's `int(header)` rejects anything but an optionally-signed run of
-  // digits — "10abc" and "" both raise. `Number()` would silently accept
-  // both, so the shape is checked before the value.
+  // Only an optionally-signed run of digits is accepted as a valid length.
   const INTEGER = /^\s*[+-]?\d+\s*$/;
   if (declared !== null && !INTEGER.test(declared)) {
     return { raw: new Uint8Array(0), error: new ApiError(400, "bad_header", "Content-Length is not a number") };
@@ -1211,16 +1064,12 @@ async function readBody(
 }
 
 /**
- * The whole API surface, as a `(Engine, Request) => Promise<Response>`
- * function — a Cloudflare Worker's `fetch` handler shape exactly, and what
- * the Node bridge in `node-server.ts` calls after building a `Request` from
- * an `IncomingMessage`. Never called for `/enter/*`: static files are routed
- * before either transport reaches this function.
+ * Handles the whole API surface as a `(Engine, Request) => Promise<Response>`
+ * function. Not called for `/enter/*`; static files are routed before either
+ * transport reaches this function.
  */
 export async function handleFetchRequest(engine: Engine, request: Request): Promise<Response> {
-  // A preflight never reaches ROUTES — it names no route's method — so it
-  // must be answered here, before dispatch, or every cross-origin POST
-  // (registering, claiming, writing) fails in any caller that enforces CORS.
+  // Answers a CORS preflight request directly.
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -1228,15 +1077,10 @@ export async function handleFetchRequest(engine: Engine, request: Request): Prom
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
-  // Ahead of the MCP branch, so /mcp is bounded by the same cap as every
-  // other route. It used to read its own body with `request.text()` after
-  // this point, which on Workers — where a Request is a live stream, not
-  // something a transport already buffered — meant no cap at all.
   const { raw, error } = await readBody(request, maxBodyBytesFor(request.method, path));
 
-  // MCP is a different wire protocol on the same routes, not a route of its
-  // own: handleMcpRequest turns each tool call back into a Request and
-  // recurses into this same function, so it never bypasses dispatch below.
+  // MCP tool calls arrive on /mcp and are turned back into a Request that
+  // recurses into this function.
   if (path === "/mcp") {
     return handleMcpRequest(engine, request, raw, error);
   }

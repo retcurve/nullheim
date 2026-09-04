@@ -1,15 +1,7 @@
 /**
  * A seedable random source.
  *
- * Python's `random.Random(seed)` is load-bearing in the tests — the allocation
- * fairness test runs 60 seeds to prove a one-neighbour slot stays reachable —
- * and Node's stdlib has no seeded generator at all.
- *
- * The sequences this produces are *not* the ones CPython's Mersenne Twister
- * produces, and nothing tries to make them match. No test asserts a specific
- * coordinate for a specific seed; they assert distributional properties, which
- * any decent generator satisfies. What the seed has to buy is reproducibility of
- * a run, not agreement with the old implementation.
+ * Given the same seed, produces the same sequence of values every time.
  */
 
 export interface Rng {
@@ -22,9 +14,7 @@ export interface Rng {
 }
 
 /**
- * mulberry32 — small, fast, and good enough for choosing which open sector gets claimed.
- * Not cryptographic; nothing here needs it to be. Tokens are minted with
- * `node:crypto`, never with this.
+ * mulberry32, a small non-cryptographic pseudorandom generator.
  */
 export function seeded(seed: number): Rng {
   let state = seed >>> 0;
@@ -40,7 +30,7 @@ export function seeded(seed: number): Rng {
   return rngFrom(next);
 }
 
-/** The unseeded source, for production. */
+/** An unseeded source backed by `Math.random`. */
 export function systemRandom(): Rng {
   return rngFrom(Math.random);
 }

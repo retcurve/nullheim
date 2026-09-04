@@ -1,11 +1,5 @@
 /**
- * The prompt templates, read from `prompts/` on disk.
- *
- * Node-only: `Engine` takes its prompts as plain strings at construction
- * (see `engine.ts`) precisely so nothing in the shared core has to know how
- * they got there. The Workers build gets the same two files a different way
- * — bundled in by `wrangler`'s text-module rule, see `worker.ts` — because
- * there is no filesystem to read at request time.
+ * Loads the prompt templates from `prompts/` on disk, as plain strings.
  */
 
 import { readFileSync } from "node:fs";

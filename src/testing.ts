@@ -1,11 +1,9 @@
 /**
  * Shared fixtures for the test suite.
  *
- * Every fixture that touches the world is async now — `Engine`, `WorldStore`
- * and `Registry` all are, since the same code runs against a network round
- * trip to D1 in production. `makeEngine()` opens a fresh in-memory SQLite
- * database per test, which is what node:sqlite is for: no cross-test state,
- * no cleanup beyond letting it get garbage collected.
+ * Every fixture that touches the world is async: `Engine`, `WorldStore` and
+ * `Registry` all use async methods. `makeEngine()` opens a fresh in-memory
+ * SQLite database per test with no cleanup beyond garbage collection.
  */
 
 import { deflateSync } from "node:zlib";
@@ -78,18 +76,14 @@ export interface TestWorld {
 }
 
 const PROMPTS = loadPrompts();
-// Compiled once for the whole test run — a WebAssembly.Module is immutable
-// and side-effect-free to share, and every test that doesn't touch image
-// upload at all shouldn't pay to recompile four wasm modules of its own.
+// Compiled once and reused across the whole test run.
 const CODECS = loadCodecs();
 
 /**
  * A fresh in-memory world with a deterministic frontier allocator.
  *
- * Cooldown defaults to zero so object tests do not have to wait out a lease,
- * and the world-wide claim rate is uncapped so a test that founds a few
- * hundred sectors does not trip a brake it was not written to exercise. The
- * tests that care about either clock set it explicitly.
+ * Cooldown defaults to zero and the world-wide claim rate defaults to
+ * uncapped. Tests that need either can set it explicitly.
  */
 export async function makeEngine(
   options: {
@@ -123,12 +117,7 @@ export async function makeEngine(
   return { engine, db };
 }
 
-/**
- * Bake a sector straight into the store, bypassing claim allocation.
- *
- * Tests that care about world shape should place sectors explicitly rather
- * than depending on which slot the frontier allocator happens to hand out.
- */
+/** Bake a sector straight into the store, bypassing claim allocation. */
 export async function build(
   engine: Engine,
   at: readonly [number, number],
@@ -144,15 +133,13 @@ export async function build(
     agentId: options.agentId ?? "agent_test",
     bakedAt: 0,
   };
-  // Straight into the world, bypassing claims entirely — see WorldStore.bake().
   await engine.store.bake(baked, null);
   return baked;
 }
 
 /**
- * The sector id one of an agent's own sectors was baked with — the
- * `parentId` that stands an object in that sector itself. Defaults to the
- * first sector the agent founded, which is the only one most fixtures have.
+ * The sector id one of an agent's own sectors was baked with, usable as an
+ * object's `parentId`. Defaults to the first sector the agent founded.
  */
 export async function root(engine: Engine, agent: Agent, index = 0): Promise<string> {
   const coordinate = agent.coordinates[index];
@@ -190,13 +177,7 @@ export async function found(engine: Engine, agent: Agent): Promise<BakedSector> 
   return baked;
 }
 
-/**
- * Place `count` objects in the agent's first sector.
- *
- * Placing objects no longer affects when the agent may found another sector
- * — that is gated purely by the cooldown now — so this exists only for
- * fixtures that actually want a furnished sector, not to unlock anything.
- */
+/** Place `count` objects in the agent's first sector. */
 export async function furnish(engine: Engine, agent: Agent, count: number): Promise<void> {
   for (let i = 0; i < count; i += 1) {
     const { object, errors } = await engine.createObject(
@@ -209,11 +190,7 @@ export async function furnish(engine: Engine, agent: Agent, count: number): Prom
   }
 }
 
-/**
- * A minimal, valid, uncompressed-inside-deflate RGBA PNG at `width` x
- * `height` — real enough for the codecs to decode, without needing an actual
- * image file fixture on disk.
- */
+/** Builds a minimal, valid RGBA PNG at `width` x `height`, deflate-compressed. */
 export function makePng(width: number, height: number): Uint8Array {
   const raw = Buffer.alloc((1 + width * 4) * height);
   for (let y = 0; y < height; y += 1) {
@@ -233,7 +210,7 @@ export function makePng(width: number, height: number): Uint8Array {
     const typeAndData = Buffer.concat([Buffer.from(type, "ascii"), data]);
     const length = Buffer.alloc(4);
     length.writeUInt32BE(data.length);
-    // CRC32 over type+data — implemented inline since node:zlib has no crc32.
+    // CRC32 over type+data, computed inline.
     let crc = 0xffffffff;
     for (const byte of typeAndData) {
       crc ^= byte;

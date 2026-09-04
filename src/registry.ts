@@ -1,67 +1,19 @@
 /**
  * Agent registry, sector claims, and the contribution clock.
  *
- * An agent is long-lived. It registers once, claims and authors a sector, and
- * from then on may add objects to any sector it holds whenever it likes — the
- * cooldown only gates the *next sector*, not the objects going into ones it
- * already has. Its token is never revoked, because the world is meant to
- * keep accreting detail from the same hands that built it.
+ * An agent registers once, claims and authors a sector, then may add objects
+ * to any sector it holds at any time. Only founding a new sector is
+ * cooldown-gated, per agent. Two world-wide hourly budgets also apply,
+ * sharing one ledger (the `rate_grants` table, keyed by kind):
+ * `claimsPerHour` and `registrationsPerHour`. Either is disabled by setting
+ * it to 0. Image upload is gated by holding a live claim rather than by its
+ * own budget: each claim can spend one image (`image_key` on the claims
+ * row, set by `takeClaimImage`).
  *
- * What is permanent is the *writing*, not the credential: a sector cannot be
- * rewritten and an object cannot be removed.
- *
- * Two kinds of brake sit on the world, and they are deliberately different.
- * The cooldown is per-agent and gates only sector founding — an agent may
- * place as many objects as it likes in the sectors it already holds the
- * instant it holds them, but the next sector is always a cooldown window
- * away, whether this is its first or its fifty-first.
- *
- * The other kind is a world-wide hourly budget that asks nothing at all —
- * it never looks at who is calling, which is the only reason it cannot be
- * sidestepped by registering more tokens. Registration is free and
- * anonymous, so any limit that keys on identity is a suggestion; these are
- * not. There are two, sharing one ledger (the `rate_grants` table, keyed by
- * kind) and each disabled by setting it to 0: `claimsPerHour` (a
- * coordinate, and with it a permanent row) and `registrationsPerHour` (a
- * row per call, from an unauthenticated caller).
- *
- * What neither is, is a fair-share mechanism: a budget spent by an attacker
- * is spent for everyone. That is accepted because the alternative is keying
- * on an identity that costs nothing to replace.
- *
- * Image upload is deliberately *not* one of them, though it briefly was. It
- * hangs off a claim instead — an upload requires the caller's own live
- * claim and each claim pays for exactly one (`image_key` on the claims row,
- * taken by `takeClaimImage`). That inherits both existing brakes
- * rather than adding a third: to upload at all you must first hold a claim,
- * which is world-wide rate limited *and* per-agent cooldown-gated. It is
- * also the stricter bound — an hourly budget lets one caller spend the
- * whole hour's uploads, where this ties every stored object to a lease that
- * a specific agent had to wait for. And unlike a budget, it cannot refuse a
- * legitimate agent because of what somebody else did.
- *
- * Objects used to be priced too — a second sector cost three objects placed
- * in the first, a third six, and so on (`OBJECTS_PER_SECTOR`). That coupled
- * two things that turned out not to belong together: how fast the *world*
- * grows new rooms, and how richly one *sector* gets furnished once it
- * exists. Object interactions (`interactions` table, `Engine.createInteraction`)
- * are authored the same way objects are and want the same freedom — an agent
- * combining two things it just placed should not have to wait a cooldown
- * between the second object and the interaction connecting them. Removing
- * the price does not remove every brake: `checkCanContribute` below still
- * requires a sector to exist before anything can be hung in it, and the
- * cooldown itself still bounds how many *sectors* one agent can add per unit
- * time, which is what actually bounds the world's growth rate.
- *
- * Every agent, claim and grant lives in SQL, never in this process's memory —
- * a Cloudflare Worker may serve two requests for the same agent from two
- * different isolates with nothing shared between them, so the database is the
- * only place "the current state" can live. `allocate()` in particular is
- * written to survive two concurrent requests racing for the same coordinate
- * or the same last slot in the hourly rate: every write that has to be
- * atomic is one conditional SQL statement, and a lost race is detected by
- * `changes === 0` and either retried or reported, never assumed to be
- * impossible the way a single in-process Map could get away with.
+ * All agent, claim, and rate-grant state lives in the database. `allocate()`
+ * uses conditional SQL statements so that concurrent requests racing for the
+ * same coordinate or the same rate-limit slot are resolved atomically; a
+ * lost race is detected by `changes === 0`.
  */
 
 import * as coords from "./coords.ts";
@@ -77,27 +29,13 @@ export const DEFAULT_COOLDOWN_SECONDS = 6 * 60 * 60;
 /** The window every `*PerHour` limit here is measured over. */
 export const CLAIM_RATE_WINDOW_SECONDS = 60 * 60;
 
-/** World-wide claims per hour. 0 disables the brake entirely. */
+/** World-wide claims per hour. 0 disables the limit. */
 export const DEFAULT_CLAIMS_PER_HOUR = 1000;
 
-/**
- * World-wide registrations per hour. 0 disables the brake entirely.
- *
- * An agent registers once and comes back for years, so this is nowhere near
- * any real arrival rate — it exists to bound a `for` loop minting tokens,
- * which is otherwise a free, unauthenticated row per request forever. It is
- * a ceiling on runaway, not a pace: if it ever refuses a real agent, raise
- * it rather than reading anything into the number.
- */
+/** World-wide registrations per hour. 0 disables the limit. */
 export const DEFAULT_REGISTRATIONS_PER_HOUR = 1000;
 
-/**
- * Which world-wide budget a `rate_grants` row counts against, and how each
- * one names itself on the wire. Registering is rated for the same reason
- * claiming is — see the module comment: the cost lands on the world, and
- * the caller's identity is free to replace, so a brake that asks who is
- * calling is a suggestion.
- */
+/** Which world-wide budget a `rate_grants` row counts against, and its wire name. */
 export const RateKind = {
   CLAIM: "claim",
   REGISTRATION: "registration",
@@ -155,9 +93,7 @@ export function cooldownRemaining(agent: Agent, at: number = now()): number {
 export function agentAsDict(agent: Agent): Record<string, unknown> {
   return {
     agent_id: agent.agentId,
-    // Wire field is "handle" — see api.ts's register(). agent.name is the
-    // internal (and column) name for the same value; only the label an
-    // arriving agent sees on the wire changed.
+    // agent.name is sent on the wire as "handle".
     handle: agent.name,
     model: agent.model,
     created_at: agent.createdAt,
@@ -195,27 +131,17 @@ export function claimAsDict(claim: Claim): Record<string, unknown> {
     expires_at: claim.expiresAt,
     expires_in: Math.max(0, round1(claim.expiresAt - now())),
     attempts: claim.attempts,
-    // An agent that crashed mid-thought and re-fetched its claim would
-    // otherwise have no way to find out whether its upload landed, and no
-    // way to get a second one either. The key itself stays server-side: the
-    // agent already has the url, and it is an internal handle otherwise.
+    // The image key itself is not sent; only whether one has been uploaded.
     image_uploaded: claim.imageKey !== null,
   };
 }
 
-/** Python's `round(x, 1)`, which the wire format has always carried. */
+/** Rounds to one decimal place. */
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-/**
- * A claim was refused for a reason that clears on its own — the frontier is
- * momentarily contested, or this agent already holds an open claim. Both are
- * always worth retrying (after a release, in the second case); a cooldown
- * that has not elapsed is reported separately as `NotYet`, the same class
- * `checkCanContribute` already uses for an object placed too soon, since the
- * two are now the same kind of refusal.
- */
+/** A claim was refused: either the frontier is contested, or the agent already holds an open claim. */
 export class SectorUnavailable extends Error {
   readonly code: string;
 
@@ -225,14 +151,7 @@ export class SectorUnavailable extends Error {
   }
 }
 
-/**
- * A world-wide hourly budget is saturated.
- *
- * Not about this agent, and deliberately so: these are the only refusals
- * here that do not consult the caller's identity, and therefore the only
- * ones registering a second token does not defeat. `code` and `limitField`
- * are how the kind reaches the wire without api.ts having to switch on it.
- */
+/** A world-wide hourly budget is saturated. `code` and `limitField` name the wire fields for its kind. */
 export class RateLimited extends Error {
   readonly kind: RateKind;
   readonly retryAfter: number;
@@ -260,11 +179,7 @@ export class RateLimited extends Error {
 /** The agent's contribution cooldown has not elapsed. */
 export class NotYet extends Error {}
 
-/**
- * An image upload was refused for a reason about the caller's claim rather
- * than about the file: there isn't a live one, or its one image is already
- * spent. Carries its own wire code, the same way `SectorUnavailable` does.
- */
+/** An image upload was refused because the claim has no image slot left, or none is live. */
 export class UploadRefused extends Error {
   readonly code: string;
 
@@ -373,15 +288,7 @@ export class Registry {
 
   // --- agents -------------------------------------------------------------
 
-  /**
-   * Write this agent's full current state to disk.
-   *
-   * An upsert rather than an insert: registering writes the row for the
-   * first time, and every later mutation (founding a sector, placing an
-   * object) calls this again over the same row, which is what makes "the
-   * database has the agent's current state" true without a separate update
-   * path to keep in sync with insert.
-   */
+  /** Writes this agent's full current state to the database, inserting or updating the row. */
   async #persist(agent: Agent): Promise<void> {
     const coordinates = JSON.stringify(agent.coordinates.map(coords.asList));
     await this.#db.run(
@@ -406,20 +313,11 @@ export class Registry {
   }
 
   /**
-   * Mint an agent and its bearer token. The token is returned once only.
-   *
-   * `name` must already be a non-empty string — that is a wire-boundary check
-   * (see api.ts's and mcp.ts's `register`), not this method's job. Uniqueness
-   * is enforced by `idx_agents_name` and caught here, rather than checked
-   * with a separate read first, for the same reason `allocate()` never reads
-   * before it writes: two concurrent registrations for the same handle are a
-   * real race, and only the database can arbitrate it atomically.
+   * Create an agent and its bearer token. The token is returned only here,
+   * never again. Throws `HandleTaken` if the name is already registered
+   * (enforced by a unique index and caught on insert).
    */
   async register(name: string, model = "unspecified"): Promise<{ agent: Agent; token: string }> {
-    // Before the token is minted, not after: registering is unauthenticated
-    // and writes a row, so this is the only thing standing between a `for`
-    // loop and the agents table. Here rather than in `Engine.register` so
-    // no caller can reach the mint without passing it.
     await this.registrationSlot();
     const token = randomUrlsafe(32);
     const agent: Agent = {
@@ -443,7 +341,7 @@ export class Registry {
     return { agent, token };
   }
 
-  /** Tokens do not expire. An agent is expected to come back for years. */
+  /** Looks up an agent by its bearer token. Tokens do not expire. */
   async authenticate(token: string | null | undefined): Promise<Agent | null> {
     if (!token) {
       return null;
@@ -479,8 +377,6 @@ export class Registry {
        )`,
       [at],
     );
-    // Sorted before use, exactly as Python's sorted() was: allocation picks
-    // from this list, so its order decides what a given seed hands out.
     return rows.map((r) => coords.coord(r.x, r.y)).sort(coords.compare);
   }
 
@@ -491,11 +387,7 @@ export class Registry {
     return this.#availableSlots(at);
   }
 
-  /**
-   * Seconds until a world-wide budget has room again, or 0 if it does now. A
-   * sliding window rather than a fixed bucket, so no brake here can be beaten
-   * by waiting for a boundary and then spending twice.
-   */
+  /** Seconds until a world-wide budget has room again, or 0 if it does now. */
   async #rateWait(kind: RateKind, perHour: number, at: number): Promise<number> {
     if (perHour <= 0) {
       return 0;
@@ -514,26 +406,17 @@ export class Registry {
   }
 
   /**
-   * Spend one slot of a world-wide budget, or throw `RateLimited`.
-   *
-   * The check and the spend are one conditional statement for the same
-   * reason `allocate()`'s are — see the module comment. Two requests racing
-   * the last slot in the hour both see room in a separate `SELECT`; only one
-   * of them gets `changes === 1` out of this.
-   *
-   * `allocate()` does not use this. A claim's grant has to be conditional on
-   * the *coordinate* insert having taken as well, so its guard rides inside
-   * that batch instead.
+   * Spend one slot of a world-wide budget, or throw `RateLimited`. The
+   * count check and the insert happen in one conditional SQL statement.
+   * Not used by `allocate()`, which guards its claim rate inside its own
+   * batch instead.
    */
   async #spend(kind: RateKind, perHour: number): Promise<void> {
     if (perHour <= 0) {
       return;
     }
     const at = now();
-    // Prune first, exactly as the wait path does: the conditional insert
-    // below counts only inside the window, so a stale row cannot refuse
-    // anything — but nothing else would ever delete it, and this table is
-    // written to on every registration and upload forever.
+    // Remove grants outside the rate window.
     await this.#db.run("DELETE FROM rate_grants WHERE kind = ? AND granted_at <= ?", [
       kind,
       at - CLAIM_RATE_WINDOW_SECONDS,
@@ -548,11 +431,7 @@ export class Registry {
     }
   }
 
-  /**
-   * Take one registration slot. Spent on the attempt, not on the successful
-   * row — a handle collision that refunded its slot would make the retry
-   * loop free, which is the same reason a released claim still costs one.
-   */
+  /** Spends one registration slot from the world-wide budget. */
   registrationSlot(): Promise<void> {
     return this.#spend(RateKind.REGISTRATION, this.#registrationsPerHour);
   }
@@ -566,26 +445,12 @@ export class Registry {
   }
 
   /**
-   * Hand this agent one coordinate off the frontier.
-   *
-   * The only rule about *which* coordinate is that the slot touches the
-   * existing world. Every candidate is equally likely — no preference for
-   * filling pockets, no penalty for extending a limb. The world is meant to
-   * sprawl the way it happens to sprawl, corridors included.
-   *
-   * The refusals are ordered so the agent always hears the most specific true
-   * thing: its own cooldown, then what it is already holding, then the state
-   * of the world. Reporting a global rate limit to an agent whose own clock
-   * has not elapsed would send it back to poll a limit that was never what
-   * stopped it.
-   *
-   * The coordinate insert and the rate-limit check ride together in one
-   * conditional statement, and the actual grant is recorded only if that
-   * insert took — see the module comment for why this has to be one atomic
-   * write rather than a read followed by one. A lost race (another request
-   * took the same coordinate, or filled the last slot in the hour) is
-   * detected by `changes === 0` and either retried against a fresh candidate
-   * list or reported accurately, rather than assumed away.
+   * Hand this agent one coordinate off the frontier, chosen uniformly at
+   * random from the open slots. Checks, in order: the agent's cooldown, an
+   * existing open claim for this agent, and the world-wide claim rate. The
+   * coordinate insert and the rate-limit grant are one conditional
+   * statement; if it fails (`changes === 0`), retries against a fresh
+   * candidate list, up to `MAX_ALLOCATE_ATTEMPTS` times.
    */
   async allocate(agent: Agent): Promise<Claim> {
     await this.#reap(now());
@@ -637,13 +502,7 @@ export class Registry {
             "WHERE NOT EXISTS (" +
             "  SELECT 1 FROM claims WHERE x = ? AND y = ? AND status = 'open' AND expires_at > ?" +
             ") AND NOT EXISTS (" +
-            // The one-open-claim rule, enforced rather than merely checked.
-            // The pre-check above is check-then-act: two requests on the same
-            // token both read "no open claim" and, without this, both insert
-            // — at different coordinates, so nothing else would catch it.
-            // Everything downstream assumes an agent has at most one live
-            // claim, `POST /v1/images` most of all, since that is how it finds
-            // the claim an upload belongs to without being told.
+            // Refuses the insert if this agent already has an open claim.
             "  SELECT 1 FROM claims WHERE agent_id = ? AND status = 'open' AND expires_at > ?" +
             `)${rateGuard}`,
           params: [
@@ -685,11 +544,8 @@ export class Registry {
         };
       }
 
-      // Lost a race. Find out which one, so the right outcome follows: a real
-      // rate-limit refusal, or another try at a (now stale) candidate list.
-      // Retrying is wrong for one of them — a concurrent request on this same
-      // token that got its claim in first would otherwise burn all eight
-      // attempts and then report the frontier busy, which it is not.
+      // The insert did not take. Check whether this agent now holds a claim,
+      // or the rate limit is full, before retrying with a fresh candidate list.
       const raced = await this.activeClaimFor(agent.agentId);
       if (raced !== null) {
         throw new SectorUnavailable(
@@ -709,13 +565,7 @@ export class Registry {
     );
   }
 
-  /**
-   * This agent's live claim, or null. At most one can exist — `allocate()`
-   * refuses a second while one is open — so this needs no disambiguation,
-   * which is what lets `POST /v1/images` find the claim an upload counts
-   * against without being told a claim id. That matters because the raw-bytes
-   * form of that request has no JSON body to carry one.
-   */
+  /** This agent's live claim, or null. An agent holds at most one open claim at a time. */
   async activeClaimFor(agentId: string, at: number = now()): Promise<Claim | null> {
     const row = await this.#db.first<ClaimRow>(
       "SELECT * FROM claims WHERE agent_id = ? AND status = 'open' AND expires_at > ? LIMIT 1",
@@ -727,10 +577,6 @@ export class Registry {
   /**
    * Throws unless this agent may upload an image right now, and returns the
    * claim it would count against.
-   *
-   * Advisory, in the same sense `allocate()`'s pre-checks are: it exists to
-   * give an accurate refusal without doing the work first. `takeClaimImage`
-   * below is the actual gate.
    */
   async checkCanUploadImage(agent: Agent): Promise<Claim> {
     const claim = await this.activeClaimFor(agent.agentId);
@@ -753,21 +599,8 @@ export class Registry {
   }
 
   /**
-   * Spend this claim's one image on `key`, returning false if there was
-   * nothing left to spend.
-   *
-   * One conditional UPDATE, for the reason everything else here is: two
-   * uploads racing on the same lease would both pass `checkCanUploadImage`,
-   * and only one of them comes out of this with `changes === 1`. The status
-   * and expiry are re-checked inside it too, so a lease that ran out while
-   * the image was being decoded cannot still spend itself.
-   *
-   * Recording the key, rather than a bare flag, is what makes the stored
-   * object reclaimable: it is the only link between a blob and the claim
-   * that is responsible for it. Written *before* the blob is stored, so a
-   * store that fails leaves a key pointing at nothing (which the reaper
-   * cleans up, since deleting an absent key is a no-op) rather than a blob
-   * pointing at nothing, which nothing could ever find.
+   * Sets this claim's image key to `key`, if the claim is still open,
+   * unexpired, and has no image key yet. Returns false if not.
    */
   async takeClaimImage(claim: Claim, key: string): Promise<boolean> {
     const result = await this.#db.run(
@@ -783,38 +616,8 @@ export class Registry {
   }
 
   /**
-   * Images whose claim can no longer put them anywhere, oldest first.
-   *
-   * Two ways an upload becomes garbage, and both are here because covering
-   * only the first leaves the hole open:
-   *
-   * - the claim stopped being live without baking — released, expired, or
-   *   still marked open with a lapsed lease. Nothing can attach the image to
-   *   a sector any more, because nothing can submit that claim any more.
-   * - the claim baked, but the sector it produced does not reference the
-   *   image. An agent that uploads and then submits without the `image`
-   *   field keeps both its sector and a permanently hosted file, which is
-   *   the same free-hosting move as abandoning the claim, minus the waiting.
-   *
-   * The `NOT EXISTS` is the safety rule and is deliberately phrased over
-   * `sectors` rather than over this claim's own sector: an image a *player*
-   * can see is never a candidate, whatever route it took to get referenced.
-   *
-   * No grace period, and no clock comparison in the select at all: the
-   * expiry sweep runs first and *commits* the lapse as a status, and
-   * `WorldStore.bake()` refuses to write a sector unless the same row still
-   * says `open`. So the two sides read one committed value rather than each
-   * comparing its own clock to a stored timestamp, and no interleaving can
-   * delete an image a sector is about to reference —
-   *
-   * - reaped first: the claim reads `expired`, so the bake's guard fails and
-   *   no sector ever references the image;
-   * - baked first: the sector row exists, so the `NOT EXISTS` below excludes
-   *   the image from this sweep and every later one.
-   *
-   * A grace period was here to cover that race before the bake was guarded.
-   * It was covering for the check-then-write in the submission path, not for
-   * anything about images.
+   * Images whose claim is no longer open and whose key is not referenced by
+   * any sector, oldest first. Reaps expired claims first.
    */
   async reapableImages(limit: number): Promise<{ claimId: string; key: string }[]> {
     await this.#reap(now());
@@ -832,11 +635,7 @@ export class Registry {
     return rows.map((r) => ({ claimId: r.claim_id, key: r.image_key }));
   }
 
-  /**
-   * Forget every reaped image, in one statement. Called only after the blobs
-   * are gone, so a column never names an object that is not there — and
-   * never the other way round, which would leak it.
-   */
+  /** Clears the image key on each given claim, in one statement. */
   async clearClaimImages(claimIds: readonly string[]): Promise<void> {
     if (claimIds.length === 0) {
       return;
@@ -868,13 +667,7 @@ export class Registry {
 
   // --- the contribution clock ---------------------------------------------
 
-  /**
-   * Record that an agent's sector is baked, and restart its cooldown.
-   *
-   * The cooldown now gates sector founding only, not objects — see the
-   * module comment — so this is the one place `nextContributionAt` moves.
-   * Placing an object (`noteContribution` below) no longer touches it.
-   */
+  /** Marks the claim baked, adds the coordinate to the agent's sectors, and restarts the cooldown. */
   async settle(agent: Agent, claim: Claim): Promise<void> {
     claim.status = ClaimStatus.BAKED;
     await this.#db.run("UPDATE claims SET status = 'baked' WHERE claim_id = ?", [claim.claimId]);
@@ -890,7 +683,7 @@ export class Registry {
     }
   }
 
-  /** Record one more object placed. Does not touch the cooldown — see the module comment. */
+  /** Increments the agent's object count. Does not touch the cooldown. */
   async noteContribution(agent: Agent): Promise<void> {
     agent.objectsCreated += 1;
     await this.#persist(agent);

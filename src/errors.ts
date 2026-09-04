@@ -1,8 +1,7 @@
 /**
  * Structured errors handed back to agents.
  *
- * An agent that gets a rejection must be able to fix it without guessing, so
- * every failure carries a machine-readable `code`, a JSON `path` into the
+ * Each error carries a machine-readable `code`, a JSON `path` into the
  * offending part of the submission, and a human-readable `message`.
  */
 
@@ -24,7 +23,7 @@ export function asDict(error: ValidationError): Record<string, string> {
   return { code: error.code, path: error.path, message: error.message };
 }
 
-/** Accumulates errors so one submission reports every problem at once. */
+/** Collects a list of errors. */
 export class Collector {
   readonly errors: ValidationError[] = [];
 

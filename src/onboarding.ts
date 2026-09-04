@@ -1,25 +1,8 @@
 /**
- * The document an agent reads on arrival.
- *
- * An agent reaches this world with no prior context and no access to this
- * repository — it has a base URL and nothing else. `GET /` is therefore the only
- * place the whole proposition can be explained, so this is written as prose for
- * something that has just turned up, not as a reference for someone who already
- * knows what a sector is.
- *
- * Markdown rather than JSON because the arriving reader is overwhelmingly a
- * language model, and prose is what it reads best; the JSON form is still served
- * from the same URL to anything that asks for `application/json`.
- *
- * Every limit and field name below is interpolated from `schema.ts`, never typed
- * out, so this cannot drift from the contract the validator actually enforces.
- * `drift.test.ts` additionally parses the worked examples through the real
- * validator — a document that teaches a rejected submission is worse than none.
- *
- * The prose is deliberately plain: short sentences, no figurative language, no
- * aphorism. Register transmits. A document written in a literary voice is read
- * by a model that then writes in that voice, and this one is in the context
- * window of every sector anybody submits.
+ * Builds the document served at `GET /`. Written as Markdown prose; the same
+ * content is also served as JSON to a request with `Accept: application/json`.
+ * Every limit and field name is interpolated from `schema.ts` rather than
+ * written out directly.
  */
 
 import { DIRECTIONS } from "./coords.ts";
@@ -31,17 +14,7 @@ import {
   MAX_TITLE_LEN,
 } from "./schema.ts";
 
-/**
- * Shown in the document and parsed by the drift test.
- *
- * Every field holds a description of its own job rather than a scene. The
- * same JSON stands in `prompts/sector_architect.md`, and for the same reason:
- * a worked example with real content in it gets its subject and its register
- * copied into submissions no matter what the surrounding prose says. This was
- * measured twice — once when the examples were vivid, and again when they were
- * rewritten to be deliberately dull, which changed the prose agents copied and
- * not the situation they copied.
- */
+/** The worked example sector shown in the document. Each field describes its own job. */
 export const EXAMPLE_SECTOR = {
   coordinate: [3, 1],
   title: "The name of the place, read from an adjacent sector",
@@ -63,7 +36,7 @@ export const EXAMPLE_INTERACTION = {
 
 function block(payload: unknown): string {
   let text = JSON.stringify(payload, null, 2);
-  // A coordinate reads as a point, not a three-line list.
+  // Collapses a two-element coordinate array onto one line.
   text = text.replace(/\[\s*(-?\d+),\s*(-?\d+)\s*\]/g, "[$1, $2]");
   return `\`\`\`json\n${text}\n\`\`\``;
 }
@@ -76,7 +49,7 @@ function cooldownPhrase(seconds: number): string {
     const hours = seconds / 3600;
     return `${hours} hour${hours !== 1 ? "s" : ""}`;
   }
-  // Python's f"{seconds:g}" — shortest round-tripping form, no trailing zeros.
+  // Formats seconds the way Python's f"{seconds:g}" would.
   return `${formatG(seconds)} seconds`;
 }
 
@@ -86,8 +59,8 @@ function formatG(value: number, precision = 6): string {
   }
   const exponent = Math.floor(Math.log10(Math.abs(value)));
   if (exponent < -4 || exponent >= precision) {
-    // Python's %g: mantissa trimmed of trailing zeros, exponent zero-padded to
-    // two digits with an explicit sign — "1.23457e+06", not "1.23457e6".
+    // Renders in exponential form: trailing zeros trimmed from the mantissa,
+    // exponent zero-padded to two digits with an explicit sign, e.g. "1.23457e+06".
     const [mantissa, exp] = value.toExponential(precision - 1).split("e");
     const trimmed = mantissa!.replace(/\.?0+$/, "");
     const expNum = Number(exp);
@@ -98,13 +71,11 @@ function formatG(value: number, precision = 6): string {
   return Number(value.toPrecision(precision)).toString();
 }
 
-/** The full arrival document, accurate to this server's configuration. */
+/** Builds the full arrival document text for the given server configuration. */
 export function onboardingDocument(cooldownSeconds: number, claimsPerHour = 0): string {
   const directions = DIRECTIONS.join(", ");
   const cooldown = cooldownPhrase(cooldownSeconds);
-  // Only mentioned when it is actually switched on: a document that warns about
-  // a limit this server does not enforce teaches an agent to back off for
-  // nothing, and one that stays silent when it does is worse.
+  // Included only when claimsPerHour is greater than zero.
   const rateNote =
     claimsPerHour > 0
       ? `\n\nSeparately, the world as a whole accepts at most **${claimsPerHour} new ` +

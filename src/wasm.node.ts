@@ -1,12 +1,6 @@
 /**
- * Compiles the WASM codecs `image-processing.ts` needs, from the .wasm files
- * shipped inside the @jsquash/* packages on disk.
- *
- * Node-only, the same split as `prompts.node.ts`/`worker.ts`'s `.md` import:
- * the Workers build gets the same five files a different way — a static
- * `import ... from "*.wasm"` (see `worker.ts`), which Cloudflare's bundler
- * resolves to a `WebAssembly.Module` at build time, because there is no
- * filesystem to read at request time.
+ * Compiles the WASM codecs `image-processing.ts` needs, by reading the
+ * .wasm files shipped inside the @jsquash/* packages from disk.
  */
 
 import { readFileSync } from "node:fs";

@@ -1,25 +1,13 @@
 /**
- * An MCP (Model Context Protocol) surface over the exact same API — for
- * agents whose only way to act on the world is calling a tool, not issuing
- * an HTTP request of their own. A ChatGPT connector is the motivating case:
- * it can read `GET /` fine, but has no way to send an authenticated `POST`
- * from inside its own sandbox.
+ * An MCP (Model Context Protocol) tool interface over the REST API. Each
+ * tool call is converted into a synthetic `Request` and passed to
+ * `handleFetchRequest`, the same function `worker.ts` and `node-server.ts`
+ * call for ordinary HTTP requests.
  *
- * This file states no contract of its own. Every tool call is turned into a
- * synthetic `Request` and handed to `handleFetchRequest` — the same function
- * `worker.ts` and `node-server.ts` call — so the behaviour (validation,
- * errors, rate limits, cooldowns) can never drift from the REST surface: it
- * *is* the REST surface, addressed a different way. `TOOLS` below is
- * therefore just a naming and JSON-Schema layer on top of `ROUTES` in
- * `api.ts`, not a second implementation of anything in `engine.ts`.
- *
- * Transport: MCP's "Streamable HTTP", answered with a single JSON response
- * per request rather than an SSE stream — this server never needs to push a
- * message the client didn't ask for, so the stream half of the spec buys
- * nothing here. There is also no session: every tool call that needs
- * authentication takes the bearer token as an ordinary argument, exactly as
- * it is an ordinary header on the REST API, so nothing server-side needs to
- * remember which connection is which agent.
+ * Implements MCP's Streamable HTTP transport, answering each request with a
+ * single JSON response rather than an SSE stream. There is no session state:
+ * each tool call that needs authentication takes the bearer token as an
+ * ordinary argument.
  */
 
 import { ApiError, CORS_HEADERS, handleFetchRequest } from "./api.ts";
@@ -32,10 +20,8 @@ import {
   MAX_TITLE_LEN,
 } from "./schema.ts";
 
-// The revisions this server actually speaks. `initialize` grants a requested
-// version verbatim only if it is one of these — echoing back whatever a
-// client asked for, unconditionally, means agreeing to speak revisions that
-// were never implemented.
+// The protocol revisions this server accepts. `initialize` echoes back the
+// requested version only if it appears here.
 const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]!;
 const SERVER_NAME = "nullheim";
@@ -43,7 +29,7 @@ const SERVER_VERSION = "0.1.0";
 
 type Json = Record<string, unknown>;
 
-/** Thrown for a tool call missing an argument its path needs, before any request is built. */
+/** Thrown when a tool call is missing an argument its path needs. */
 class MissingArgument extends Error {}
 
 function requireString(args: Json, key: string): string {
@@ -55,16 +41,8 @@ function requireString(args: Json, key: string): string {
 }
 
 /**
- * The same, for an argument that becomes one path segment of the synthetic
- * request below.
- *
- * Encoded rather than interpolated raw: a `Request`'s URL is normalised on
- * construction, so an id of `../v1/agents/me` would otherwise resolve to a
- * different route than the tool names. Nothing is reachable that way that a
- * caller could not reach by naming the right tool — every route's method is
- * fixed here, and the token header is only attached where the tool declares
- * one — but a tool whose path is decided by its own argument is not worth
- * keeping just because today's routing table makes it harmless.
+ * Same as `requireString`, but URL-encodes the value for use as one path
+ * segment of the synthetic request.
  */
 function requireSegment(args: Json, key: string): string {
   return encodeURIComponent(requireString(args, key));
@@ -508,7 +486,7 @@ function jsonRpcError(id: unknown, code: number, message: string): Json {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-/** Run one tool call through the real API and fold the result into MCP's tool-result shape. */
+/** Runs one tool call through the API and returns MCP's tool-result shape. */
 async function callTool(engine: Engine, args: Json): Promise<Json> {
   const name = args["name"];
   const toolArgs = (args["arguments"] as Json | undefined) ?? {};
@@ -533,9 +511,7 @@ async function callTool(engine: Engine, args: Json): Promise<Json> {
   }
   const init: RequestInit = { method: built.method, headers };
   if (built.body !== undefined) {
-    // readBody() in api.ts sizes the body off Content-Length, since a real
-    // transport always sets it; the Fetch API's own Request never adds one
-    // for a string body, so a synthetic request without it reads as empty.
+    // Sets Content-Length explicitly, since Request does not add it automatically for a string body.
     const encoded = JSON.stringify(built.body);
     headers["Content-Type"] = "application/json";
     headers["Content-Length"] = String(new TextEncoder().encode(encoded).length);
@@ -557,8 +533,8 @@ async function callTool(engine: Engine, args: Json): Promise<Json> {
 }
 
 /**
- * One JSON-RPC request/notification, dispatched to its MCP method.
- * `id === undefined` marks a notification, which gets no response at all.
+ * Dispatches one JSON-RPC request or notification to its MCP method.
+ * Returns null for a notification (`id === undefined`), which gets no response.
  */
 async function handleMessage(engine: Engine, message: Json): Promise<Json | null> {
   const id = message["id"];
@@ -598,11 +574,7 @@ async function handleMessage(engine: Engine, message: Json): Promise<Json | null
   }
 }
 
-/**
- * The MCP entry point, called from `handleFetchRequest` for `POST /mcp`.
- * Every response carries `CORS_HEADERS` for the same reason `api.ts` adds
- * them to the REST surface: the caller is often an in-browser tool.
- */
+/** The MCP entry point, called from `handleFetchRequest` for `POST /mcp`. Every response carries `CORS_HEADERS`. */
 export async function handleMcpRequest(
   engine: Engine,
   request: Request,
@@ -616,10 +588,7 @@ export async function handleMcpRequest(
     );
   }
 
-  // The body arrives already read and already capped — see
-  // `handleFetchRequest`, which does that for every route including this
-  // one. A body refused there (too large, or a malformed Content-Length)
-  // reaches here as an error to report, never as bytes to parse.
+  // The body has already been read and size-checked by handleFetchRequest.
   if (bodyError !== null) {
     return new Response(
       JSON.stringify(jsonRpcError(null, -32600, bodyError.message)),
@@ -639,7 +608,7 @@ export async function handleMcpRequest(
 
   const result = await handleMessage(engine, message);
   if (result === null) {
-    // A notification: MCP's Streamable HTTP transport wants no body at all.
+    // A notification gets an empty 202 response.
     return new Response(null, { status: 202, headers: CORS_HEADERS });
   }
   return new Response(JSON.stringify(result), {

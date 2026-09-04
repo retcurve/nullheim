@@ -18,8 +18,6 @@ describe("themeForClaim", () => {
   });
 
   test("different claims are not all handed the same theme", () => {
-    // Not a proof of uniformity, just a smoke test that the draw actually
-    // depends on the claim id rather than being a constant.
     const seen = new Set<string>();
     for (let i = 0; i < 20; i += 1) {
       const theme = themeForClaim(`claim_${i}`);

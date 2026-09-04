@@ -1,10 +1,4 @@
-/**
- * The contract is stated three times. These tests keep the three in agreement.
- *
- * `schema.ts` is the source of truth. The prompts tell agents what to emit and
- * the docs tell their authors the same thing — if either drifts from the
- * schema, agents get rejected for obeying instructions that are no longer true.
- */
+/** Checks that schema.ts, the prompts, and the docs agree on the contract. */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -81,10 +75,6 @@ describe("field inventories", () => {
   });
 
   test("the object prompt names every interaction field", () => {
-    // Interactions are authored by a separate call, after both objects
-    // already exist, so they get prose in the object prompt rather than a
-    // fenced JSON block of their own — see the "the object examples parse"
-    // test below, which would otherwise try to validate it as an object.
     for (const field of INTERACTION_FIELDS) {
       assert.ok(OBJECT_PROMPT.includes(`\`${field}\``), field);
     }
@@ -100,7 +90,6 @@ describe("field inventories", () => {
   });
 
   test("the grid is documented as flat", () => {
-    // A prompt that still mentions up or down would produce bad titles.
     assert.ok(SECTOR_PROMPT.includes("no up or down"));
     for (const direction of Object.values(Direction)) {
       assert.ok(SECTOR_PROMPT.includes(direction), direction);
@@ -108,14 +97,6 @@ describe("field inventories", () => {
   });
 });
 
-/**
- * Agents come back every 6 hours forever, so most of them schedule it — and
- * a scheduled task that carries a copy of the prompt text runs that copy long
- * after the server stopped serving it. A stale copy cannot report its own
- * staleness, so the only place the warning works is inside the prompt itself:
- * copied into the cron, it travels with the copy and tells the reader to go
- * and fetch the live one.
- */
 describe("a served prompt says it is live", () => {
   test("each prompt tells the reader not to save it into a scheduled task", () => {
     for (const [name, text] of [
@@ -132,7 +113,7 @@ describe("a served prompt says it is live", () => {
 describe("the worked examples must be submittable, not just plausible", () => {
   test("the sector examples parse without a single error", () => {
     const blocks = jsonBlocks(SECTOR_PROMPT);
-    assert.ok(blocks.length >= 2); // the skeleton plus one sector
+    assert.ok(blocks.length >= 2);
     for (const block of blocks.slice(1)) {
       const { parsed, errors } = parseSector(JSON.parse(block));
       assert.deepEqual(errors, [], block.slice(0, 40));
@@ -162,19 +143,6 @@ describe("placeholders", () => {
     assert.ok(rendered.includes(claim.claimId));
   });
 
-  /**
-   * A cold start is the feature. The prompt used to interpolate the agent's
-   * own back catalogue under a rule to repeat none of it, and that produced
-   * the opposite: a list of what a model has already made reads as a series
-   * to continue, and the label on it does not decide otherwise. The preview
-   * world's most prolific agent wrote a kite-strung canyon, a low-gravity
-   * wreck and a hollowed fungus before the list existed, and a uniform run of
-   * plain industrial rooms after it.
-   *
-   * So the seventh prompt is byte-identical to the first, deliberately, and
-   * this test fails if anything about the agent's other sectors leaks back
-   * in.
-   */
   test("the sector prompt reveals nothing about what the agent has already built", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await engine.register("architect");
@@ -195,8 +163,6 @@ describe("placeholders", () => {
       "no coordinate of a sector it holds",
     );
 
-    // And the second prompt differs from the first only in the coordinate and
-    // the claim it was issued for.
     const asFirst = rendered
       .replaceAll(`[${second.coordinate.x}, ${second.coordinate.y}]`, "<xy>")
       .replaceAll(second.claimId, "<claim>");
@@ -225,10 +191,6 @@ describe("placeholders", () => {
 
     const rendered = await engine.renderObjectPrompt(agent);
     assert.ok(!rendered.includes("{{"));
-    // The index is a count, not a tree: no object ids or titles at all, and
-    // no prose. The sector's long description and the objects' own
-    // descriptions are not dragged into it; the pointed-to endpoint is where
-    // all of that lives.
     assert.ok(!rendered.includes(placed!.objectId));
     assert.ok(!rendered.includes("Brass Can"));
     assert.ok(rendered.includes("1 object"));
@@ -236,7 +198,6 @@ describe("placeholders", () => {
     assert.ok(!rendered.includes("long leavened diorama of the seams"));
     assert.ok(!rendered.includes("grooved candid illustrated cagemate"));
 
-    // And the detail endpoint has them.
     const sectorId = (await engine.store.get(claim.coordinate))!.sectorId;
     const detail = await engine.sectorContext(agent, sectorId);
     assert.notEqual(detail, null);
@@ -286,7 +247,6 @@ describe("placeholders", () => {
     assert.equal(objects[0]!.title, "Brass Can");
     assert.equal(objects[0]!.description, "the full object description");
 
-    // A sector the agent does not own is indistinguishable from a missing one.
     const { agent: other } = await engine.register("other");
     assert.equal(await engine.sectorContext(other, sectorId), null);
     assert.equal(await engine.sectorContext(agent, "sec_does_not_exist"), null);
@@ -318,7 +278,6 @@ describe("the onboarding document", () => {
   });
 
   test("its worked examples are actually submittable", () => {
-    // A teaching example that the validator would reject is worse than none.
     let result = parseSector(EXAMPLE_SECTOR);
     assert.deepEqual(result.errors, []);
     assert.notEqual(result.parsed, null);
@@ -333,7 +292,6 @@ describe("the onboarding document", () => {
   });
 
   test("the examples it shows are the ones it embeds", () => {
-    // The prose must show the same JSON the drift test just validated.
     const blocks = jsonBlocks(document()).map((b) => JSON.parse(b));
     assert.ok(blocks.some((b) => JSON.stringify(b) === JSON.stringify(EXAMPLE_SECTOR)));
     assert.ok(blocks.some((b) => JSON.stringify(b) === JSON.stringify(EXAMPLE_OBJECT)));

@@ -1,4 +1,4 @@
-/** Claims, the frontier, the static lock, and the 6-hour contribution clock. */
+/** Tests claims, the frontier, the static lock, and the contribution clock. */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -54,7 +54,6 @@ describe("the frontier", () => {
   });
 
   test("the frontier is every side of every sector", async () => {
-    // Any side can take a neighbour — there are no sealed edges.
     const { engine } = await makeEngine();
     const expected = new Set(
       coords.neighbours(ORIGIN).map(([, neighbour]) => coords.key(neighbour)),
@@ -84,7 +83,6 @@ describe("the frontier", () => {
   });
 
   test("running out of frontier is a clean retryable refusal", async () => {
-    // Only reachable while the frontier is tiny — four slots at genesis.
     const { engine } = await makeEngine();
     for (let index = 0; index < 4; index += 1) {
       const { agent } = await engine.register(`a${index}`);
@@ -101,11 +99,7 @@ describe("the frontier", () => {
   });
 
   test("allocation does not prefer well-connected slots", async () => {
-    // A pocket is worth no more than the end of a limb. The world is meant to
-    // sprawl organically, corridors included, so the only rule is adjacency.
-    // This asserts the absence of the old fill-the-pockets heuristic.
-    //
-    // An L: [1,1] touches two sectors, [3,0] touches one.
+    // [1,1] touches two built sectors; [3,0] touches one.
     const pocket = coords.key(coord(1, 1));
     const limbEnd = coords.key(coord(3, 0));
 
@@ -175,7 +169,6 @@ describe("leases", () => {
     await engine.release(claim);
 
     assert.ok((await frontierKeys(engine)).has(coords.key(claim.coordinate)));
-    // The token survives — an agent that gave up may try again.
     assert.deepEqual(await engine.registry.authenticate(token), agent);
     assert.notEqual(await engine.claim(agent), null);
   });
@@ -183,12 +176,6 @@ describe("leases", () => {
 
 describe("one claim at a time", () => {
   test("two concurrent allocations for one agent produce one claim", async () => {
-    // Interleaving is real here, not theoretical: allocate() awaits several
-    // times before its insert, so both calls get past the "do you already
-    // hold one" read before either writes. Only the conditional insert can
-    // separate them — and everything downstream assumes it does, `POST
-    // /v1/images` most of all, which finds an upload's claim by asking for
-    // the agent's one open claim.
     const { engine } = await makeEngine({ claimsPerHour: 0 });
     const { agent } = await engine.register("racer");
     const outcomes = await Promise.allSettled([engine.claim(agent), engine.claim(agent)]);
@@ -202,13 +189,6 @@ describe("one claim at a time", () => {
   });
 });
 
-/**
- * An upload outlives its claim: the blob is written and the url handed back
- * before any sector exists, and if no sector ever references it, nothing on
- * the request path will ever delete it. Left alone that is a free image host
- * — abandoning a claim costs only the wait for the next one — so these are
- * the cases the sweep has to get right, and the one it must never get wrong.
- */
 describe("reaping abandoned images", () => {
   async function uploaded(engine: Engine, handle: string) {
     const { agent } = await engine.register(handle);
@@ -237,7 +217,6 @@ describe("reaping abandoned images", () => {
   });
 
   test("an image a sector actually shows is never reclaimed", async () => {
-    // The one thing this must never do. A player can see this image.
     const { engine } = await makeEngine();
     const { agent, claim, url, key } = await uploaded(engine, "builder");
     const { errors } = await engine.submitSector(
@@ -252,9 +231,6 @@ describe("reaping abandoned images", () => {
   });
 
   test("an image the baked sector left unused is reclaimed too", async () => {
-    // Uploading and then submitting without the field would otherwise buy a
-    // permanently hosted file *and* keep the sector — the same free-hosting
-    // move as abandoning the claim, without the waiting.
     const { engine } = await makeEngine();
     const { agent, claim, key } = await uploaded(engine, "keeper");
     const { errors } = await engine.submitSector(
@@ -277,11 +253,6 @@ describe("reaping abandoned images", () => {
   });
 
   test("a submission cannot bake once its lease has lapsed", async () => {
-    // What the reaper's grace period used to cover, fixed where it belongs.
-    // The submission path checks the claim is live and then validates before
-    // writing, so the lease can lapse in between; the insert re-checks it in
-    // the same statement. Without this, a slow submission could bake a sector
-    // referencing an image the sweep had already decided was garbage.
     const { engine, db } = await makeEngine();
     const { agent, claim, url } = await uploaded(engine, "too-slow");
     await db.run("UPDATE claims SET expires_at = 0 WHERE claim_id = ?", [claim.claimId]);
@@ -298,9 +269,6 @@ describe("reaping abandoned images", () => {
   });
 
   test("one sweep clears many images at once", async () => {
-    // The sweep is two round trips whatever its size — one bulk delete, one
-    // UPDATE … IN (…) — which is why its limit is R2's own ceiling rather
-    // than a number tuned against the cron interval.
     const { engine } = await makeEngine();
     const keys: string[] = [];
     for (const handle of ["one", "two", "three"]) {
@@ -326,12 +294,6 @@ describe("reaping abandoned images", () => {
   });
 });
 
-/**
- * Two verdicts only — `clean` publishes on the spot, `unsure` stores the
- * image and waits for a human — and no automated `rejected`: see
- * moderation.ts's module comment for why. `rejected` is reachable only
- * through a human's own takedown, `Engine.rejectImage`.
- */
 describe("image moderation", () => {
   async function uploaded(engine: Engine, handle: string) {
     const { agent } = await engine.register(handle);
@@ -367,9 +329,6 @@ describe("image moderation", () => {
   });
 
   test("a pending image referenced by a baked sector is never reaped", async () => {
-    // The safety rule in reapableImages is unchanged by moderation — a
-    // sector reference is still what protects an image — this pins that a
-    // *pending* reference protects it exactly as a published one does.
     const { engine } = await makeEngine({ moderator: permissiveModerator("unsure") });
     const { agent, claim, url, key } = await uploaded(engine, "pending-builder");
     const { errors } = await engine.submitSector(
@@ -419,14 +378,11 @@ describe("the world-wide claim rate", () => {
     } catch (exc) {
       assert.ok(exc instanceof RateLimited);
       assert.equal(exc.kind, RateKind.CLAIM);
-      // The wait points at the oldest grant ageing out of the window, so it is
-      // the better part of an hour rather than a token back-off.
       assert.ok(exc.retryAfter > 3500 && exc.retryAfter <= 3600, String(exc.retryAfter));
     }
   });
 
   test("it does not consult the agent, so a new token does not help", async () => {
-    // The reason this brake exists in the first place: registration is free.
     const { engine } = await makeEngine({ claimsPerHour: 1 });
     await engine.claim((await engine.register("first")).agent);
     await assert.rejects(
@@ -436,9 +392,6 @@ describe("the world-wide claim rate", () => {
   });
 
   test("this agent's own cooldown is reported before the world's rate", async () => {
-    // A cooldown-limited agent polling a rate limit would be waiting on the
-    // wrong thing. settle() itself spends the hour's one claim, so a second
-    // attempt hits both limits at once — the agent's own cooldown must win.
     const { engine } = await makeEngine({ claimsPerHour: 1, cooldownSeconds: 3600 });
     const { agent } = await settle(engine);
     await assert.rejects(engine.claim(agent), NotYet);
@@ -464,7 +417,6 @@ describe("submitting a sector", () => {
   });
 
   test("the token survives baking", async () => {
-    // The sector is permanent; the agent is not spent. It comes back.
     const { engine } = await makeEngine();
     const { agent, token } = await settle(engine);
     assert.deepEqual(await engine.registry.authenticate(token), agent);
@@ -480,13 +432,10 @@ describe("submitting a sector", () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await settle(engine);
 
-    // Not a single object placed, and a second sector is still available
-    // immediately — sectors are no longer priced in objects at all.
     const second = await found(engine, agent);
     assert.equal(agent.coordinates.length, 2);
     assert.notDeepEqual(second.sector.coordinate, agent.coordinates[0]);
 
-    // A third costs no more than the second did — nothing, either way.
     const third = await found(engine, agent);
     assert.equal(agent.coordinates.length, 3);
     assert.notDeepEqual(third.sector.coordinate, agent.coordinates[1]);
@@ -508,7 +457,7 @@ describe("submitting a sector", () => {
   test("parent_id alone decides which sector an object lands in", async () => {
     const { engine } = await makeEngine({ cooldownSeconds: 0 });
     const { agent } = await settle(engine);
-    await found(engine, agent); // a second sector, free and immediate now
+    await found(engine, agent);
 
     const older = await root(engine, agent, 0);
     const newer = await root(engine, agent, 1);
@@ -566,7 +515,6 @@ describe("submitting a sector", () => {
 
 describe("what a claim reveals", () => {
   test("a claim reveals nothing about the neighbours", async () => {
-    // The withholding is the mechanism, so it gets a test of its own.
     const { engine } = await makeEngine();
     await build(engine, [0, 1], {
       overrides: { title: "The Tell-Tale Orangery", long_description: "Moths, mostly." },
@@ -713,7 +661,6 @@ describe("interactions", () => {
     assert.equal(second.interaction, null);
     assert.ok(codes(second.errors).has("interaction_exists"));
 
-    // Order-independent: "use B with A" resolves the same written pair.
     const view = await engine.interactionView(b!.objectId, a!.objectId);
     assert.equal(view!["text"], "Tied fast.");
   });
@@ -753,7 +700,6 @@ describe("the read model", () => {
   });
 
   test("every adjacency produces an exit in both directions", async () => {
-    // Neither side declares the door, so neither side can disagree.
     const { engine } = await makeEngine();
     await build(engine, [0, 1], { overrides: { title: "North Place" } });
 
@@ -791,7 +737,6 @@ describe("the read model", () => {
       things.map((t) => t.title),
       ["A Thing"],
     );
-    // The detail is only on the object itself, not spilled into the room.
     assert.ok(!JSON.stringify(view).includes("Longer detail."));
   });
 
@@ -884,9 +829,6 @@ describe("agents survive a restart", () => {
     await found(engine, agent);
     await furnish(engine, agent, 3);
 
-    // A fresh Engine over the same (still-open) database, as a restart
-    // against the same file would produce: nothing but the database itself
-    // carries state across it.
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
@@ -894,10 +836,6 @@ describe("agents survive a restart", () => {
     assert.notEqual(revived, null, "the token must still authenticate");
     assert.deepEqual(revived!.coordinates, agent.coordinates);
     assert.equal(revived!.objectsCreated, 3);
-    // The cooldown clock survives the restart too, at the value it actually
-    // held rather than reset to zero — a second sector stays available here
-    // only because this registry's cooldownSeconds is 0, not because the
-    // objects placed bought anything.
     assert.notEqual(await engine.claim(revived!), null);
     db.close();
   });
@@ -912,7 +850,7 @@ describe("agents survive a restart", () => {
     let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
     const { agent, token } = await engine.register("grinder");
     await found(engine, agent);
-    await furnish(engine, agent, 5); // several separate saves of the same agent
+    await furnish(engine, agent, 5);
 
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });

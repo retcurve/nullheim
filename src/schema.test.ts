@@ -31,7 +31,6 @@ describe("parsing a sector", () => {
   });
 
   test("a coordinate must be two integers", () => {
-    // The grid is flat — a three-component coordinate is a stale client.
     for (const bad of [[0], [0, 1, 0], [0, "y"], [true, 0], "0,1"]) {
       const { parsed, errors } = parseSector(sector([0, 1], { coordinate: bad }));
       assert.equal(parsed, null, `expected ${JSON.stringify(bad)} to be refused`);
@@ -63,9 +62,7 @@ describe("parsing a sector", () => {
   });
 
   test("caps count characters, not UTF-16 code units", () => {
-    // The hazard this guards: "𝔊".length is 2 in JavaScript and 1 in Python.
-    // A title of exactly MAX_TITLE_LEN astral characters is legal, and a naive
-    // .length would reject it as twice the size.
+    // "𝔊" has a JavaScript .length of 2 but counts as 1 character.
     const astral = "𝔊".repeat(MAX_TITLE_LEN);
     const { errors } = parseSector(sector([0, 1], { title: astral }));
     assert.deepEqual(errors, []);
@@ -76,7 +73,6 @@ describe("parsing a sector", () => {
   });
 
   test("declared exits are rejected as an unknown field", () => {
-    // Exits are derived from adjacency; declaring them is a stale client.
     const { errors } = parseSector(sector([0, 1], { exits: [{ direction: "north" }] }));
     assert.ok(codes(errors).has("unknown_field"));
   });
@@ -118,8 +114,6 @@ describe("parsing an object", () => {
   });
 
   test("a null parent id is rejected", () => {
-    // parent_id is required — null used to mean the sector itself; now the
-    // sector's own id does, so there is nothing left for null to mean.
     const { errors } = parseObject(obj(null));
     assert.ok(codes(errors).has("type_error"));
   });
@@ -160,7 +154,6 @@ describe("parsing an object", () => {
   });
 
   test("unknown fields are reported", () => {
-    // The UOI tags are gone — a client still sending them should hear so.
     const { errors } = parseObject(
       obj("sec_abc123", { weight_class: "light", is_weapon: false }),
     );

@@ -1,19 +1,9 @@
 /**
- * D1 over Cloudflare's REST API, so an operator on a developer machine can
- * reach a *deployed* world's database.
- *
- * This exists for exactly one caller — `nullheim moderate`, the human half
- * of image moderation. Moderation is a human-in-the-loop feature, and until
- * this adapter there was no way to operate that half against any deployed
- * world at all: the CLI opened a local SQLite file, and preview and
- * production are D1. A pending image on preview could only be cleared by
- * hand-writing SQL through `wrangler d1 execute`.
- *
- * **Never put this on a request path.** The Worker already has a real D1
- * binding (`./d1.ts`), which is faster, transactional and needs no token.
- * This one is an HTTPS round trip to Cloudflare's control plane per call,
- * authenticated by an account-wide API token, and it is missing a guarantee
- * the binding has — see `batch` below.
+ * A `Db` implementation over Cloudflare's D1 REST API. Used by `nullheim
+ * moderate` to reach a deployed world's database from a developer machine.
+ * Not used on the Worker's own request path, which uses the D1 binding in
+ * `./d1.ts` instead. Each call here is an HTTPS request to Cloudflare's
+ * control plane, authenticated with an account-wide API token.
  */
 
 import type { Db, DbResult, Statement } from "../db.ts";
@@ -31,23 +21,9 @@ interface QueryResult {
 }
 
 /**
- * A SQL literal, for `batch` alone — every other method sends real bound
- * parameters and never comes near this.
- *
- * Inlining values into SQL is the thing the rest of this codebase refuses to
- * do, so the reason it is here is worth stating plainly: the REST endpoint
- * rejects the combination this adapter would otherwise need. Sending two
- * statements with a `params` array comes back `7400 The request is malformed:
- * params with multiple statements is not supported` (checked against a live
- * database, 2026-09-04). One or the other, not both.
- *
- * The encoding is therefore the whole safety story, and it is deliberately
- * narrow rather than clever: numbers must be finite, strings are single
- * quoted with `''` doubling, and anything else — a Date, an object, a
- * bigint, a Uint8Array — throws rather than being coerced into a shape this
- * function has not thought about. `batch` is only ever reached with values
- * this file's one caller produces (a timestamp and an image key), so the
- * throw is a guard against a future caller, not a case anybody hits today.
+ * Renders one value as a SQL literal, used only by `batch` below. Numbers
+ * must be finite. Strings are wrapped in single quotes, with each internal
+ * quote doubled. Any other type throws.
  */
 export function literal(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
@@ -62,11 +38,8 @@ export function literal(value: unknown): string {
 
 function inline({ sql, params = [] }: Statement): string {
   let index = 0;
-  // Only `?` placeholders outside string literals are substituted. The
-  // statements here are this repo's own, which use `?` exclusively and never
-  // contain a quoted `?`, so the scan stays this simple on purpose: a parser
-  // clever enough to handle the general case would be a parser that can be
-  // wrong in ways this one cannot.
+  // Replaces each `?` placeholder outside a quoted string literal with its
+  // corresponding literal value.
   const out = sql.replace(/'(?:[^']|'')*'|\?/g, (match) =>
     match === "?" ? literal(params[index++]) : match,
   );
@@ -96,10 +69,9 @@ export function openD1Http(target: D1HttpTarget): Db {
       errors?: { code?: number; message?: string }[];
     };
     if (!response.ok || body.success !== true) {
-      // The API reports a bad statement as a 200 with `success: false`, so the
-      // HTTP status alone is not the check. An auth failure is by far the
-      // likeliest error here and says nothing useful on its own, so the status
-      // rides along with whatever Cloudflare said.
+      // Checks both the HTTP status and the response body's own `success`
+      // field, since the API can report a bad statement as a 200 with
+      // `success: false`.
       const said = body.errors?.map((e) => `${e.code ?? "?"} ${e.message ?? ""}`.trim()).join("; ");
       throw new Error(`D1 request failed (HTTP ${response.status}): ${said || "no detail given"}`);
     }
@@ -126,21 +98,9 @@ export function openD1Http(target: D1HttpTarget): Db {
     },
 
     /**
-     * **Not atomic, unlike every other `Db`.** Both real backends run a
-     * `batch()` as one unit; this sends one request holding several
-     * statements, and Cloudflare does not document that as a transaction.
-     * Assume a failure part-way through leaves the earlier statements
-     * applied.
-     *
-     * That is survivable for the one batch this adapter is used for, and it
-     * would not be for most of the others, which is the real reason this
-     * file must stay off the request path. `WorldStore.rejectImage` marks an
-     * image rejected and clears the sector field showing it; a partial apply
-     * in either order is invisible to players, because `sectorView` already
-     * omits any image that is not `published`, and re-running `--reject`
-     * fixes it — both statements are idempotent. Nothing else here would be
-     * so lucky: `bake()`'s batch is what makes a sector and its frontier
-     * update one event.
+     * Sends all statements inlined into a single SQL request, joined by
+     * semicolons. Not atomic: a failure part-way through can leave earlier
+     * statements applied and later ones not.
      */
     async batch(statements: readonly Statement[]) {
       if (statements.length === 0) return [];
@@ -149,9 +109,7 @@ export function openD1Http(target: D1HttpTarget): Db {
     },
 
     async exec() {
-      // Migrations are `wrangler d1 migrations apply`'s job. An operator CLI
-      // reaching a deployed database is the last place that should be able to
-      // run unbounded DDL by accident, so this refuses rather than obliging.
+      // Always throws. Migrations must run through `wrangler d1 migrations apply` instead.
       throw new Error("exec() is not available over the D1 REST API — use wrangler for migrations");
     },
   };
