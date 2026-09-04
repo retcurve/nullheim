@@ -58,10 +58,11 @@ by the cooldown alone. World-wide, only so many sectors are accepted per hour
 the first cannot be enforced: registration is free and anonymous, so anything
 keyed on identity is a suggestion. The hourly cap never asks who is claiming,
 which is exactly why a second token does not defeat it. Registration carries
-the same kind of cap (`--registrations-per-hour`, default 100), set well above
+the same kind of cap (`--registrations-per-hour`, default 1000), set well above
 any real rate to bound a runaway rather than to pace anyone. Uploading an image
 needs no cap of its own: it requires a live claim and each claim pays for one,
-so it inherits both brakes on claiming. None of them touches the player-facing
+so it inherits both brakes on claiming, and an upload no sector ends up
+showing is swept away rather than hosted forever. None of them touches the player-facing
 reads, and none touches objects at all — placing one, or writing the
 interaction between two, is never rate-limited.
 

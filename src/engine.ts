@@ -62,6 +62,23 @@ import {
 export const GENESIS_AGENT_ID = "agent_genesis";
 
 /**
+ * How many images one sweep reclaims.
+ *
+ * This is R2's own ceiling on keys per delete call, not a tuned number:
+ * a sweep is one bulk delete plus one `UPDATE … IN (…)`, so the cost of
+ * raising it is nothing until it stops fitting in a single R2 request.
+ * Whatever a sweep does not reach is still reapable a minute later.
+ *
+ * It bounds a sweep, not the backlog — and the backlog has its own bound
+ * upstream: an image needs a claim, and claims are capped world-wide by
+ * `claimsPerHour` (1000 by default). So the worst case anyone can create is
+ * ~1000 abandoned images an hour, against a drain of up to 1000 a *minute*.
+ * If the claim rate is ever raised past this, that is the number to compare
+ * against, not this one.
+ */
+export const IMAGE_REAP_LIMIT = 1000;
+
+/**
  * The one sector the system authors. It exists only to give the frontier
  * somewhere to start, and its text is deliberately blank-canvas so it imposes
  * no theme on the agents who build outward from it.
@@ -113,12 +130,15 @@ export async function ensureGenesis(store: WorldStore): Promise<void> {
     return;
   }
   try {
-    await store.bake({
-      sector: GENESIS,
-      sectorId: "sec_genesis",
-      agentId: GENESIS_AGENT_ID,
-      bakedAt: now(),
-    });
+    await store.bake(
+      {
+        sector: GENESIS,
+        sectorId: "sec_genesis",
+        agentId: GENESIS_AGENT_ID,
+        bakedAt: now(),
+      },
+      null,
+    );
   } catch (exc) {
     if (!(exc instanceof AlreadyBaked)) {
       throw exc;
@@ -189,16 +209,51 @@ export class Engine {
     // before storing means a lost race (two uploads on one lease, or a lease
     // that expired during the decode) leaves nothing behind in the store;
     // storing first would leave a blob nothing can ever reference.
-    if (!(await this.registry.takeClaimImage(claim))) {
+    const key = `img_${randomHex(12)}`;
+    if (!(await this.registry.takeClaimImage(claim, key))) {
       throw new UploadRefused(
         "image_already_uploaded",
         `claim ${claim.claimId} no longer has an image to spend — another upload took ` +
           "it, or the claim expired while this one was being processed",
       );
     }
-    const key = `img_${randomHex(12)}`;
     await this.images.put(key, processed.bytes, processed.contentType);
     return { url: `/v1/images/${key}` };
+  }
+
+  /**
+   * Delete stored images that no claim can put anywhere any more.
+   *
+   * An upload outlives its claim: the blob is written, the url is returned,
+   * and if the agent never bakes a sector referencing it, nothing here used
+   * to reclaim it. That is a free image host — abandoning a claim costs only
+   * the wait for the next one — so this runs on a schedule (a Cloudflare
+   * cron trigger, `worker.ts`'s `scheduled`; `nullheim reap` locally) rather
+   * than being anybody's request path.
+   *
+   * `reapableImages` decides what is garbage and states the rule; this only
+   * carries it out. The order is the whole of the correctness here: the blobs
+   * go first and the columns are cleared second, so an interruption between
+   * them leaves keys naming objects that are already gone — which the next
+   * sweep resolves, since deleting an absent key is a no-op. Clearing first
+   * would drop the only record of the blobs and leak them permanently, which
+   * is the exact failure this function exists to prevent.
+   *
+   * Two round trips, whatever the size of the sweep: R2 deletes a whole array
+   * of keys in one call and the claims are cleared in one statement. An
+   * earlier version deleted one at a time, which is what made the sweep size
+   * a number worth tuning — and made it a number that had to be kept in step
+   * with the cron interval, which is exactly the kind of arithmetic that goes
+   * stale unnoticed.
+   */
+  async reapImages(options: { limit?: number } = {}): Promise<{ deleted: number }> {
+    const candidates = await this.registry.reapableImages(options.limit ?? IMAGE_REAP_LIMIT);
+    if (candidates.length === 0) {
+      return { deleted: 0 };
+    }
+    await this.images.delete(candidates.map((c) => c.key));
+    await this.registry.clearClaimImages(candidates.map((c) => c.claimId));
+    return { deleted: candidates.length };
   }
 
   // --- claiming -----------------------------------------------------------
@@ -265,7 +320,7 @@ export class Engine {
       bakedAt: now(),
     };
     try {
-      await this.store.bake(baked);
+      await this.store.bake(baked, claim.claimId);
     } catch (exc) {
       if (exc instanceof AlreadyBaked) {
         return {

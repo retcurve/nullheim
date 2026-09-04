@@ -27,13 +27,46 @@ function usage(): never {
       "\n" +
       "  --db PATH                   local SQLite file (defaults to an in-memory world)\n" +
       "  --claims-per-hour N         cap new sectors world-wide (0 disables the cap)\n" +
-      "  --registrations-per-hour N  cap new agents world-wide (0 disables the cap)\n",
+      "  --registrations-per-hour N  cap new agents world-wide (0 disables the cap)\n" +
+      "\n" +
+      "       nullheim reap [--db PATH]\n" +
+      "\n" +
+      "  Delete images whose claim never became a sector. On Cloudflare this\n" +
+      "  runs on a cron trigger instead (see wrangler.toml); locally it is a\n" +
+      "  command, because a dev server that outlives its images is not a\n" +
+      "  problem worth a scheduler.\n",
   );
   process.exit(2);
 }
 
+/**
+ * One sweep of `Engine.reapImages`, then exit — the local stand-in for the
+ * Worker's cron trigger. Bounded and idempotent, so running it twice is
+ * harmless and running it never costs only disk.
+ */
+async function reap(argv: string[]): Promise<number> {
+  const { values } = parseArgs({ args: argv, options: { db: { type: "string" } } });
+  const dbPath = values.db ?? ":memory:";
+  const db = openSqlite(dbPath);
+  await db.exec(SCHEMA_SQL);
+  const engine = new Engine({
+    store: new WorldStore(db),
+    registry: new Registry(db),
+    prompts: loadPrompts(),
+    images: openFsImages(dbPath === ":memory:" ? null : `${dbPath}.images`),
+    codecs: loadCodecs(),
+  });
+  const { deleted } = await engine.reapImages();
+  console.log(`reaped ${deleted} abandoned image(s)`);
+  db.close();
+  return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === "reap") {
+    return reap(rest);
+  }
   if (command !== "serve") {
     usage();
   }

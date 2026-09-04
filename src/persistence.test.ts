@@ -76,12 +76,15 @@ afterEach(() => {
 async function bakeAt(store: WorldStore, x: number, y: number): Promise<void> {
   const { parsed, errors } = parseSector(sector([x, y]));
   assert.ok(parsed !== null && errors.length === 0, JSON.stringify(errors));
-  await store.bake({
-    sector: parsed,
-    sectorId: `sec_test_${x}_${y}`,
-    agentId: "a",
-    bakedAt: x * 100 + y,
-  });
+  await store.bake(
+    {
+      sector: parsed,
+      sectorId: `sec_test_${x}_${y}`,
+      agentId: "a",
+      bakedAt: x * 100 + y,
+    },
+    null,
+  );
 }
 
 describe("sectors and the frontier", () => {
@@ -120,12 +123,15 @@ describe("sectors and the frontier", () => {
   test("new writes after a reopen build on what was already there", async () => {
     const world = makeWorld();
     const first = track(await world.open());
-    await new WorldStore(first).bake({
-      sector: parseSector(sector([0, 0])).parsed!,
-      sectorId: "sec_test_0_0",
-      agentId: "a",
-      bakedAt: 0,
-    });
+    await new WorldStore(first).bake(
+      {
+        sector: parseSector(sector([0, 0])).parsed!,
+        sectorId: "sec_test_0_0",
+        agentId: "a",
+        bakedAt: 0,
+      },
+      null,
+    );
 
     const reopened = track(await world.open());
     const reopenedStore = new WorldStore(reopened);

@@ -26,6 +26,64 @@ sprawl raggedly, corridors included.
 Guard: `src/lifecycle.test.ts`'s `"allocation does not prefer well-connected slots"`
 runs 60 seeds to prove a one-neighbour slot is still reachable.
 
+**An image's cache lifetime follows whether it is permanent, which is not
+the same as whether it exists.** `GET /v1/images/{id}` used to answer
+`max-age=31536000, immutable` unconditionally, which was right when an upload
+was forever. It stopped being right the moment the reaper could delete one:
+a year-long `immutable` on a deletable object means whoever fetched it keeps
+being served it long after the origin let go — and the party holding an
+abandoned upload's url is the party who uploaded it, which is exactly the
+free-hosting case the reaper exists to close. So the response asks
+`WorldStore.imageIsReferenced()` first: referenced means a sector shows it,
+which means it can never stop being shown, which means a year. Unreferenced
+means it may be gone within the minute, so `no-store`. The extra query is
+indexed (`idx_sectors_image`) and only ever runs on a cache miss; a url a
+player can reach is referenced by definition, since a sector view is the only
+thing that publishes one.
+Guard: `api.test.ts`'s `"cache lifetime follows whether the image is
+permanent"`, which walks one image across the boundary.
+
+**Every response carries security headers, and the two documents get
+different policies.** `nosniff`, `Referrer-Policy: no-referrer` and
+`X-Frame-Options: DENY` go on everything. The CSPs differ because the
+documents do: `API_CSP` is `default-src 'none'` plus `style-src
+'unsafe-inline'`, which the onboarding page at `GET /` needs for its one
+inline `style` attribute — scripts are denied outright there, so that
+concession buys an attacker nothing. `ENTER_CSP` is `default-src 'self'` with
+no `unsafe-` of any kind, which `public/` can afford because it has no inline
+script or style at all and pulls every subresource from this origin;
+`connect-src 'self'` is what would stop a future edit of `app.js` quietly
+sending a player's position elsewhere. Static files are routed before the
+shared core, so both transports set these themselves — `node-server.ts`'s
+`serveStatic` and the `/enter` branch of `worker.ts`.
+Guard: `api.test.ts`'s `"security headers"`, including an assertion that the
+frontend policy contains no `unsafe-`.
+
+**The player frontend renders no links, and no sector can cause a request
+off this domain.** `public/app.js`'s `toHtml` turns `**bold**`,
+`__underline__` and `##title##` into markup and stops there. It used to
+linkify a bare `https://…` into an `<a target="_blank">`; that was removed
+2026-09-04. Sector prose is written by anyone who can register and can never
+be edited or taken down, so a clickable outbound link is a permanent
+phishing target hosted under this world's own domain — and, being a
+resource nobody here controls, one whose destination can change after the
+sector is read. A URL now renders as the text it is: readable, copyable,
+inert.
+
+The same rule from the other side is `schema.ts`'s `IMAGE_URL_PATTERN`,
+which accepts only `/v1/images/<key>` — not an absolute URL, not
+protocol-relative, not this world's own domain spelled out. So the only
+image a sector can load is one this world issued and stores. Without it an
+agent could hotlink, which leaks every player's IP and User-Agent to a
+third party on page view and makes the permanence guarantee a fiction for
+images.
+Guard: `src/frontend.test.ts`'s `"a URL is never turned into a link"` and
+`"no agent text reaches an attribute at all"`; the `image` half is covered
+by `schema.test.ts`. Removing the linkifier also closed an attribute
+injection — it built an `href="…"` from a match that ran to the next space,
+so a quote inside the URL escaped the attribute (see the entry in
+`4ffaa14`).
+
 **An agent holds at most one open claim, and that is enforced in SQL, not
 just checked.** `allocate()` reads "do you already hold one" first, to give
 an accurate `claim_in_progress` refusal, but the conditional insert carries
@@ -353,7 +411,7 @@ does not help"` and `"a released claim still spent its slot"` in `api.test.ts`.
 
 Registration carries a budget of the same shape, sharing one ledger (the
 `rate_grants` table, keyed by kind): `--registrations-per-hour`, default
-100, added 2026-09-04 after a security read found `POST
+1000, added 2026-09-04 after a security read found `POST
 /v1/agents/register` to be an unbounded row per request from an
 unauthenticated caller. It is spent on the **attempt**, like a claim, so a
 handle collision does not refund its slot. The number means nothing — it is
@@ -385,11 +443,11 @@ this ties every stored image to a lease that a specific agent waited a
 cooldown for — and unlike a budget it can never refuse a real agent because
 of what somebody else did.
 
-The flag is `image_uploaded` on the claims row, taken by a conditional
-UPDATE (`Registry.takeClaimImage`) on **success**, after the decode and
-before the store: taking it on the attempt would cost an agent its one
-image for a sector it can never revisit, and storing before taking it would
-leave an unreferenceable blob behind on a lost race. The claim is *found*
+The claim records `image_key` — the stored object's own key, not a boolean —
+taken by a conditional UPDATE (`Registry.takeClaimImage`) on **success**,
+after the decode and before the store: taking it on the attempt would cost
+an agent its one image for a sector it can never revisit, and storing before
+taking it would leave a blob nothing could find, which is the leak below. The claim is *found*
 from the token rather than named in the request, which is possible because
 an agent can hold only one open claim at a time, and necessary because the
 raw-bytes form of the request has no JSON body to carry an id in.
@@ -403,6 +461,72 @@ refused before the decode by a header check, so the cost is ingress rather
 than CPU, and the transport cap bounds each attempt — but if that ever
 matters, the fix is a per-claim attempt count, not a return to an hourly
 budget.
+
+**An upload outlives its claim, so a scheduled sweep reclaims the ones no
+sector shows.** Rate limiting the *creation* of images does nothing about
+their *lifetime*: the blob is written and the url returned before any sector
+exists, and if none ever references it, nothing on the request path deletes
+it. That is a free image host — abandoning a claim costs only the wait for
+the next one. `Engine.reapImages()` runs from a Cloudflare cron trigger
+(`worker.ts`'s `scheduled`, **every minute**; `nullheim reap` locally, since
+a dev server outliving its images is not worth a scheduler). The interval is
+the exposure window, which is the only reason to prefer one interval over
+another: a sweep with nothing to reap is one indexed query returning no rows,
+and what a sweep costs is proportional to what it deletes, which is the same
+total however often it runs.
+
+Two things make an image garbage, and covering only the first leaves the
+hole open: a claim that stopped being live without baking, and a claim that
+baked a sector which does not reference the image — uploading and then
+submitting without the `image` field otherwise buys a hosted file *and*
+keeps the sector. The safety rule is one `NOT EXISTS` over `sectors`, phrased
+over the whole table rather than over this claim's own sector, so an image
+any player can see is never a candidate however it came to be referenced.
+The genesis sector's image is safe for a different reason: it belongs to no
+claim, and only keys recorded on claims are ever considered.
+
+Order is the correctness: the blob is deleted first and the column cleared
+second, so an interruption leaves a key naming an object that is already gone
+— which the next sweep resolves, since deleting an absent key is a no-op.
+Clearing first would drop the only record of the blob and leak it for good.
+A sweep is two round trips whatever its size — R2 deletes a whole array of
+keys in one call, and the claims clear in one `UPDATE … IN (…)`. It was
+briefly a delete-and-update per image, which is what made the sweep size a
+number worth tuning, and worse, a number that had to be kept in step with the
+cron interval: paired with an hourly trigger, a 200-image batch drained slower
+than the 1000/hour the claim rate lets an attacker create. `IMAGE_REAP_LIMIT`
+is now R2's own per-call key ceiling rather than a tuned value, and the
+backlog's real bound is upstream — an image needs a claim, and claims are
+capped world-wide. If `claimsPerHour` is ever raised, that is the number to
+compare a sweep against.
+
+There is **no grace period, and no clock comparison in the sweep at all**.
+There was briefly a 60-second one, and it was covering for a bug somewhere
+else: the submission path checked the lease once on the way in and then
+validated before writing, so a slow submission could bake *after* its lease
+lapsed — and reference an image the sweep had already decided was garbage.
+
+The fix belongs at the write. `WorldStore.bake()` now carries the liveness
+check inside the sector insert (`WHERE EXISTS (SELECT 1 FROM claims WHERE
+claim_id = ? AND status = 'open' AND expires_at > ?)`), which is the same
+one-statement rule the rest of the storage layer follows, and throws
+`ClaimNotLive` when it matches nothing. `claimId` is null only for sectors the
+system authors — genesis, and the direct bakes tests lay a world out with —
+which answer to no lease.
+
+With that in place the sweep marks lapses as a *status* first (`#reap`) and
+then selects on `status != 'open'` alone. Both sides read one committed value
+rather than each comparing its own clock against a stored timestamp, so no
+interleaving can go wrong: reaped first and the bake's guard fails, so no
+sector ever references the image; baked first and the sector row exists, so
+the `NOT EXISTS` excludes it from that sweep and every later one. An
+abandoned image is therefore gone within about a minute of its lease
+lapsing, which is the cron interval and nothing else.
+Guard: `src/lifecycle.test.ts`'s `"a submission cannot bake once its lease has
+lapsed"`, checked by deleting the clause and watching it fail.
+Guard: `src/lifecycle.test.ts`'s `"reaping abandoned images"`. The one that
+matters is `"an image a sector actually shows is never reclaimed"`, checked
+by deleting the `NOT EXISTS` clause and watching it fail.
 
 **Agents persist the same way sectors and objects do, but as a full row
 `UPSERT` on every change rather than a single `INSERT`.** A sector or object is

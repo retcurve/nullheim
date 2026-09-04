@@ -21,4 +21,14 @@ export interface StoredImage {
 export interface ImageStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
   get(key: string): Promise<StoredImage | null>;
+  /**
+   * Remove one object, or many in a single call — R2 takes a whole array,
+   * which is what keeps a reaper sweep two round trips rather than two per
+   * image (see `Engine.reapImages`).
+   *
+   * Idempotent: deleting a key that is not there is not an error, which is
+   * what lets a sweep re-run over a key whose blob went but whose claim row
+   * did not get cleared.
+   */
+  delete(keys: string | string[]): Promise<void>;
 }

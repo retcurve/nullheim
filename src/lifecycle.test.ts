@@ -23,11 +23,12 @@ import {
   cooldownRemaining,
   isActive,
 } from "./registry.ts";
-import { AlreadyBaked, WorldStore } from "./store.ts";
+import { AlreadyBaked, ClaimNotLive, WorldStore } from "./store.ts";
 import { loadCodecs } from "./wasm.node.ts";
 import {
   build,
   codes,
+  makePng,
   found,
   furnish,
   makeEngine,
@@ -197,6 +198,130 @@ describe("one claim at a time", () => {
     assert.ok(refused !== undefined);
     assert.ok((refused as PromiseRejectedResult).reason instanceof SectorUnavailable);
     assert.equal((refused as PromiseRejectedResult).reason.code, "claim_in_progress");
+  });
+});
+
+/**
+ * An upload outlives its claim: the blob is written and the url handed back
+ * before any sector exists, and if no sector ever references it, nothing on
+ * the request path will ever delete it. Left alone that is a free image host
+ * — abandoning a claim costs only the wait for the next one — so these are
+ * the cases the sweep has to get right, and the one it must never get wrong.
+ */
+describe("reaping abandoned images", () => {
+  async function uploaded(engine: Engine, handle: string) {
+    const { agent } = await engine.register(handle);
+    const claim = await engine.claim(agent);
+    const { url } = await engine.uploadImage(agent, makePng(8, 8));
+    return { agent, claim, url, key: url.slice("/v1/images/".length) };
+  }
+
+  test("an image whose claim expired is reclaimed", async () => {
+    const { engine, db } = await makeEngine();
+    const { claim, key } = await uploaded(engine, "abandoner");
+    assert.notEqual(await engine.images.get(key), null);
+
+    await db.run("UPDATE claims SET expires_at = 0 WHERE claim_id = ?", [claim.claimId]);
+    assert.deepEqual(await engine.reapImages(), { deleted: 1 });
+    assert.equal(await engine.images.get(key), null);
+  });
+
+  test("an image whose claim was released is reclaimed", async () => {
+    const { engine } = await makeEngine();
+    const { claim, key } = await uploaded(engine, "quitter");
+    await engine.release(claim);
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 1 });
+    assert.equal(await engine.images.get(key), null);
+  });
+
+  test("an image a sector actually shows is never reclaimed", async () => {
+    // The one thing this must never do. A player can see this image.
+    const { engine } = await makeEngine();
+    const { agent, claim, url, key } = await uploaded(engine, "builder");
+    const { errors } = await engine.submitSector(
+      agent,
+      claim,
+      sector(coords.asList(claim.coordinate) as [number, number], { image: url }),
+    );
+    assert.deepEqual(errors, []);
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 0 });
+    assert.notEqual(await engine.images.get(key), null);
+  });
+
+  test("an image the baked sector left unused is reclaimed too", async () => {
+    // Uploading and then submitting without the field would otherwise buy a
+    // permanently hosted file *and* keep the sector — the same free-hosting
+    // move as abandoning the claim, without the waiting.
+    const { engine } = await makeEngine();
+    const { agent, claim, key } = await uploaded(engine, "keeper");
+    const { errors } = await engine.submitSector(
+      agent,
+      claim,
+      sector(coords.asList(claim.coordinate) as [number, number]),
+    );
+    assert.deepEqual(errors, []);
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 1 });
+    assert.equal(await engine.images.get(key), null);
+  });
+
+  test("a live claim's image is left alone", async () => {
+    const { engine } = await makeEngine();
+    const { key } = await uploaded(engine, "still-working");
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 0 });
+    assert.notEqual(await engine.images.get(key), null);
+  });
+
+  test("a submission cannot bake once its lease has lapsed", async () => {
+    // What the reaper's grace period used to cover, fixed where it belongs.
+    // The submission path checks the claim is live and then validates before
+    // writing, so the lease can lapse in between; the insert re-checks it in
+    // the same statement. Without this, a slow submission could bake a sector
+    // referencing an image the sweep had already decided was garbage.
+    const { engine, db } = await makeEngine();
+    const { agent, claim, url } = await uploaded(engine, "too-slow");
+    await db.run("UPDATE claims SET expires_at = 0 WHERE claim_id = ?", [claim.claimId]);
+
+    await assert.rejects(
+      engine.submitSector(
+        agent,
+        claim,
+        sector(coords.asList(claim.coordinate) as [number, number], { image: url }),
+      ),
+      ClaimNotLive,
+    );
+    assert.equal(await engine.store.get(claim.coordinate), null);
+  });
+
+  test("one sweep clears many images at once", async () => {
+    // The sweep is two round trips whatever its size — one bulk delete, one
+    // UPDATE … IN (…) — which is why its limit is R2's own ceiling rather
+    // than a number tuned against the cron interval.
+    const { engine } = await makeEngine();
+    const keys: string[] = [];
+    for (const handle of ["one", "two", "three"]) {
+      const { claim, key } = await uploaded(engine, handle);
+      await engine.release(claim);
+      keys.push(key);
+    }
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 3 });
+    for (const key of keys) {
+      assert.equal(await engine.images.get(key), null, key);
+    }
+  });
+
+  test("a reaped claim forgets its key, so the next sweep has nothing to do", async () => {
+    const { engine } = await makeEngine();
+    const { claim } = await uploaded(engine, "swept");
+    await engine.release(claim);
+    await engine.reapImages();
+
+    assert.equal((await engine.registry.getClaim(claim.claimId))?.imageKey, null);
+    assert.deepEqual(await engine.reapImages(), { deleted: 0 });
   });
 });
 

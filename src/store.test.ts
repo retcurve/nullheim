@@ -51,12 +51,15 @@ async function referenceObjectsIn(
 async function bakeAt(store: WorldStore, x: number, y: number, agentId = "a"): Promise<void> {
   const { parsed, errors } = parseSector(sector([x, y]));
   assert.ok(parsed !== null && errors.length === 0, JSON.stringify(errors));
-  await store.bake({
-    sector: parsed,
-    sectorId: `sec_test_${x}_${y}`,
-    agentId,
-    bakedAt: 0.0,
-  });
+  await store.bake(
+    {
+      sector: parsed,
+      sectorId: `sec_test_${x}_${y}`,
+      agentId,
+      bakedAt: 0.0,
+    },
+    null,
+  );
 }
 
 describe("the frontier index", () => {
@@ -223,12 +226,15 @@ describe("derived exits", () => {
     const { parsed } = parseSector(
       sector([0, 1], { title: "The Moth Orangery", short_description: "Green glass." }),
     );
-    await store.bake({
-      sector: parsed!,
-      sectorId: "sec_north",
-      agentId: "b",
-      bakedAt: 0,
-    });
+    await store.bake(
+      {
+        sector: parsed!,
+        sectorId: "sec_north",
+        agentId: "b",
+        bakedAt: 0,
+      },
+      null,
+    );
 
     const exits = await store.exitsFrom(coords.ORIGIN);
     assert.equal(exits.length, 1);

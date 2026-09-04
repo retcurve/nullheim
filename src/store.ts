@@ -221,13 +221,43 @@ export class WorldStore {
    * is never re-added — the read and the write are one statement, not two,
    * which is what keeps this race-free under concurrent claims.
    */
-  async bake(baked: BakedSector): Promise<void> {
+  /**
+   * Is this image url referenced by a sector?
+   *
+   * Which is the same as asking whether it is permanent: a sector can never
+   * be rewritten, so an image it shows can never stop being shown — and the
+   * reaper refuses to delete one, for that reason. An unreferenced image is
+   * either still in flight or already garbage, and either way may be gone
+   * within the minute.
+   */
+  async imageIsReferenced(url: string): Promise<boolean> {
+    return (await this.#db.first("SELECT 1 FROM sectors WHERE image = ? LIMIT 1", [url])) !== null;
+  }
+
+  async bake(baked: BakedSector, claimId: string | null): Promise<void> {
     const { x, y } = baked.sector.coordinate;
     const statements: Statement[] = [
       {
+        // Conditional on the claim still being live, in the same statement as
+        // the write. The caller checked that already, but a check followed by
+        // a separate write is exactly the shape this file avoids everywhere
+        // else: a lease can lapse during the validation pass in between, and a
+        // sector baked on a dead lease is a sector on a coordinate the world
+        // has already offered to somebody else — and, since 0007, one whose
+        // image the reaper may have decided was garbage.
+        //
+        // `claimId` is null only for a sector the system authors — genesis,
+        // and the direct bakes tests use to lay out a world. Those answer to
+        // no lease, so there is nothing to re-check.
         sql:
           "INSERT INTO sectors (x, y, sector_id, agent_id, title, short_description, " +
-          "long_description, image, baked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "long_description, image, baked_at) " +
+          "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?" +
+          (claimId === null
+            ? ""
+            : " WHERE EXISTS (" +
+              "  SELECT 1 FROM claims WHERE claim_id = ? AND status = 'open' AND expires_at > ?" +
+              ")"),
         params: [
           x,
           y,
@@ -238,6 +268,7 @@ export class WorldStore {
           baked.sector.longDescription,
           baked.sector.image,
           baked.bakedAt,
+          ...(claimId === null ? [] : [claimId, baked.bakedAt]),
         ],
       },
       { sql: "DELETE FROM frontier WHERE x = ? AND y = ?", params: [x, y] },
@@ -254,8 +285,9 @@ export class WorldStore {
       });
     }
 
+    let results;
     try {
-      await this.#db.batch(statements);
+      results = await this.#db.batch(statements);
     } catch (exc) {
       if (isUniqueViolation(exc)) {
         throw new AlreadyBaked(
@@ -263,6 +295,11 @@ export class WorldStore {
         );
       }
       throw exc;
+    }
+    // A taken coordinate raises above; an insert that simply matched nothing
+    // means the guard failed, which can only be the claim.
+    if (results[0]!.changes === 0) {
+      throw new ClaimNotLive(`claim ${claimId} is no longer live, so nothing was baked`);
     }
   }
 
@@ -481,6 +518,17 @@ export class WorldStore {
  * tell it from any other failure.
  */
 export class AlreadyBaked extends Error {}
+
+/**
+ * The claim was no longer live when the sector insert ran.
+ *
+ * Distinct from `AlreadyBaked`, which is about the *coordinate*. This one is
+ * about the lease: a submission checks its claim is active on the way in and
+ * then does a validation pass before writing, so the lease can lapse in
+ * between. The insert re-checks it in the same statement rather than trusting
+ * that read — see `bake()`.
+ */
+export class ClaimNotLive extends Error {}
 
 /**
  * Seconds since the epoch, as a float.

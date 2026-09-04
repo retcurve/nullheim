@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS sectors (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sectors_sector_id ON sectors (sector_id);
 
+-- Answers "is this image referenced by a sector?", which decides both how
+-- long GET /v1/images/{id} may be cached and whether the reaper may delete
+-- the object. Partial: most sectors carry no image, and a NULL answers
+-- neither question.
+CREATE INDEX IF NOT EXISTS idx_sectors_image ON sectors (image) WHERE image IS NOT NULL;
+
 -- The frontier: unbaked, in-bounds coordinates touching at least one baked
 -- sector. Maintained incrementally by WorldStore.bake() — see the comment
 -- there — rather than recomputed by scanning every sector on each claim.
@@ -93,10 +99,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_token_hash ON agents (token_hash);
 -- makes a sector_id write-once.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_name ON agents (name);
 
--- `image_uploaded` is the whole of the image budget: an upload needs a live
--- claim, and a claim pays for one. Taken by a conditional UPDATE on success
+-- `image_key` is the whole of the image budget, and the only record of who
+-- owns a stored object: an upload needs a live claim, a claim pays for one,
+-- and NULL means unspent. Taken by a conditional UPDATE on success
 -- (Registry.takeClaimImage), so concurrent uploads on one lease cannot both
--- have it.
+-- have it. It is also what lets the reaper decide an image is garbage — see
+-- Engine.reapImages().
 CREATE TABLE IF NOT EXISTS claims (
   claim_id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -106,22 +114,25 @@ CREATE TABLE IF NOT EXISTS claims (
   created_at REAL NOT NULL,
   expires_at REAL NOT NULL,
   attempts INTEGER NOT NULL,
-  image_uploaded INTEGER NOT NULL DEFAULT 0
+  image_key TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);
 -- Looked up by coordinate when allocating, to find whether an open claim is
 -- already sitting on a frontier slot.
 CREATE INDEX IF NOT EXISTS idx_claims_coordinate ON claims (x, y, status);
+-- Partial, so the reaper's sweep is proportional to how many images exist
+-- rather than to how many claims have ever been made.
+CREATE INDEX IF NOT EXISTS idx_claims_image ON claims (image_key) WHERE image_key IS NOT NULL;
 
 -- One row per grant against a world-wide hourly budget, so a rate limit can
 -- answer "how long until the oldest grant in the window ages out" rather
 -- than just "how many". Pruned opportunistically in Registry, not by a
 -- trigger.
 --
--- `kind` is which budget: 'claim', 'registration' or 'image' — the three
--- writes whose cost the world bears rather than the agent. The index leads
--- with it because every read here is "this kind, inside this window".
+-- `kind` is which budget: 'claim' or 'registration' — the two writes whose
+-- cost the world bears rather than the agent. The index leads with it
+-- because every read here is "this kind, inside this window".
 CREATE TABLE IF NOT EXISTS rate_grants (
   kind TEXT NOT NULL,
   granted_at REAL NOT NULL

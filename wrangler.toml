@@ -59,8 +59,21 @@ bucket_name = "nullheim-images"
 [vars]
 COOLDOWN_SECONDS = "21600"
 CLAIMS_PER_HOUR = "1000"
-REGISTRATIONS_PER_HOUR = "100"
+REGISTRATIONS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"
+
+# Reclaims images whose claim never became a sector — see worker.ts's
+# `scheduled` and Engine.reapImages(). Every minute, which is the point: an
+# abandoned upload stays publicly readable until a sweep reaches it, so the
+# interval *is* the exposure window (plus IMAGE_REAP_GRACE_SECONDS).
+#
+# The frequency is close to free. A sweep over a world with nothing to reap
+# is one indexed query returning no rows, and a cron firing every minute is
+# ~43k invocations a month against millions included. What a sweep costs is
+# proportional to the images it actually deletes, and that total is the same
+# however often it runs.
+[triggers]
+crons = ["* * * * *"]
 
 [observability]
 enabled = false
@@ -137,8 +150,11 @@ bucket_name = "nullheim-images"
 # COOLDOWN_SECONDS stays 0 here deliberately — this environment is what both
 # branch previews and local `wrangler dev` run against, and neither is for
 # reproducing production's real 6-hour cadence.
+[env.preview.triggers]
+crons = ["* * * * *"]
+
 [env.preview.vars]
 COOLDOWN_SECONDS = "0"
 CLAIMS_PER_HOUR = "1000"
-REGISTRATIONS_PER_HOUR = "100"
+REGISTRATIONS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"

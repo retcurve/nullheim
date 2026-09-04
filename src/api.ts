@@ -95,14 +95,26 @@ export class TextResponse {
   }
 }
 
-/** A binary body — the resized image bytes `GET /v1/images/{id}` streams back. */
+/**
+ * A binary body — the resized image bytes `GET /v1/images/{id}` streams back.
+ *
+ * `permanent` decides the cache lifetime, and it has to be asked rather than
+ * assumed: images used to be forever, and were served `immutable` for a year
+ * on that basis. They are not any more — an upload whose claim never became a
+ * sector is deleted by the reaper — and a year-long `immutable` on a
+ * deletable object means a client that fetched it once keeps serving it long
+ * after the origin let it go. Which is precisely the copy an abandoned upload
+ * wants: whoever uploaded it is the one party holding the url.
+ */
 export class BinaryResponse {
   readonly bytes: Uint8Array;
   readonly contentType: string;
+  readonly permanent: boolean;
 
-  constructor(bytes: Uint8Array, contentType: string) {
+  constructor(bytes: Uint8Array, contentType: string, permanent = false) {
     this.bytes = bytes;
     this.contentType = contentType;
+    this.permanent = permanent;
   }
 }
 
@@ -823,13 +835,23 @@ class RequestHandler {
     ];
   }
 
-  /** Unauthenticated, like every other player-facing read — never rate limited. */
+  /**
+   * Unauthenticated, like every other player-facing read — never rate
+   * limited.
+   *
+   * The reference lookup costs one indexed query, and only on a cache miss:
+   * once an image is referenced the answer is `immutable` for a year, so a
+   * player walking the world pays for it once per image at most. A url a
+   * player can reach is referenced by definition — a sector view is the only
+   * thing that publishes one — so in practice this is the cached path.
+   */
   async readImage(id: string): Promise<RouteResult> {
     const stored = await this.engine.images.get(id);
     if (stored === null) {
       throw new ApiError(404, "no_such_image", `no image ${id}`);
     }
-    return [200, new BinaryResponse(stored.bytes, stored.contentType)];
+    const permanent = await this.engine.store.imageIsReferenced(`/v1/images/${id}`);
+    return [200, new BinaryResponse(stored.bytes, stored.contentType, permanent)];
   }
 
   // --- the player-facing world ---------------------------------------------
@@ -1042,6 +1064,54 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id",
 };
 
+/**
+ * Sent on every response this module produces, and on the static frontend
+ * too (see the `/enter` branches in `node-server.ts` and `worker.ts`).
+ *
+ * `nosniff` is the one that does real work here: `GET /v1/images/{id}` hands
+ * back bytes an agent uploaded, and while the pipeline re-encodes everything
+ * to WebP so the declared type is always honest, a browser that sniffs its
+ * way to a different conclusion would be deciding that on content this world
+ * did not choose.
+ *
+ * The rest close off framing, referrer leakage and `<base>` rewriting. None
+ * of them is load-bearing today — there is no cross-origin content anywhere,
+ * and no agent text reaches an HTML attribute since the linkifier went — but
+ * they are the backstop for the next person who adds markup, and the reason
+ * an XSS here would have been contained rather than total.
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+};
+
+/**
+ * The API's own CSP. Nothing this module serves loads a subresource — JSON,
+ * plain text, image bytes, and one small HTML page whose only styling is an
+ * inline `style` attribute — so everything is denied except that.
+ *
+ * The static frontend is a different document with different needs and gets
+ * its own policy; see `ENTER_CSP` below.
+ */
+const API_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; " +
+  "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+/**
+ * The player frontend's policy. `public/` is entirely same-origin — its own
+ * stylesheet, script, icons and manifest, plus sector images from
+ * `/v1/images/…` on this same host — and has no inline script or style at
+ * all, so this needs no `unsafe-` escape hatch of any kind.
+ *
+ * `connect-src 'self'` is what confines `app.js` to this world's own read
+ * endpoints: a future edit that tried to send a player's position anywhere
+ * else would fail in the browser rather than quietly work.
+ */
+export const ENTER_CSP =
+  "default-src 'self'; connect-src 'self'; img-src 'self'; script-src 'self'; " +
+  "style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
 function toResponse(status: number, payload: RoutePayload): Response {
   let body: string | Uint8Array;
   let contentType: string;
@@ -1052,15 +1122,27 @@ function toResponse(status: number, payload: RoutePayload): Response {
   } else if (payload instanceof BinaryResponse) {
     body = payload.bytes;
     contentType = payload.contentType;
-    // Content-addressed and never rewritten once uploaded — safe to cache forever.
-    extraHeaders["Cache-Control"] = "public, max-age=31536000, immutable";
+    // A referenced image is permanent, because the sector showing it can
+    // never be rewritten — cache it for a year. An unreferenced one may be
+    // reaped within the minute, so it must not be cached at all, or a
+    // deleted object would go on being served from caches this world cannot
+    // reach.
+    extraHeaders["Cache-Control"] = payload.permanent
+      ? "public, max-age=31536000, immutable"
+      : "no-store";
   } else {
     body = JSON.stringify(payload, null, 2);
     contentType = "application/json";
   }
   return new Response(body, {
     status,
-    headers: { "Content-Type": contentType, ...extraHeaders, ...CORS_HEADERS },
+    headers: {
+      "Content-Type": contentType,
+      ...extraHeaders,
+      ...SECURITY_HEADERS,
+      "Content-Security-Policy": API_CSP,
+      ...CORS_HEADERS,
+    },
   });
 }
 

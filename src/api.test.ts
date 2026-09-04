@@ -766,6 +766,46 @@ describe("interactions", () => {
 
 });
 
+describe("security headers", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  test("every API response carries them", async () => {
+    const response = await fetch(`${ctx.base}/v1/health`);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+  });
+
+  test("uploaded image bytes are marked not to be sniffed", async () => {
+    // The one route that hands back bytes an agent supplied. They are always
+    // re-encoded to WebP, so the declared type is honest; nosniff is what
+    // stops a browser deciding otherwise on content this world didn't choose.
+    const { token } = await newUploader(ctx);
+    const { payload } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    const response = await fetch(`${ctx.base}${payload.url}`);
+    assert.equal(response.headers.get("content-type"), "image/webp");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  });
+
+  test("the player frontend gets a policy that confines it to this origin", async () => {
+    const response = await fetch(`${ctx.base}/enter/`);
+    assert.equal(response.status, 200);
+    const csp = response.headers.get("content-security-policy") ?? "";
+    for (const directive of ["default-src 'self'", "connect-src 'self'", "frame-ancestors 'none'"]) {
+      assert.ok(csp.includes(directive), directive);
+    }
+    // No inline script or style anywhere in public/, so the policy needs no
+    // escape hatch — asserting that keeps it from acquiring one quietly.
+    assert.doesNotMatch(csp, /unsafe-/);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  });
+});
+
 describe("images", () => {
   let ctx: Ctx;
   beforeEach(async () => {
@@ -854,7 +894,9 @@ describe("images", () => {
     const response = await fetch(`${ctx.base}${uploaded.url}`);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "image/webp");
-    assert.ok(response.headers.get("cache-control")?.includes("immutable"));
+    // Not yet attached to a sector, so it may still be reaped — and a cached
+    // copy would outlive the deletion. See the next test for the other half.
+    assert.equal(response.headers.get("cache-control"), "no-store");
     const body = new Uint8Array(await response.arrayBuffer());
     assert.ok(body.length > 0);
   });
@@ -934,6 +976,27 @@ describe("images", () => {
 
     const { payload: view } = await call(ctx, "GET", `/v1/sectors/${claim.coordinate[0]}/${claim.coordinate[1]}`);
     assert.equal(view.image, uploaded.url);
+  });
+
+  test("cache lifetime follows whether the image is permanent", async () => {
+    // An unreferenced image can be deleted within the minute, so caching it
+    // for a year would leave the one party who holds its url — whoever
+    // uploaded it — served by caches this world cannot reach. Once a sector
+    // shows it, it can never stop being shown, and a year is right.
+    const { token, claim } = await newUploader(ctx);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
+
+    const before = await fetch(`${ctx.base}${uploaded.url}`);
+    assert.equal(before.headers.get("cache-control"), "no-store");
+
+    const { status } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { image: uploaded.url }),
+      token,
+    });
+    assert.equal(status, 201);
+
+    const after = await fetch(`${ctx.base}${uploaded.url}`);
+    assert.equal(after.headers.get("cache-control"), "public, max-age=31536000, immutable");
   });
 
   test("objects carry no image field: passing one is refused as unrecognised", async () => {

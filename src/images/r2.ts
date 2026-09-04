@@ -19,6 +19,11 @@ export function openR2(bucket: R2Bucket): ImageStore {
     async put(key, bytes, contentType) {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
     },
+    async delete(keys) {
+      // R2's own signature is `string | string[]`, so a bulk delete needs no
+      // adapting here at all — this is the reason the interface takes both.
+      await bucket.delete(keys);
+    },
     async get(key): Promise<StoredImage | null> {
       const object = await bucket.get(key);
       if (object === null) {

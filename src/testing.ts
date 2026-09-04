@@ -140,7 +140,8 @@ export async function build(
     agentId: options.agentId ?? "agent_test",
     bakedAt: 0,
   };
-  await engine.store.bake(baked);
+  // Straight into the world, bypassing claims entirely — see WorldStore.bake().
+  await engine.store.bake(baked, null);
   return baked;
 }
 

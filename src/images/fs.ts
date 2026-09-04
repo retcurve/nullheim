@@ -8,7 +8,7 @@
  * image bytes.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ImageStore, StoredImage } from "../images.ts";
@@ -23,6 +23,11 @@ export function openFsImages(dir: string | null): ImageStore {
       async get(key) {
         return memory.get(key) ?? null;
       },
+      async delete(keys) {
+        for (const key of typeof keys === "string" ? [keys] : keys) {
+          memory.delete(key);
+        }
+      },
     };
   }
 
@@ -31,6 +36,18 @@ export function openFsImages(dir: string | null): ImageStore {
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, key), bytes);
       await writeFile(join(dir, `${key}.type`), contentType, "utf-8");
+    },
+    async delete(keys) {
+      // Both the bytes and the content-type sidecar, for every key, and none
+      // missing is an error — see the interface note on idempotence. R2 does
+      // this in one request; a local directory has no equivalent, so the fan
+      // out lives here rather than in the caller.
+      await Promise.all(
+        (typeof keys === "string" ? [keys] : keys).flatMap((key) => [
+          rm(join(dir, key), { force: true }),
+          rm(join(dir, `${key}.type`), { force: true }),
+        ]),
+      );
     },
     async get(key) {
       try {

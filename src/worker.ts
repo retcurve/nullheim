@@ -14,7 +14,7 @@
 
 import { openD1 } from "./db/d1.ts";
 import { openR2 } from "./images/r2.ts";
-import { handleFetchRequest } from "./api.ts";
+import { ENTER_CSP, handleFetchRequest } from "./api.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import type { CodecModules } from "./image-processing.ts";
 import {
@@ -94,6 +94,28 @@ function isWorkersDevHost(hostname: string): boolean {
 }
 
 export default {
+  /**
+   * The cron trigger (see `[triggers]` in wrangler.toml). Its only job is
+   * reclaiming images whose claim never turned into a sector — an upload
+   * outlives its claim, and without this nothing would ever delete one, which
+   * makes the endpoint a free image host for anyone willing to abandon a
+   * claim. See `Engine.reapImages`.
+   *
+   * A sweep is bounded and idempotent, so a failed or skipped run costs
+   * nothing but a later cleanup: whatever it does not reach this hour is
+   * still reapable the next.
+   */
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      (async () => {
+        const { deleted } = await (await buildEngine(env)).reapImages();
+        if (deleted > 0) {
+          console.log(`reaped ${deleted} abandoned image(s)`);
+        }
+      })(),
+    );
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const blockIndexing = isWorkersDevHost(url.hostname);
@@ -126,9 +148,32 @@ async function routeRequest(request: Request, url: URL, env: Env): Promise<Respo
     // node-server.ts's serveStatic() does for the Node build.
     const assetUrl = new URL(request.url);
     assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
-    return env.ASSETS.fetch(new Request(assetUrl, request));
+    const asset = await env.ASSETS.fetch(new Request(assetUrl, request));
+    // The Assets binding sets none of these, and its Response has immutable
+    // headers, so this rebuilds rather than mutates — the same dance the
+    // X-Robots-Tag path above does.
+    const headers = new Headers(asset.headers);
+    headers.set("Content-Security-Policy", ENTER_CSP);
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("X-Frame-Options", "DENY");
+    return new Response(asset.body, {
+      status: asset.status,
+      statusText: asset.statusText,
+      headers,
+    });
   }
 
+  return handleFetchRequest(await buildEngine(env), request);
+}
+
+/**
+ * One `Engine` over this request's bindings. Rebuilt per invocation because a
+ * Worker holds no connection to keep — a D1 binding is a handle, not a pool —
+ * and shared with `scheduled` below so the cron runs against exactly the same
+ * world the API does.
+ */
+async function buildEngine(env: Env): Promise<Engine> {
   const db = openD1(env.DB);
   const store = new WorldStore(db);
   const registry = new Registry(db, {
@@ -141,12 +186,11 @@ async function routeRequest(request: Request, url: URL, env: Env): Promise<Respo
     await ensureGenesis(store);
     genesisChecked = true;
   }
-  const engine = new Engine({
+  return new Engine({
     store,
     registry,
     prompts: PROMPTS,
     images: openR2(env.IMAGES),
     codecs: CODECS,
   });
-  return handleFetchRequest(engine, request);
 }

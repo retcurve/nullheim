@@ -31,8 +31,8 @@
  *
  * Image upload is deliberately *not* one of them, though it briefly was. It
  * hangs off a claim instead — an upload requires the caller's own live
- * claim and each claim pays for exactly one (`image_uploaded` on the claims
- * row, taken by `takeClaimImage`). That inherits both existing brakes
+ * claim and each claim pays for exactly one (`image_key` on the claims row,
+ * taken by `takeClaimImage`). That inherits both existing brakes
  * rather than adding a third: to upload at all you must first hold a claim,
  * which is world-wide rate limited *and* per-agent cooldown-gated. It is
  * also the stricter bound — an hourly budget lets one caller spend the
@@ -89,7 +89,7 @@ export const DEFAULT_CLAIMS_PER_HOUR = 1000;
  * a ceiling on runaway, not a pace: if it ever refuses a real agent, raise
  * it rather than reading anything into the number.
  */
-export const DEFAULT_REGISTRATIONS_PER_HOUR = 100;
+export const DEFAULT_REGISTRATIONS_PER_HOUR = 1000;
 
 /**
  * Which world-wide budget a `rate_grants` row counts against, and how each
@@ -177,8 +177,8 @@ export interface Claim {
   readonly createdAt: number;
   status: ClaimStatus;
   attempts: number;
-  /** Whether this claim's one image upload has been used. */
-  imageUploaded: boolean;
+  /** The stored image this claim spent its one upload on, or null. */
+  imageKey: string | null;
 }
 
 export function isActive(claim: Claim, at: number = now()): boolean {
@@ -197,8 +197,9 @@ export function claimAsDict(claim: Claim): Record<string, unknown> {
     attempts: claim.attempts,
     // An agent that crashed mid-thought and re-fetched its claim would
     // otherwise have no way to find out whether its upload landed, and no
-    // way to get a second one either.
-    image_uploaded: claim.imageUploaded,
+    // way to get a second one either. The key itself stays server-side: the
+    // agent already has the url, and it is an internal handle otherwise.
+    image_uploaded: claim.imageKey !== null,
   };
 }
 
@@ -321,7 +322,7 @@ interface ClaimRow {
   created_at: number;
   expires_at: number;
   attempts: number;
-  image_uploaded: number;
+  image_key: string | null;
 }
 
 function rowToClaim(row: ClaimRow): Claim {
@@ -333,8 +334,7 @@ function rowToClaim(row: ClaimRow): Claim {
     createdAt: row.created_at,
     status: row.status,
     attempts: row.attempts,
-    // SQLite has no boolean type; both backends hand this back as 0 or 1.
-    imageUploaded: row.image_uploaded === 1,
+    imageKey: row.image_key,
   };
 }
 
@@ -681,7 +681,7 @@ export class Registry {
           createdAt: at,
           status: ClaimStatus.OPEN,
           attempts: 0,
-          imageUploaded: false,
+          imageKey: null,
         };
       }
 
@@ -742,7 +742,7 @@ export class Registry {
           "own submission",
       );
     }
-    if (claim.imageUploaded) {
+    if (claim.imageKey !== null) {
       throw new UploadRefused(
         "image_already_uploaded",
         `claim ${claim.claimId} has already used its one image; pass the url you were ` +
@@ -753,26 +753,99 @@ export class Registry {
   }
 
   /**
-   * Spend this claim's one image, returning false if there was nothing left
-   * to spend.
+   * Spend this claim's one image on `key`, returning false if there was
+   * nothing left to spend.
    *
    * One conditional UPDATE, for the reason everything else here is: two
    * uploads racing on the same lease would both pass `checkCanUploadImage`,
    * and only one of them comes out of this with `changes === 1`. The status
    * and expiry are re-checked inside it too, so a lease that ran out while
    * the image was being decoded cannot still spend itself.
+   *
+   * Recording the key, rather than a bare flag, is what makes the stored
+   * object reclaimable: it is the only link between a blob and the claim
+   * that is responsible for it. Written *before* the blob is stored, so a
+   * store that fails leaves a key pointing at nothing (which the reaper
+   * cleans up, since deleting an absent key is a no-op) rather than a blob
+   * pointing at nothing, which nothing could ever find.
    */
-  async takeClaimImage(claim: Claim): Promise<boolean> {
+  async takeClaimImage(claim: Claim, key: string): Promise<boolean> {
     const result = await this.#db.run(
-      "UPDATE claims SET image_uploaded = 1 WHERE claim_id = ? AND status = 'open' " +
-        "AND expires_at > ? AND image_uploaded = 0",
-      [claim.claimId, now()],
+      "UPDATE claims SET image_key = ? WHERE claim_id = ? AND status = 'open' " +
+        "AND expires_at > ? AND image_key IS NULL",
+      [key, claim.claimId, now()],
     );
     if (result.changes === 0) {
       return false;
     }
-    claim.imageUploaded = true;
+    claim.imageKey = key;
     return true;
+  }
+
+  /**
+   * Images whose claim can no longer put them anywhere, oldest first.
+   *
+   * Two ways an upload becomes garbage, and both are here because covering
+   * only the first leaves the hole open:
+   *
+   * - the claim stopped being live without baking — released, expired, or
+   *   still marked open with a lapsed lease. Nothing can attach the image to
+   *   a sector any more, because nothing can submit that claim any more.
+   * - the claim baked, but the sector it produced does not reference the
+   *   image. An agent that uploads and then submits without the `image`
+   *   field keeps both its sector and a permanently hosted file, which is
+   *   the same free-hosting move as abandoning the claim, minus the waiting.
+   *
+   * The `NOT EXISTS` is the safety rule and is deliberately phrased over
+   * `sectors` rather than over this claim's own sector: an image a *player*
+   * can see is never a candidate, whatever route it took to get referenced.
+   *
+   * No grace period, and no clock comparison in the select at all: the
+   * expiry sweep runs first and *commits* the lapse as a status, and
+   * `WorldStore.bake()` refuses to write a sector unless the same row still
+   * says `open`. So the two sides read one committed value rather than each
+   * comparing its own clock to a stored timestamp, and no interleaving can
+   * delete an image a sector is about to reference —
+   *
+   * - reaped first: the claim reads `expired`, so the bake's guard fails and
+   *   no sector ever references the image;
+   * - baked first: the sector row exists, so the `NOT EXISTS` below excludes
+   *   the image from this sweep and every later one.
+   *
+   * A grace period was here to cover that race before the bake was guarded.
+   * It was covering for the check-then-write in the submission path, not for
+   * anything about images.
+   */
+  async reapableImages(limit: number): Promise<{ claimId: string; key: string }[]> {
+    await this.#reap(now());
+    const rows = await this.#db.all<{ claim_id: string; image_key: string }>(
+      `SELECT c.claim_id, c.image_key FROM claims c
+       WHERE c.image_key IS NOT NULL
+         AND c.status != 'open'
+         AND NOT EXISTS (
+           SELECT 1 FROM sectors s WHERE s.image = '/v1/images/' || c.image_key
+         )
+       ORDER BY c.created_at
+       LIMIT ?`,
+      [limit],
+    );
+    return rows.map((r) => ({ claimId: r.claim_id, key: r.image_key }));
+  }
+
+  /**
+   * Forget every reaped image, in one statement. Called only after the blobs
+   * are gone, so a column never names an object that is not there — and
+   * never the other way round, which would leak it.
+   */
+  async clearClaimImages(claimIds: readonly string[]): Promise<void> {
+    if (claimIds.length === 0) {
+      return;
+    }
+    const holes = claimIds.map(() => "?").join(", ");
+    await this.#db.run(
+      `UPDATE claims SET image_key = NULL WHERE claim_id IN (${holes})`,
+      [...claimIds],
+    );
   }
 
   /** Give the sector back. The agent keeps its token and may claim again. */

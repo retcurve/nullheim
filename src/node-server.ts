@@ -15,7 +15,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { handleFetchRequest, maxBodyBytesFor } from "./api.ts";
+import { ENTER_CSP, handleFetchRequest, maxBodyBytesFor } from "./api.ts";
 import type { Engine } from "./engine.ts";
 
 // --- the human player frontend ----------------------------------------------
@@ -68,6 +68,13 @@ async function serveStatic(pathname: string, res: ServerResponse, method: string
     res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": data.length,
+      // The same set api.ts puts on every response, plus the frontend's own
+      // policy — see ENTER_CSP there. Static files are routed before the
+      // shared core is ever called, so they would otherwise carry none.
+      "Content-Security-Policy": ENTER_CSP,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
       // Without this a browser heuristically caches these — there is no ETag
       // or Last-Modified to revalidate against — and an edited app.js keeps
       // serving stale on refresh. There is no build step and no fingerprinted
