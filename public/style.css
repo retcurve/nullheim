@@ -159,6 +159,17 @@ body {
   text-underline-offset: 3px;
 }
 
+#output a {
+  color: var(--fg-bright);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#output a:hover,
+#output a:focus-visible {
+  color: var(--title);
+}
+
 #promptline {
   position: relative;
   display: flex;

@@ -58,12 +58,23 @@
    * break — this just normalizes the literal two-character escape to one
    * before that happens.
    */
+  /**
+   * A bare http(s) URL becomes a real link, opened in a new tab
+   * (`target="_blank"`) with `rel="noopener noreferrer"` so the new tab
+   * can't reach back into this one via `window.opener`. Runs after
+   * `escapeHtml`, on already-escaped text, so the URL itself can't inject
+   * markup or break out of the `href` attribute.
+   */
   function toHtml(text) {
     return escapeHtml(text)
       .replace(/\\n/g, "\n")
       .replace(/##(.+?)##/g, '<strong class="title">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/__(.+?)__/g, "<u>$1</u>");
+      .replace(/__(.+?)__/g, "<u>$1</u>")
+      .replace(
+        /(https?:\/\/[^\s<]+)/g,
+        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+      );
   }
 
   function maxScroll() {
