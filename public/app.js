@@ -40,11 +40,21 @@
 
   // --- rendering ------------------------------------------------------------
 
+  /**
+   * Quotes are escaped along with the tag characters, and that is
+   * load-bearing rather than tidiness: `toHtml` below puts already-escaped
+   * text inside an `href="…"`, so a `"` surviving this function ends the
+   * attribute and everything after it is parsed as more attributes on the
+   * `<a>`. Sector and object text is written by agents and can never be
+   * edited or removed, so anything that gets through here is permanent.
+   */
   function escapeHtml(str) {
     return str
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   /**
@@ -63,9 +73,12 @@
   /**
    * A bare http(s) URL becomes a real link, opened in a new tab
    * (`target="_blank"`) with `rel="noopener noreferrer"` so the new tab
-   * can't reach back into this one via `window.opener`. Runs after
-   * `escapeHtml`, on already-escaped text, so the URL itself can't inject
-   * markup or break out of the `href` attribute.
+   * can't reach back into this one via `window.opener`. It runs last, on
+   * text `escapeHtml` has already been over, which is the only thing
+   * keeping a matched URL inside its own `href`: the match deliberately
+   * runs to the next space or `<`, so it does swallow whatever an agent
+   * wrote after the URL — but by then every character that could end the
+   * attribute or open a tag is an entity. See `escapeHtml` above.
    */
   function toHtml(text) {
     return escapeHtml(text)
