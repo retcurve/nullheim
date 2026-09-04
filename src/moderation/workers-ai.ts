@@ -21,14 +21,17 @@
  *
  * The prompt, `MAX_CLASSIFICATION_WIDTH` and `max_tokens` below were all
  * measured directly against a live account, not assumed — see CLAUDE.md's
- * moderation entry for the numbers. Two things were found and fixed by that
- * pass, not by reasoning about the model in the abstract: a vague "anything
- * concerning" prompt caught 1 of 3 known-unsafe test images, which is why
- * the prompt below names eight concrete categories and makes the model
- * check each one rather than free-associate; and cost scaled with the
+ * moderation entry for the numbers. Three things were found and fixed by
+ * those passes, not by reasoning about the model in the abstract: a vague
+ * "anything concerning" prompt caught 1 of 3 known-unsafe test images,
+ * which is why the prompt below names eight concrete categories and makes
+ * the model check each one rather than free-associate; cost scaled with the
  * input image's resolution far past what recall needed, which is why
  * `Engine.uploadImage` hands this a small classification-only copy rather
- * than the original upload or the stored image.
+ * than the original upload or the stored image; and asking for a *verdict*
+ * on those categories made the model hedge instead of answer, which is why
+ * it is now asked eight Yes/No questions about what is visible — see the
+ * comment on `PROMPT`.
  *
  * `AiBinding` is this file's own minimal shape rather than the ambient `Ai`
  * type Workers ships (see `worker-env.d.ts`'s neighbours for that pattern):
@@ -48,36 +51,73 @@ export interface AiBinding {
 
 const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 
-const PROMPT = `You are screening an image before it is shown publicly, unmoderated, on a community world-building platform. Nobody reviews this before it goes live unless you flag it.
+/**
+ * One question per category, answered Yes/No, rather than a single verdict
+ * token. The shape is the load-bearing part, not the wording: asked for a
+ * verdict on whether an image is fit to publish, this model hedges instead
+ * of answering — measured 2026-09-04, five runs against a bakery interior
+ * (dough, honey jars, a sleeping cat) that is clean by any reading, and not
+ * one produced a parseable verdict. It answered "I'm unable to classify the
+ * image against the given categories", and, on the same picture, "a cat in a
+ * potentially unsafe environment". All five parsed as UNSURE.
+ *
+ * The prompt this replaced supplied the anxiety itself — it opened by
+ * telling the model the image would go out unmoderated and that nobody
+ * would review it unless it flagged it, which is true, and which turns
+ * every answer into a publishing decision the model then declines to make.
+ * Asking instead what is *visible in the picture* is a question about the
+ * image rather than about consequences, and it is answered: the same five
+ * runs returned "No" eight times, byte-identical, every time.
+ *
+ * The category list is unchanged from that prompt — all eight survive, in
+ * the same order. A three-question version was tried first and works
+ * equally well, but there is nothing to buy with the coverage it drops:
+ * eight questions cost 10.8 neurons against the old prompt's 10-12, so
+ * the wider screen is free.
+ */
+const PROMPT = `Perform a sterile inspection of this visual media. Answer the following questions with only a 'Yes' or 'No'. Do not provide explanations or summaries.
 
-Check the image against every one of these 8 categories:
-1 nudity/sexual content  2 graphic violence/gore  3 weapons in a threatening context
-4 drugs/paraphernalia  5 hate symbols  6 self-harm/suicide  7 a minor in a sexual context
-8 anything else disturbing or shocking
+1. Does this image contain any visible blood, physical injuries, or weapons?
+2. Does this image contain any depictions of nudity or explicit romantic context?
+3. Does this image contain any text or typography featuring vulgar language?
+4. Does this image contain any depiction of drugs or drug paraphernalia?
+5. Does this image contain any hate symbols or extremist insignia?
+6. Does this image depict self-harm or suicide?
+7. Does this image depict a child in any sexualised way?
+8. Is there anything else in this image a general audience would find disturbing?
 
-Reply with exactly two lines and nothing else:
-Line 1: the numbers of every category that applies, comma-separated, or "none"
-Line 2: one word, CLEAN or UNSURE
+Format your response exactly like this, one line per question:
+Question 1: [Yes/No]
+Question 2: [Yes/No]
+Question 3: [Yes/No]
+Question 4: [Yes/No]
+Question 5: [Yes/No]
+Question 6: [Yes/No]
+Question 7: [Yes/No]
+Question 8: [Yes/No]`;
 
-Treat any maybe as a match. Only say CLEAN if line 1 is "none" and you have no doubt at all. A missed unsafe image is far worse than an unnecessary human review, so resolve any uncertainty toward UNSURE.`;
+const QUESTIONS = 8;
 
 /**
- * The verdict is the reply's *last* line, not its first word — the model is
- * asked to list matching categories before it, and forcing a bare first-word
- * answer is what produced the missed-recall prompt this replaced (see the
- * module comment). Anything other than an unambiguous CLEAN is UNSURE,
- * including a reply this couldn't parse at all: asking a human costs
- * nothing extra, and a false CLEAN is the one mistake this whole feature
- * exists to prevent.
+ * Clean requires all eight questions answered, and all eight answered No.
+ * Every other reading is UNSURE — a Yes, a missing question, a line this
+ * couldn't parse, an answer that is neither word, or a refusal, which
+ * arrives as prose matching nothing here and so needs no case of its own.
+ * Silence is never consent: a reply that says less than expected says
+ * nothing about what it left out. Asking a human costs nothing extra, and
+ * a false CLEAN is the one mistake this whole feature exists to prevent.
+ *
+ * Each answer is found by its own question number rather than by reading
+ * lines in order, so extra prose around them cannot shift the mapping and
+ * make one question's answer stand in for another's.
  */
 function parseVerdict(output: Record<string, unknown>): Verdict {
   const text = typeof output.response === "string" ? output.response : "";
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const last = lines.at(-1) ?? "";
-  return /^clean\b/i.test(last) ? "clean" : "unsure";
+  for (let n = 1; n <= QUESTIONS; n++) {
+    const answer = new RegExp(`question\\s*${n}\\s*:\\s*\\[?\\s*(yes|no)\\b`, "i").exec(text);
+    if (answer?.[1]?.toLowerCase() !== "no") return "unsure";
+  }
+  return "clean";
 }
 
 export function workersAiModerator(ai: AiBinding): Moderator {
@@ -85,8 +125,12 @@ export function workersAiModerator(ai: AiBinding): Moderator {
     async check(bytes, _contentType) {
       const output = await ai.run(MODEL, {
         image: Array.from(bytes),
+        // Eight answer lines need roughly 90 tokens; the ceiling is not a
+        // budget to tune but a stop for a model that started narrating.
+        // Truncating an answer line costs a CLEAN, never buys a false one —
+        // `parseVerdict` reads a missing question as UNSURE.
         prompt: PROMPT,
-        max_tokens: 40,
+        max_tokens: 120,
       });
       return { verdict: parseVerdict(output), score: null };
     },

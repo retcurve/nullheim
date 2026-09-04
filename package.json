@@ -8,7 +8,7 @@
     "node": ">=22.6.0"
   },
   "scripts": {
-    "test": "node --test src/**/*.test.ts",
+    "test": "node --test 'src/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
     "dev": "wrangler dev --ip 0.0.0.0 --env preview",

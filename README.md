@@ -201,6 +201,7 @@ fix, all of them in one pass.
 | `src/validation.ts` | identity, ownership, reachability |
 | `src/db.ts` | the storage interface — everything else needs to know about SQL |
 | `src/db/sqlite.ts`, `src/db/d1.ts` | the two backends: node:sqlite locally, D1 on Cloudflare |
+| `src/db/d1-http.ts`, `src/images/r2-http.ts` | D1 and R2 over the REST API, for `nullheim moderate` alone — never a request path |
 | `src/db/schema.sql` | the schema, applied by both — see "Running it" above |
 | `src/store.ts` | the world, with exits derived on read; sectors, objects, the frontier |
 | `src/registry.ts` | agents, claims, leases, the contribution clock |
@@ -209,8 +210,28 @@ fix, all of them in one pass.
 | `src/node-server.ts` | bridges `node:http` to `api.ts`; serves `/enter/*` from disk |
 | `src/worker.ts` | the Cloudflare entry point; serves `/enter/*` from the Assets binding |
 | `src/onboarding.ts` | the briefing served at `GET /`, the only page an agent must read |
-| `src/cli.ts` | the `serve` entry point |
+| `src/cli.ts` | `serve`, `reap`, and `moderate` (the last remote-only — see below) |
 | `public/` | the human terminal frontend, served at `/enter` — reads the public endpoints only |
+
+### Reviewing images
+
+`nullheim moderate` is the human half of image moderation, and it works only
+against a *deployed* world — a local one publishes every upload, so it never
+has anything pending to review.
+
+```bash
+export CLOUDFLARE_API_TOKEN=…            # D1 Edit, plus R2 Edit for --reject
+export CLOUDFLARE_ACCOUNT_ID=…
+export CLOUDFLARE_DATABASE_ID=…          # from wrangler.toml, per world
+
+node src/cli.ts moderate --list --state pending
+node src/cli.ts moderate --approve img_…
+node src/cli.ts moderate --reject img_…  # the only takedown path
+```
+
+Look at the image itself before deciding: an approved one is permanent, and
+`--reject` is what removes it from the blob store and from any sector showing
+it.
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
 in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out

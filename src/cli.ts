@@ -3,10 +3,12 @@
 
 import { parseArgs } from "node:util";
 
+import { openD1Http } from "./db/d1-http.ts";
 import { SCHEMA_SQL } from "./db/schema.node.ts";
 import { openSqlite } from "./db/sqlite.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import { openFsImages } from "./images/fs.ts";
+import { openR2Http } from "./images/r2-http.ts";
 import { permissiveModerator } from "./moderation/permissive.ts";
 import { listen, makeServer } from "./node-server.ts";
 import { loadPrompts } from "./prompts.node.ts";
@@ -37,16 +39,27 @@ function usage(): never {
       "  command, because a dev server that outlives its images is not a\n" +
       "  problem worth a scheduler.\n" +
       "\n" +
-      "       nullheim moderate [--db PATH] --list [--state STATE]\n" +
-      "       nullheim moderate [--db PATH] --approve KEY\n" +
-      "       nullheim moderate [--db PATH] --reject KEY\n" +
+      "       nullheim moderate [TARGET] --list [--state STATE]\n" +
+      "       nullheim moderate [TARGET] --approve KEY\n" +
+      "       nullheim moderate [TARGET] --reject KEY\n" +
       "\n" +
       "  The human half of image moderation — there is no operator auth model,\n" +
       "  so this runs directly against the database rather than over HTTP.\n" +
       "  --list shows every image, or only STATE ('pending', 'published' or\n" +
       "  'rejected') if given. --reject also works on an already-published\n" +
       "  image: it is this world's only takedown path, clearing the blob and\n" +
-      "  the sector field that showed it.\n",
+      "  the sector field that showed it.\n" +
+      "\n" +
+      "  This command is remote-only: it talks to a *deployed* world's D1 and\n" +
+      "  R2 over Cloudflare's API, because that is where images needing review\n" +
+      "  actually are. A local world moderates nothing — `permissiveModerator`\n" +
+      "  publishes every upload, so nothing is ever left pending to review.\n" +
+      "\n" +
+      "  TARGET is --account ID --database ID [--bucket NAME], each falling\n" +
+      "  back to CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_DATABASE_ID /\n" +
+      "  CLOUDFLARE_R2_BUCKET (default nullheim-images). The API token is read\n" +
+      "  from CLOUDFLARE_API_TOKEN and has no flag, so it stays out of shell\n" +
+      "  history: it needs D1 Edit, plus R2 Edit to use --reject.\n",
   );
   process.exit(2);
 }
@@ -81,26 +94,55 @@ async function reap(argv: string[]): Promise<number> {
  * running it with `--db` pointed at a local copy, or against the D1/R2
  * bindings directly some other way; deciding that is out of scope here.
  */
+/**
+ * Where a deployed world is, and the token to reach it. Flags win over the
+ * environment; the token is environment-only, because a flag would put an
+ * account-wide credential into shell history and into every `ps` on the box.
+ */
+function remoteTarget(values: { account?: string; database?: string; bucket?: string }) {
+  const account = values.account ?? process.env.CLOUDFLARE_ACCOUNT_ID;
+  const database = values.database ?? process.env.CLOUDFLARE_DATABASE_ID;
+  const bucket = values.bucket ?? process.env.CLOUDFLARE_R2_BUCKET ?? "nullheim-images";
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const missing = [
+    account ? null : "--account (or CLOUDFLARE_ACCOUNT_ID)",
+    database ? null : "--database (or CLOUDFLARE_DATABASE_ID)",
+    token ? null : "CLOUDFLARE_API_TOKEN",
+  ].filter((m) => m !== null);
+  if (missing.length > 0) {
+    process.stderr.write(
+      `nullheim moderate needs: ${missing.join(", ")}\n\n` +
+        "  The database id for a world is in wrangler.toml — the top-level\n" +
+        "  [[d1_databases]] block is production, [[env.preview.d1_databases]]\n" +
+        "  is preview. `npx wrangler d1 list` shows them with their names.\n" +
+        "  The token needs D1 Edit and, for --reject, R2 Edit.\n",
+    );
+    process.exit(2);
+  }
+  return { accountId: account!, databaseId: database!, bucket, token: token! };
+}
+
 async function moderate(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
     options: {
-      db: { type: "string" },
+      account: { type: "string" },
+      database: { type: "string" },
+      bucket: { type: "string" },
       list: { type: "boolean", default: false },
       state: { type: "string" },
       approve: { type: "string" },
       reject: { type: "string" },
     },
   });
-  const dbPath = values.db ?? ":memory:";
-  const db = openSqlite(dbPath);
-  await db.exec(SCHEMA_SQL);
+  const target = remoteTarget(values);
+  const db = openD1Http(target);
   const store = new WorldStore(db);
   const engine = new Engine({
     store,
     registry: new Registry(db),
     prompts: loadPrompts(),
-    images: openFsImages(dbPath === ":memory:" ? null : `${dbPath}.images`),
+    images: openR2Http(target),
     codecs: loadCodecs(),
     moderator: permissiveModerator("clean"),
   });
@@ -123,7 +165,6 @@ async function moderate(argv: string[]): Promise<number> {
   } else {
     usage();
   }
-  db.close();
   return 0;
 }
 

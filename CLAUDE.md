@@ -544,6 +544,35 @@ exists as a *state* (`images.state`), reachable only through a human's own
 path, working on an already-`published` image too (clearing the blob and the
 sector field that showed it, `WorldStore.rejectImage`).
 
+**`nullheim moderate` is remote-only, and that is the point rather than a
+convenience.** It opened a local SQLite file until 2026-09-04, which meant
+the human half of a human-in-the-loop feature could not be operated on any
+world that had one: preview and production are D1, and the CLI could not
+reach D1 at all. Clearing a pending image meant hand-writing SQL through
+`wrangler d1 execute`. A local world, meanwhile, has nothing to review —
+`permissiveModerator` publishes every upload, so nothing is ever left
+`pending` there. The local path was not a lesser version of this command; it
+was a version that could never have any work to do.
+
+So it now talks to a deployed world over Cloudflare's REST API, through
+`src/db/d1-http.ts` and `src/images/r2-http.ts`. **Neither may go near a
+request path** — the Worker has real bindings for both, and the REST
+adapter is missing a guarantee the binding has. Cloudflare's `/query`
+endpoint refuses `params` alongside multiple statements (`7400 params with
+multiple statements is not supported`, checked live), so `batch()` there
+inlines its parameters as SQL literals and is **not atomic**. Both are
+survivable for `rejectImage`, the one batch this CLI issues — a partial
+apply is invisible to players, since `sectorView` already omits any image
+that is not `published`, and both statements are idempotent so re-running
+`--reject` settles it. Neither would be survivable for `bake()`, whose batch
+is what makes a sector and its frontier update one event. The inlining is
+the part that gets the scrutiny: `literal()` quotes strings with `''`
+doubling, and throws on any type it has not explicitly thought about rather
+than coercing it.
+Guard: `src/db/d1-http.test.ts`, including the injection shape (`'; DROP
+TABLE sectors; --` surviving as data) and a `?` inside a quoted string not
+being mistaken for a placeholder.
+
 The classifier itself is a vision-language chat model behind Cloudflare
 Workers AI (`src/moderation/workers-ai.ts`), prompted to answer CLEAN or
 UNSURE directly rather than a calibrated score. This was chosen after
@@ -569,9 +598,36 @@ design:
   (nudity, graphic violence/gore, weapons, drugs, hate symbols, self-harm,
   sexual content involving a minor, other disturbing content) and requiring
   the model to check each one and list which apply before giving a verdict —
-  full recall on the same 5 images afterward. The verdict is parsed from the
+  full recall on the same 5 images afterward. The verdict was parsed from the
   reply's *last* line for this reason: forcing an immediate one-word answer
   is what produced the missed recall in the first place.
+- **Asking that prompt for a verdict made the model hedge instead of answer,
+  and the categories were never the problem — the question was.** Measured
+  2026-09-04 on a plainly clean image (a bakery interior: dough, honey jars,
+  a sleeping cat), five runs, and not one returned a parseable verdict. It
+  replied "I'm unable to classify the image against the given categories",
+  and, on that picture, "a cat in a potentially unsafe environment". All five
+  parsed as UNSURE, so a clean sector image sat unreviewable in the queue —
+  which is how this was found, from `-5,1` on preview showing no image.
+  The prompt supplied the anxiety itself: it opened by telling the model the
+  image would go out unmoderated and that nobody would review it unless it
+  flagged it — true, and it turns every answer into a publishing decision the
+  model then declines to make. The fix is to ask about the *image* rather
+  than about the consequence: eight Yes/No questions on what is visible, same
+  eight categories, same order. Five runs, eight Noes, byte-identical every
+  time. A three-question version works equally well and was rejected anyway —
+  eight questions cost 10.8 neurons against the old prompt's 10-12, so the
+  coverage it dropped (drugs, hate symbols, self-harm, minors) bought
+  nothing. Do not narrow the list to make the model answer; it was never
+  refusing the categories.
+  Guard: `src/moderation/workers-ai.test.ts`. What it protects is the
+  asymmetry rather than the wording — a wrong UNSURE costs a human glance, a
+  wrong CLEAN publishes something unreviewed and permanent — so **clean
+  requires all eight questions answered No, and silence is never consent**. A
+  reply truncated by `max_tokens` ends in a run of Noes, so the obvious
+  parser ("did anything say Yes?") reads a cut-off answer, a refusal *and* an
+  empty response as clean; checked by writing that parser and watching three
+  cases fail.
 - The classifier bills in Workers AI's "neuron" unit, and cost scaled with
   the *input image's* resolution, not with the length of its answer,
   ranging from ~8 neurons (small images) up to the low 30s (large ones) at
