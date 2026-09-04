@@ -104,7 +104,7 @@ an object can never be moved or removed, so the world must not lie about that.
 npx wrangler d1 create nullheim                 # once — put the returned id in wrangler.toml
 npm run db:migrate:remote                     # apply db/schema.sql to it
 npm run deploy                                # publish the Worker
-npm run dev:worker                            # or run it locally against D1 first
+npm run dev:worker                            # or run it locally first, against the preview D1/env (0 cooldown; production runs the real 6h cadence)
 ```
 
 `src/worker.ts` is the Cloudflare entry point: a `fetch` handler that wires a

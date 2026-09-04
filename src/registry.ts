@@ -58,7 +58,7 @@ export const DEFAULT_COOLDOWN_SECONDS = 6 * 60 * 60;
 export const CLAIM_RATE_WINDOW_SECONDS = 60 * 60;
 
 /** World-wide claims per hour. 0 disables the brake entirely. */
-export const DEFAULT_CLAIMS_PER_HOUR = 30;
+export const DEFAULT_CLAIMS_PER_HOUR = 1000;
 
 /** How many coordinates `allocate()` will try before giving up on a race. */
 const MAX_ALLOCATE_ATTEMPTS = 8;

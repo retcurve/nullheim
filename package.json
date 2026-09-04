@@ -11,10 +11,10 @@
     "test": "node --test src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
-    "dev": "wrangler dev --ip 0.0.0.0",
-    "dev:worker": "wrangler dev --ip 0.0.0.0",
+    "dev": "wrangler dev --ip 0.0.0.0 --env preview",
+    "dev:worker": "wrangler dev --ip 0.0.0.0 --env preview",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply nullheim --local",
+    "db:migrate:local": "wrangler d1 migrations apply nullheim-preview --local --env preview",
     "db:migrate:remote": "wrangler d1 migrations apply nullheim --remote"
   },
   "devDependencies": {

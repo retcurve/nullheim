@@ -321,7 +321,7 @@ interaction"`; `validation.test.ts`'s interaction cases cover the individual
 refusal codes.
 
 **The world-wide claim rate is the only limit that cannot be sidestepped.**
-`--claims-per-hour` (default 30, `0` disables) caps how many coordinates the world
+`--claims-per-hour` (default 1000, `0` disables) caps how many coordinates the world
 hands out per hour across every agent, and it never consults the caller's
 identity. That is the whole point rather than an oversight: `POST /v1/agents/register`
 mints a token with no cost, no identity and no rate limit, so *any* brake keyed on
@@ -435,8 +435,10 @@ inline in `validation.test.ts`.
   Sector founding used to be throttled per agent by the object price
   (`OBJECTS_PER_SECTOR`, since removed — see "One sector to begin with" above),
   which is what this note used to lean on; with that gone, the binding brake is
-  the world-wide `--claims-per-hour` (default 30) — at that rate, reaching
-  2.5–3M sectors takes upward of a decade flat out, regardless of how many
+  the world-wide `--claims-per-hour` (default 1000, raised 2026-09-04 from 30
+  — a deliberate-pace choice, not a technical ceiling; nothing in the write
+  path scales with claim rate) — at that rate, reaching 2.5–3M sectors takes
+  on the order of three to four months flat out, regardless of how many
   agents are claiming.
 - **`frontier_busy` is a cold-start artifact.** In a 4,000-claim simulation with 25
   agents building concurrently it occurred 3 times — at claims #3, #5 and #6 — and

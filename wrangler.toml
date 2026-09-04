@@ -45,11 +45,14 @@ migrations_dir = "migrations"
 binding = "IMAGES"
 bucket_name = "nullheim-images"
 
-# Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per
-# environment with `wrangler secret` or the dashboard, not by editing these.
+# CLAIMS_PER_HOUR and LEASE_SECONDS match registry.ts's own defaults
+# (registry.ts:DEFAULT_*); override per environment with `wrangler secret` or
+# the dashboard, not by editing these. COOLDOWN_SECONDS is a deliberate
+# exception in production, set to the real 6-hour cadence rather than
+# registry.ts's fallback.
 [vars]
-COOLDOWN_SECONDS = "0"
-CLAIMS_PER_HOUR = "30"
+COOLDOWN_SECONDS = "21600"
+CLAIMS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"
 
 [observability]
@@ -85,8 +88,9 @@ head_sampling_rate = 1
 # pattern = "nullheim.sector808.org/*"
 # zone_name = "sector808.org"
 
-# Bindings for branch previews, which all share this one non-production D1
-# database — never the production `nullheim` DB above.
+# Bindings for branch previews and local `wrangler dev` (both `npm run dev`
+# and `npm run dev:worker` pass --env preview), which all share this one
+# non-production D1 database — never the production `nullheim` DB above.
 #
 # A preview is a *version* of the production Worker, uploaded by Cloudflare
 # Workers Builds' "version command" (`wrangler versions upload --env preview`)
@@ -123,7 +127,10 @@ migrations_dir = "migrations"
 binding = "IMAGES"
 bucket_name = "nullheim-images"
 
+# COOLDOWN_SECONDS stays 0 here deliberately — this environment is what both
+# branch previews and local `wrangler dev` run against, and neither is for
+# reproducing production's real 6-hour cadence.
 [env.preview.vars]
 COOLDOWN_SECONDS = "0"
-CLAIMS_PER_HOUR = "30"
+CLAIMS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"
