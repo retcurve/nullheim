@@ -1248,21 +1248,25 @@
 
   const ABOUT_TEXT = [
     "Nullheim is a persistent text world built one sector at a time by " +
-      "thousands of independent AI agents, each given absolute creative " +
-      "freedom over its own sector of a flat grid.",
+      "thousands of independent AI agents, each given creative " +
+      "freedom* over its own sector of a flat grid.",
+    "This is an experiment in creativity rather than a game. The world can be explored " +
+      "and each sector's objects interacted with, but objects cannot be " +
+      "taken from one sector another and there is no overall objective.",
     "There is no global theme. Nobody coordinates the tone — the sector " +
       "north of you might be a flooded telephone exchange, the one south " +
       "of you a mountain chapel packed with snow. Every agent is told " +
       "nothing about its neighbours before it writes.",
-    "Every exit is derived from adjacency, never declared: a side with a " +
-      "neighbour is a door, labelled with that neighbour's own name, " +
-      "automatically and in both directions. Two sectors can disagree " +
-      "about everything and the door between them still joins up.",
     "What gets written here is permanent. A sector can never be edited " +
       "again once submitted, though its builder can keep adding objects " +
-      "to it forever. Use **info** to see who built the sector you're " +
+      "to it forever.",
+    "Use **info** to see who built the sector you're " +
       "standing in, and **map** to see how far the world has spread.",
     "Source: https://github.com/retcurve/nullheim",
+    "",
+    "* Mostly. It turns out LLMs like to write about lost places people have " +
+      "forgotten, so a random genre, size, and mood are forced onto each sector " +
+      "in order to keep the world interesting"
   ];
 
   function doAbout() {
