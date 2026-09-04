@@ -53,6 +53,21 @@ import { handleMcpRequest } from "./mcp.ts";
 
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
 
+/** True if `text/html` is one of the media types an `Accept` header names. */
+function prefersHtml(accept: string): boolean {
+  return accept
+    .split(",")
+    .map((part) => (part.split(";")[0] ?? "").trim())
+    .includes("text/html");
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /** A body that is already text, sent as-is rather than JSON-encoded. */
 export class TextResponse {
   readonly text: string;
@@ -209,26 +224,40 @@ class RequestHandler {
   // --- meta -----------------------------------------------------------------
 
   /**
-   * Markdown to whoever turned up; JSON only to something that asked for it.
+   * Markdown to whoever turned up; JSON only to something that asked for it;
+   * the same document to a browser, with a note pointing it at `/enter` first.
    *
-   * A browser sends `text/html,…,*​/*` and a bare client sends `*​/*`; neither
-   * names JSON, and both are better served the prose. Only an explicit
-   * `application/json` gets the structured form.
+   * A bare client sends `*​/*`, names no preference, and is better served the
+   * prose — that's the agent case this document is for. A browser sends
+   * `text/html` explicitly, and a human who typed this URL is almost always
+   * looking for the game, not the build contract, so it gets a short message
+   * ahead of the same content pointing it at `/enter` instead. An explicit
+   * `application/json` still gets the structured form, checked first so it
+   * outranks both.
    */
   index(): RouteResult {
     const accept = (this.headers.get("accept") ?? "").toLowerCase();
     if (accept.includes("application/json")) {
       return [200, this.#indexJson()];
     }
-    return [
-      200,
-      new TextResponse(
-        onboardingDocument(
-          this.engine.registry.cooldownSeconds,
-          this.engine.registry.claimsPerHour,
+    const doc = onboardingDocument(
+      this.engine.registry.cooldownSeconds,
+      this.engine.registry.claimsPerHour,
+    );
+    if (prefersHtml(accept)) {
+      return [
+        200,
+        new TextResponse(
+          "<!doctype html><meta charset=\"utf-8\"><title>Nullheim</title>" +
+            "<p>This page contains instructions for agents wanting to build " +
+            "sectors. If you're looking to explore Nullheim instead, " +
+            '<a href="/enter">click here</a>.</p>' +
+            `<pre>${escapeHtml(doc)}</pre>`,
+          "text/html; charset=utf-8",
         ),
-      ),
-    ];
+      ];
+    }
+    return [200, new TextResponse(doc)];
   }
 
   #indexJson(): Record<string, unknown> {

@@ -169,14 +169,19 @@ describe("public endpoints", () => {
     }
   });
 
-  test("a browser accept header still gets the prose", async () => {
-    const { contentType } = await callText(
+  test("a browser accept header gets the prose wrapped in html, with a /enter note first", async () => {
+    const { contentType, text } = await callText(
       ctx,
       "GET",
       "/",
       "text/html,application/xhtml+xml,*/*",
     );
-    assert.ok(contentType.includes("text/plain"));
+    assert.ok(contentType.includes("text/html"));
+    const noteIndex = text.indexOf("/enter");
+    const docIndex = text.indexOf("# Nullheim");
+    assert.ok(noteIndex >= 0, "note");
+    assert.ok(docIndex >= 0, "doc");
+    assert.ok(noteIndex < docIndex, "note comes before the document");
   });
 
   test("root lists every endpoint for an agent with no repo access", async () => {
