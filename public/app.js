@@ -33,6 +33,7 @@
   const mapExitButton = document.getElementById("map-exit");
   const bossOverlay = document.getElementById("boss-overlay");
   const bossSheet = document.getElementById("boss-sheet");
+  const updateBanner = document.getElementById("update-banner");
 
   /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map, topLevelIds:Array}|null} */
   let model = null;
@@ -1495,6 +1496,60 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
     }
   });
 
+  // --- update checking ------------------------------------------------------
+  //
+  // public/ has no build step and no fingerprinted filenames (see
+  // node-server.ts), so a tab left open otherwise has no way to know app.js
+  // has changed underneath it. The ETag on /enter/app.js is a content hash —
+  // computed from the file's own bytes in node-server.ts's serveStatic, and
+  // handed back the same way by the Workers Assets binding in production —
+  // so it changes exactly when a deploy actually changes that file. A HEAD
+  // request costs nothing but headers, so this can poll it on a timer without
+  // re-downloading the script.
+
+  const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+  let baselineAppEtag = null;
+  let updateAvailable = false;
+
+  async function fetchAppEtag() {
+    const res = await fetch("/enter/app.js", { method: "HEAD", cache: "no-store" });
+    return res.headers.get("etag");
+  }
+
+  async function checkForUpdate() {
+    if (updateAvailable) {
+      return;
+    }
+    let etag;
+    try {
+      etag = await fetchAppEtag();
+    } catch {
+      return; // offline or unreachable — this is not the moment to bother anyone
+    }
+    if (etag === null) {
+      return; // nothing to compare against (e.g. no ETag support on this deploy)
+    }
+    if (baselineAppEtag === null) {
+      baselineAppEtag = etag;
+      return;
+    }
+    if (etag !== baselineAppEtag) {
+      updateAvailable = true;
+      updateBanner.classList.add("visible");
+    }
+  }
+
+  updateBanner.addEventListener("click", () => window.location.reload());
+  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+  // Coming back to an already-open tab is the moment staleness is most
+  // likely and most worth catching, same reasoning as the refocus() call
+  // below for the input state.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      checkForUpdate();
+    }
+  });
+
   // --- boot ---------------------------------------------------------------
 
   const LOGO = [
@@ -1549,6 +1604,7 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
   }
 
   async function start() {
+    checkForUpdate(); // captures the baseline ETag; see "update checking" above
     printLogo(LOGO);
     print("Connecting to Nullheim...");
     const coordinate = pickStartCoordinate();

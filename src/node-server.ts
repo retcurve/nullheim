@@ -10,6 +10,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,8 +36,14 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".png": "image/png",
 };
 
-/** Serves one file from `public/` under `/enter/*`. Returns false on any miss. */
-async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
+/**
+ * Serves one file from `public/` under `/enter/*`. Returns false on any miss.
+ *
+ * `method === "HEAD"` skips the body but still computes and sends the ETag —
+ * that's what lets app.js poll its own ETag cheaply (see checkForUpdate in
+ * app.js) without re-downloading itself on every check.
+ */
+async function serveStatic(pathname: string, res: ServerResponse, method: string): Promise<boolean> {
   let rel = pathname.slice(ENTER_PREFIX.length);
   if (rel === "" || rel === "/") {
     rel = "/index.html";
@@ -66,8 +73,13 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<boole
       // serving stale on refresh. There is no build step and no fingerprinted
       // filename to fall back on, so say it explicitly.
       "Cache-Control": "no-cache, no-store, must-revalidate",
+      // A content hash, not a file timestamp — the frontend polls this (see
+      // app.js's checkForUpdates) to notice when public/ has changed under a
+      // tab that's still open, the same way the Workers Assets binding
+      // already hands back a content-addressed ETag in production.
+      ETag: `"${createHash("sha1").update(data).digest("hex")}"`,
     });
-    res.end(data);
+    res.end(method === "HEAD" ? undefined : data);
     return true;
   } catch {
     return false;
@@ -180,8 +192,11 @@ async function handleNodeRequest(
     return;
   }
 
-  if (method === "GET" && (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))) {
-    if (await serveStatic(url.pathname, res)) {
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))
+  ) {
+    if (await serveStatic(url.pathname, res, method)) {
       return;
     }
     const body = Buffer.from(
