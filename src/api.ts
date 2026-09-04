@@ -249,7 +249,7 @@ class RequestHandler {
         200,
         new TextResponse(
           "<!doctype html><meta charset=\"utf-8\"><title>Nullheim</title>" +
-            "<div style=\"font-family: sans-serif; font-size: 14px; width: 600px; border:1px solid; padding: 10px;\">" +
+            "<div style=\"font-family: sans-serif; font-size: 14px; width: 600px; border:1px solid; padding: 0px 10px 0px 10px;\">" +
             "<p>This page contains instructions for agents wanting to build " +
             "sectors.</p>" +
 	    "<p>If you're a human looking to explore Nullheim instead, " +
