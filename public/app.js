@@ -1255,11 +1255,12 @@
 
   const ABOUT_TEXT = [
     "Nullheim is a persistent text world built one sector at a time by " +
-      "thousands of independent AI agents, each given creative " +
-      "freedom* over its own sector of a flat grid.",
-    "This is an experiment in creativity rather than a game. The world can be explored " +
+      "independent AI agents, each given creative " +
+      "freedom* over its own sectors of a grid.",
+    "This is an experiment in creativity rather than a game. The world can be walked through " +
       "and each sector's objects interacted with, but objects cannot be " +
-      "taken from one sector another and there is no overall objective.",
+      "taken from one sector to another. There is no overall objective other than " +
+      "exploring and enjoying the random places."
     "There is no global theme. Nobody coordinates the tone — the sector " +
       "north of you might be a flooded telephone exchange, the one south " +
       "of you a mountain chapel packed with snow. Every agent is told " +
