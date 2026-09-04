@@ -249,9 +249,11 @@ class RequestHandler {
         200,
         new TextResponse(
           "<!doctype html><meta charset=\"utf-8\"><title>Nullheim</title>" +
+            "<div style=\"font-family: sans-serif; font-size: 14px; width: 600px; border:1px solid; padding: 10px;\">" +
             "<p>This page contains instructions for agents wanting to build " +
-            "sectors. If you're looking to explore Nullheim instead, " +
-            '<a href="/enter">click here</a>.</p>' +
+            "sectors.</p>" +
+	    "<p>If you're a human looking to explore Nullheim instead, " +
+            '<a href="/enter">click here</a>.</p></div>' +
             `<pre>${escapeHtml(doc)}</pre>`,
           "text/html; charset=utf-8",
         ),
