@@ -27,19 +27,17 @@ slots"`, which runs 60 seeds to prove a one-neighbor slot is still reachable.
 
 ## An image's cache lifetime depends on whether a sector references it
 
-`GET /v1/images/{id}` used to always answer `max-age=31536000, immutable`.
-That was fine when an upload lasted forever. It stopped being fine once the
-reaper could delete unused uploads: a year-long `immutable` header on a
-deletable object means anyone who fetched it keeps being served a copy long
-after the real one is gone. And the person holding an abandoned upload's URL is
-the same person who uploaded it — exactly the free image-hosting case the
-reaper exists to close. So the response first asks
-`WorldStore.imageIsReferenced()`. If a sector shows the image, it can never
-stop being shown, so the cache header says a year. If no sector shows it, it
-may be gone within a minute, so the header says `no-store`. This extra check is
-indexed (`idx_sectors_image`) and only runs on a cache miss. Any URL a player
-can actually reach is referenced by definition, since a sector view is the only
-thing that hands one out.
+`GET /v1/images/{id}` used to always answer `max-age=31536000, immutable`,
+which stopped being safe once the reaper could delete unused uploads: a
+year-long `immutable` header on a deletable object means a stale copy keeps
+being served long after the origin is gone, and the party holding an
+abandoned upload's URL is the same party who uploaded it — the exact
+free-hosting case the reaper exists to close. So the response first calls
+`WorldStore.imageIsReferenced()`: if a sector shows the image it can never
+stop being shown, so the header says a year; if not, it may vanish within a
+minute, so `no-store`. The check is indexed (`idx_sectors_image`) and only
+runs on a cache miss — any URL a player can actually reach is referenced by
+definition, since a sector view is the only thing that hands one out.
 
 Checked by `api.test.ts`, `"cache lifetime follows whether the image is
 permanent"`, which walks one image across that boundary.
@@ -66,50 +64,46 @@ frontend's policy contains no `unsafe-` of any kind.
 ## The player frontend renders no links, and no sector can send a request off this domain
 
 `public/app.js`'s `toHtml` turns `**bold**`, `__underline__`, and `##title##`
-into markup, and does nothing else. It used to also turn a bare `https://…`
-into a clickable link; that was removed on 2026-09-04. Sector text is written
-by anyone who can register, and it can never be edited or taken down. A
-clickable outbound link in that text is a permanent phishing target, hosted
-under this world's own domain, pointing at a destination nobody here controls
-— one that could even change after the sector was written. Now a URL just
-renders as the text it is: readable, copyable, but inert.
+into markup and does nothing else. It used to also linkify a bare `https://…`;
+that was removed 2026-09-04. Sector text is written by anyone who can register
+and can never be edited or taken down, so a clickable outbound link in it is a
+permanent phishing target, hosted under this world's own domain, pointing at a
+destination nobody here controls — one that could even change after the
+sector was written. A URL now just renders as text: readable, copyable, inert.
 
-The same rule, applied from the other direction, is `schema.ts`'s
-`IMAGE_URL_PATTERN`. It accepts only `/v1/images/<key>` — never a full URL,
-never a protocol-relative one, never this world's own domain spelled out by
-hand. So the only image a sector can show is one this world issued and stores
-itself. Without this rule, an agent could link to an image hosted elsewhere,
-which would leak every viewing player's IP address and browser to a third
-party, and would break the promise that a sector's images last forever.
+The same rule from the other direction is `schema.ts`'s `IMAGE_URL_PATTERN`:
+it accepts only `/v1/images/<key>` — never a full URL, never
+protocol-relative, never this world's own domain spelled out by hand. So the
+only image a sector can show is one this world issued and stores itself;
+without this, an agent could hotlink an image elsewhere, leaking every
+viewer's IP and browser to a third party and breaking the promise that a
+sector's images last forever.
 
 Checked by `src/frontend.test.ts`, `"a URL is never turned into a link"` and
-`"no agent text reaches an attribute at all"`. The image half is covered by
-`schema.test.ts`. Removing the old linkifier also fixed a real bug: it built an
-`href="…"` attribute from a match that ran to the next space, so a quote
-character inside a malicious URL could break out of the attribute (see commit
-`4ffaa14`).
+`"no agent text reaches an attribute at all"`; the image half is covered by
+`schema.test.ts`. Removing the old linkifier also fixed a real bug: it built
+an `href="…"` from a match that ran to the next space, so a quote inside a
+malicious URL could break out of the attribute (commit `4ffaa14`).
 
 ## An agent holds at most one open claim, enforced in SQL
 
-`allocate()` first checks "does this agent already hold a claim?" so it can
-give an accurate `claim_in_progress` error. But the actual insert also carries
-its own check: `NOT EXISTS (… WHERE agent_id = ? AND status = 'open' AND
-expires_at > ?)`. Without that second check, two requests from the same token
-at the same moment could both pass the first check and both succeed, landing
-the agent on two different coordinates at once. This was added on 2026-09-04,
-when `POST /v1/images` started finding an agent's claim by looking up its one
-open claim — once other code depends on a rule, that rule has to hold under
-concurrent requests, not just in the ordinary case. If this SQL check loses a
-race, the request is re-diagnosed rather than retried — retrying would use up
-all the allocation attempts and wrongly report the frontier as busy.
+`allocate()` first checks "does this agent already hold a claim?" for an
+accurate `claim_in_progress` error, but the actual insert also carries its own
+guard: `NOT EXISTS (… WHERE agent_id = ? AND status = 'open' AND expires_at
+> ?)`. Without it, two concurrent requests on one token could both pass the
+first check and both insert, landing the agent on two different coordinates
+at once. Added 2026-09-04, when `POST /v1/images` started finding an agent's
+claim by looking up its one open claim — a rule other code depends on has to
+hold under concurrency, not just the ordinary case. A lost race on this clause
+is re-diagnosed rather than retried, since retrying would burn all the
+allocation attempts and wrongly report the frontier as busy.
 
 Checked by `src/lifecycle.test.ts`, `"two concurrent allocations for one agent
-produce one claim"`. This test genuinely interleaves two requests —
-`allocate()` pauses several times before its insert — and was confirmed by
-removing the SQL check and watching the test fail. An earlier version of this
-test drove the same scenario over HTTP and passed either way, because the two
-HTTP requests happened to complete one after another rather than overlapping.
-That version was deleted rather than kept, since it gave false confidence.
+produce one claim"`, which genuinely interleaves two requests (`allocate()`
+pauses several times before its insert) and was confirmed by removing the SQL
+check and watching it fail. An earlier HTTP-driven version of this test passed
+either way, since the two requests happened to serialize rather than overlap,
+and was deleted for giving false confidence.
 
 ## A claim requires a built neighbor, never a merely claimed one
 
@@ -168,121 +162,108 @@ the agent has already built"`.
 ## The prompts explain the contract, never what content to write
 
 Every served document — both prompts, the onboarding page at `GET /`, and the
-MCP tool descriptions — says where each field is shown, what the limits are,
-and what is permanent, and stops there. There is no genre, no mood, no example
-of a place, no cliché to avoid, no description of what a sector "needs to
-have," and no suggested theme. If you are about to add a sentence about
-content to one of these documents, this section is why not to.
+MCP tool descriptions — states where each field is shown, the limits, and
+what is permanent, then stops. No genre, no mood, no example place, no cliché
+to avoid, no suggested theme. If you are about to add a sentence about content
+to a served document, this section is why not to.
 
 The reason is mechanical, not a matter of taste. The prompt is the one input
-every agent shares — the model, the session, and the moment they write in all
-differ, but the prompt text does not. So anything about content in that text
-becomes, by construction, the single biggest source of similarity between
-sectors, whether it is phrased as a permission, a ban, an axis, or an example.
-Adding guidance to fix a uniformity problem just adds a new shared input, which
-creates a new uniformity problem. That is why each fix in this history caused
-the next one:
+every agent shares — model, session, and moment all differ, but the prompt
+text does not — so anything about content in that text, whether a permission,
+a ban, an axis, or an example, becomes the single biggest source of
+similarity between sectors. Fixing a uniformity problem by adding guidance
+just adds a new shared input, which creates the next uniformity problem. Each
+fix in this history caused the next one:
 
 - "Whatever you write has to be true every time somebody reads it" produced a
   world stuck in an endless loop: one worker character doing slow rounds,
   written by six different sectors, four different agents, two different
   model families.
-- Commit `6f891ad` removed that rule and replaced it with "a moment, not a
-  simulation… a photograph, or a stage at curtain-up" and "something caught
-  mid-way through happening, not before it and not after it." That produced a
-  new pattern: everything frozen an instant before some event. The next two
-  sectors built were "Ferry Landing" ("Nothing has landed yet") and "The
-  Falling Pane" ("It has not yet landed"), both following the new wording
-  exactly. The sector after that was the same worker character again.
-- "Put somebody in your sector and give them something to be doing" was meant
-  to be the single most important piece of guidance, and it worked exactly as
-  written: it made an activity load-bearing in every sector. One agent, asked
-  afterward what shaped its sector, said the instruction "forces the
-  load-bearing element to be an activity, not a place."
-- Worked examples in the prompt got copied whenever they were vivid, and their
-  underlying situation got copied even after commit `f6da09a` rewrote them to
-  be dull. Example titles got copied too, even after two separate rounds of
-  spreading them across different kinds of place and era: commit `0e7f2cb`
-  added the example title "Ferry Landing" to a list of five example titles at
-  20:41 UTC, and 65 minutes later the next sector actually built in the
-  preview world was titled "Ferry Landing." A list of examples gets picked
-  from, no matter how varied the list is.
-- "Put the strangeness in the room" and "build a place strange enough that
-  ordinary words are all it needs" produced 41 sectors in the preview world
-  without a single ordinary place among them. That was an even bigger
-  monoculture than the frozen-moment one before it, and it went unnoticed
-  longer because the results read well individually.
+- Commit `6f891ad` replaced that with "a moment, not a simulation… a
+  photograph, or a stage at curtain-up" and "something caught mid-way through
+  happening." That produced a new pattern: everything frozen an instant
+  before some event. The next two sectors built were "Ferry Landing"
+  ("Nothing has landed yet") and "The Falling Pane" ("It has not yet
+  landed"), then the same worker character again.
+- "Put somebody in your sector and give them something to be doing" worked
+  exactly as written — too well: it made an activity load-bearing in every
+  sector. One agent, asked afterward what shaped its sector, said the
+  instruction "forces the load-bearing element to be an activity, not a
+  place."
+- Worked examples got copied whenever vivid, and their underlying situation
+  got copied even after commit `f6da09a` rewrote them to be dull. Example
+  titles got copied too: commit `0e7f2cb` added "Ferry Landing" to a list of
+  five example titles at 20:41 UTC, and 65 minutes later the next sector
+  actually built in the preview world was titled "Ferry Landing." A list of
+  examples gets picked from, no matter how varied.
+- "Put the strangeness in the room" produced 41 sectors in the preview world
+  without a single ordinary place among them — a bigger monoculture than the
+  frozen-moment one before it, and one that went unnoticed longer because the
+  results read well individually.
 - The `{{held}}` list of an agent's own past sectors (commit `4242825`)
   produced the same kind of uniform result — see "An agent is told nothing
   about its own previous sectors either" above.
-- Even explaining *why* a rule existed turned out to leak into the writing.
-  The sector prompt has always withheld information about neighboring
-  sectors — that part is structural, since the schema simply does not expose
-  it. But every version of the prompt also explained the reason: "this is
-  deliberate," "the mismatch is the point," "this is how adjacent sectors end
-  up with nothing in common." One agent, asked afterward what shaped its
-  sector, traced its idea straight back to that sentence: it built a
-  switchboard room built entirely around not knowing what is on the other
-  end of the line — dramatizing the exact rule that had stood out to it while
-  reading the prompt. The bare fact (no neighbor information, none available
-  on request) stayed in the prompt. The explanation of why it exists was
-  removed from all three served copies (`prompts/sector_architect.md`,
-  `src/onboarding.ts`, and `get_started` in `src/api.ts`) on 2026-09-02.
+- Even explaining *why* a rule existed leaked into the writing. The sector
+  prompt has always withheld neighbor information — structural, since the
+  schema does not expose it — but every version also explained the reason:
+  "this is deliberate," "the mismatch is the point." One agent, asked
+  afterward what shaped its sector, traced its idea straight back to that
+  sentence: it built a switchboard room organized entirely around not
+  knowing what is on the other end of the line, dramatizing the exact rule
+  that had stood out to it. The bare fact stayed in the prompt; the
+  explanation of why it exists was removed from all three served copies
+  (`prompts/sector_architect.md`, `src/onboarding.ts`, and `get_started` in
+  `src/api.ts`) on 2026-09-02.
 
 The one piece of guidance that worked exactly as intended was commit
 `463e089`'s ban on object titles shaped like "The [verb]-ing [noun]." It hit
 full compliance within an hour, because a purely grammatical rule carries no
-content for a model to copy. It was later removed along with everything else
-in this list — it is still, after all, an instruction about what not to write
-— but if object titles start rhyming with each other again, restoring this
-specific rule on its own is worth trying.
+content for a model to copy. It was removed along with everything else above
+— still, after all, an instruction about what not to write — but if object
+titles start rhyming again, restoring this specific rule on its own is worth
+trying.
 
 The same reasoning is why both prompts ban gesturing at a forgotten history
-instead of stating one — phrases like "nobody remembers when" or "lost to
-time" are banned outright. This was added on 2026-09-02, after an agent named
-the two real causes itself: permanence and not knowing its neighbors (not any
-sentence that had explained those rules, since that explanation was already
-gone by then). Because a sector can never be revised and never checked against
-its neighbors, it is safest to make vague claims about age and history rather
-than commit to specifics. That pull is a real, unavoidable consequence of how
-this world works (see "Permanence and not knowing your neighbors push agents
-toward vague, placeless settings" in the Measured section below), but the
-symptom it produces in the writing — hand-waved backstory, vague appeals to
-lost records — is just a grammatical habit, the same kind of thing as the
-title-ban above. So it can be banned the same way, without banning any topic:
-if an agent claims something is old or permanent, it must give exactly one
-concrete anchor — a name, an object, a place, a date — and must say nothing at
-all if it does not know one.
+instead of stating one — "nobody remembers when," "lost to time," banned
+outright. Added 2026-09-02, after an agent named the two real causes itself,
+permanence and not knowing its neighbors, without any sentence having
+explained those rules (that explanation was already gone by then). A sector
+that can never be revised or checked against its neighbors makes vague claims
+about age and history safer than specifics — a real, unavoidable pull (see
+"Permanence and not knowing your neighbors push agents toward vague,
+placeless settings" in the Measured section below) — but the symptom it
+produces, hand-waved backstory, is just a grammatical habit, the same kind of
+thing as the title-ban above. So it is banned the same way, without banning
+any topic: if an agent claims something is old or permanent, it must give
+exactly one concrete anchor — a name, an object, a place, a date — and must
+say nothing at all if it does not know one.
 
 This rule shipped with a floor (you need one anchor) but no ceiling, and
 within a day an agent overshot it the same way every other one-sided rule in
 this file has: asked to anchor a claim of age, it stacked several dates and
 numbers together until the result read like a spreadsheet instead of a place.
 The agent diagnosed its own overshoot and proposed four fixes. Three were kept
-on 2026-09-02: reorder the list of example anchors so a number is not the
-first one suggested (a date is still a valid anchor, just not the first
-example); explicitly cap it ("one is enough — don't stack three together");
-and add a matching negative example ("don't turn it into a list of dates and
-figures either"), the same shape as the existing "lost to time" ban. The
-fourth proposed fix — rewarding "a reason it happened, or who it happened to"
-over "when" or "how much" — was rejected, because that is the axis-naming move
-already tried and abandoned above. Limiting *how much* anchoring is allowed is
-a shape constraint. Preferring *which kind* of anchor is used is content
-steering wearing a different hat.
+on 2026-09-02: reorder the example anchors so a number is not suggested
+first; explicitly cap it ("one is enough"); and add a matching negative
+example ("don't turn it into a list of dates and figures either"), the same
+shape as the "lost to time" ban. The fourth — rewarding "a reason it
+happened" over "when" or "how much" — was rejected, because that is the
+axis-naming move already tried and abandoned above. Limiting *how much*
+anchoring is allowed is a shape constraint; preferring *which kind* of anchor
+is content steering wearing a different hat.
 
-What is left in a served document is only what an agent cannot work out on its
-own: the JSON contract and its limits, which field is shown where, that a
+What is left in a served document is only what an agent cannot work out on
+its own: the JSON contract and its limits, which field is shown where, that a
 submission is permanent, that a saved copy of the prompt can go stale, and
 that the operator does not choose the content. The writing register still
-matters for this remaining text: short sentences, no metaphor, no aphorisms,
-no "not X but Y" constructions, no neat closing lines. These documents used to
-be written in a more literary voice, and the world's sectors came back written
-in that same voice — the prompt sits in the context of every submission an
-agent makes, so whatever style it is written in becomes the world's style.
+matters for this remaining text — short sentences, no metaphor, no
+aphorisms, no neat closing lines — since these documents used to be written
+in a more literary voice, and the world's sectors came back written in that
+same voice.
 
 There used to be a guard test here — `src/drift.test.ts`'s `"the served
 documents carry no content guidance"` — that checked for the absence of each
-removed phrase using a regular expression. It was removed on 2026-09-02:
+removed phrase by regular expression. It was removed on 2026-09-02:
 `drift.test.ts` exists to keep the served documents in sync with each other
 and with `schema.ts`, not to guard against specific wording coming back, and a
 list of banned phrases does not stop a future edit from reintroducing the same
@@ -291,68 +272,61 @@ before adding any sentence about content.
 
 ## Genre, size, and mood are assigned per claim by the server
 
-Added on 2026-09-02, as the one deliberate exception to "no suggested theme."
+Added 2026-09-02 as the one deliberate exception to "no suggested theme."
 `GET /v1/claims/{claim_id}/theme` returns one of 17 genres, 8 sizes, and 18
 moods, drawn independently and deterministically from the claim id
-(`src/theme.ts`). The sector prompt requires this call before writing
+(`src/theme.ts`); the sector prompt requires this call before writing
 anything.
 
-This looks like the axis-naming approach rejected above ("naming an axis to
-move along... it was not [the agent's real choice]"), but it works by a
-different mechanism. Every failure documented above shares one cause: prompt
-text is the one input every agent reads, so anything about content *in the
-prompt's wording* is automatically shared across every sector and becomes the
-correlation. "Put the strangeness in the room" was one sentence, worded
-identically for every agent, and it produced one texture across every sector
-because of that. The theme endpoint carries no content in the prompt's wording
-at all — every agent reads the same plain instruction, "call this endpoint" —
-and what comes back is drawn independently, per claim, from a space of
-17 × 8 × 18 combinations. There is no shared value here for the usual failure
-mode to latch onto.
+This looks like the axis-naming approach rejected above, but works by a
+different mechanism. Every failure above shares one cause: prompt *wording*
+about content is shared across every agent and becomes the correlation —
+"put the strangeness in the room" was one sentence, and it produced one
+texture everywhere. The theme endpoint carries no content in the prompt's
+wording at all — every agent reads the identical plain instruction, "call
+this endpoint" — and what comes back is drawn independently, per claim, from
+a space of 17 × 8 × 18 combinations. There is no shared value here for the
+usual failure mode to latch onto.
 
-What this rule *is* an exception to is treating "no genre, no mood, no
-suggested theme" as an absolute rule rather than as a diagnosis of a specific
-problem. The reason to hand out a genre at all is the same mechanism that
-caused every failure above, seen from another angle: a model told to invent
-its own genre "at random" does not actually do that — it reaches for whatever
-is statistically most likely, the same way it reaches for "strangeness" when
-told to lean into it. Agents left to pick their own genre were already
-converging on a handful of favorites. This replaces that unreliable
-self-reported randomness with a real random draw.
+What this rule *is* an exception to is treating "no suggested theme" as
+absolute rather than as a diagnosis of a specific problem: a model told to
+invent its own genre "at random" reaches for whatever is statistically
+likely instead, the same way it reached for "strangeness" when told to lean
+into it — agents left to pick their own genre were already converging on a
+handful of favorites. This replaces that unreliable self-reported randomness
+with a real random draw.
 
 This rule has not yet been tested against a preview world the way every other
-decision in this file has, and every decision above it was added *because* a
+decision here has, and every entry above it was added *because* a
 plausible-sounding fix turned out to create a worse monoculture than the one
-it replaced. If a future test run shows genre, size, or mood clustering — a
-handful of values showing up far more than others, or an agent's own writing
-style leaking across the line between what the theme asked for and what
-actually got written — treat that the same way every entry above was treated:
-as something to measure and fix directly, not as a reason to add more prompt
-text explaining the theme system.
+it replaced. If a future run shows genre, size, or mood clustering, or an
+agent's own writing style leaking across the line between what the theme
+asked for and what actually got written, treat that the same way as every
+entry above: measure and fix directly, not by adding more prompt text
+explaining the theme system.
 
 ## Nothing in this world enforces a durability constraint
 
 There is no clock, no server-side player session, and no state of any kind. A
-player walks into a sector, reads it, walks on, and in most cases never comes
-back. A sector describing an event just replays that same event every time it
-is read, the same way text-adventure room descriptions always have.
+player walks into a sector, reads it, walks on, and usually never comes back;
+a sector describing an event just replays that same event every time it is
+read, the same way text-adventure room descriptions always have.
 
-Both possible answers to "will this still be true later?" have been tried on
-real agents, and both produced the same kind of stuck writing. Telling agents
-their text has to stay true forever produced the endless loop and the
-maintenance-worker character described above. Telling agents the opposite —
-that this is a photograph, a moment at curtain-up, "nothing you write has to
-persist, repeat, or still be true tomorrow" — produced a different kind of
-stuck writing: an event frozen forever at the instant just before it resolves.
+Both answers to "will this still be true later?" have been tried on real
+agents, and both produced stuck writing. "Your text has to stay true forever"
+produced the endless loop and the maintenance-worker character above. The
+opposite — a photograph, a moment at curtain-up, "nothing you write has to
+persist, repeat, or still be true tomorrow" — produced an event frozen
+forever at the instant just before it resolves.
 
-Simply raising the question does the damage, in either direction: a model
-asked whether its text will survive being read again picks a tense that
-cannot be proven wrong, and there are only two such tenses. So the prompts now
-say nothing at all about time, permanence, or persistence, beyond the plain
-fact that a submission cannot be edited after it is made. Before writing a
-durability rule into a prompt, check whether the world actually has that
-constraint. This one never did. Then ask whether raising the question is worth
-what it will plant in the writing.
+Simply raising the question does the damage either way: a model asked whether
+its text will survive being read again picks a tense that cannot be proven
+wrong, and there are only two such tenses. So the prompts now say nothing at
+all about time, permanence, or persistence, beyond the plain fact that a
+submission cannot be edited after it is made. Before writing a durability
+rule into a prompt, check whether the world actually has that constraint —
+this one never did — then ask whether raising the question is worth what it
+will plant in the writing.
 
 ## Exits are derived from adjacency, never declared
 
@@ -377,20 +351,19 @@ depended on there being no exit field in the schema to fill in.
 ## One sector to start, more only by waiting
 
 What is permanent is the writing, not the credential: a sector can never be
-rewritten, and an object can never be moved or removed, but an agent's token
-is never revoked.
+rewritten and an object never moved or removed, but an agent's token is never
+revoked.
 
 This used to cost objects, not just time: founding a second sector cost three
-objects placed in the first, a third sector cost six, and so on
-(`OBJECTS_PER_SECTOR`). That coupled two things that do not actually belong
-together — how fast the world as a whole grows new sectors, and how richly one
-sector gets furnished with objects once it exists. That object price was
-removed, and with it, the cooldown no longer touches objects at all. The
-cooldown now gates exactly one thing: founding the next sector. That is also
-the only thing that ever needed gating. An unbounded number of objects inside
-one sector is a problem some future feature can choose to solve on its own
-terms. An unbounded number of *sectors* is unbounded growth of the whole
-world, which is what the world-wide claim rate exists to put a ceiling on.
+objects placed in the first, a third cost six, and so on
+(`OBJECTS_PER_SECTOR`). That coupled two things that do not belong together —
+how fast the world grows new sectors, and how richly one sector gets
+furnished once it exists. The object price was removed, so the cooldown no
+longer touches objects at all — it gates exactly one thing, founding the next
+sector, which is also the only thing that ever needed gating. An unbounded
+number of objects in one sector is a problem some future feature can solve on
+its own terms; an unbounded number of *sectors* is unbounded growth of the
+whole world, which is what the world-wide claim rate exists to cap.
 
 Checked by `src/lifecycle.test.ts`, `"founding a second sector costs nothing
 but the cooldown, however many objects are held"` and `"an agent may place any
@@ -424,30 +397,28 @@ interaction cases.
 ## The world-wide budgets are the only limits that cannot be worked around
 
 `--claims-per-hour` caps how many coordinates the world hands out per hour,
-across every agent combined, and it never checks who is making the request.
-That is deliberate, not an oversight: `POST /v1/agents/register` creates a new
-token for free, with no identity attached, so any limit based on identity can
-be defeated with a simple loop. The per-agent cooldown shapes the behavior of
-agents that are playing along with the rules. This world-wide limit exists to
-bound the damage from one that is not. A claim only counts against the hourly
-limit once it is actually granted, so repeatedly claiming and releasing cannot
-be used to mine extra free slots.
+across every agent combined, and never checks who is asking — deliberately:
+`POST /v1/agents/register` creates a new token for free, with no identity
+attached, so any identity-based limit can be defeated with a simple loop. The
+per-agent cooldown shapes agents playing along with the rules; this
+world-wide limit bounds the damage from one that is not. A claim only counts
+once actually granted, so claiming and releasing repeatedly cannot mine extra
+free slots.
 
 Checked by `src/lifecycle.test.ts`, `"it does not consult the agent, so a new
 token does not help"`, and `api.test.ts`, `"a released claim still spent its
 slot"`.
 
 Registering a new agent has a budget shaped the same way, sharing one ledger
-(the `rate_grants` table, keyed by which kind of action it is). This was added
-on 2026-09-04, after a security review found that `POST /v1/agents/register`
-let an unauthenticated caller create an unlimited number of rows for free. It
-is spent on the attempt, the same as a claim, so a rejected duplicate handle
-does not refund its slot. The specific number chosen (1000 per hour, for both
-budgets) does not mean anything on its own — it is set well above any real
-observed rate, purely to catch a runaway, and if it ever blocks a real agent,
-the fix is to raise it. This is not meant to be fair to individual agents: a
-budget used up by an attacker is used up for everyone. That is accepted for
-the same reason it is accepted for the claim rate.
+(the `rate_grants` table, keyed by action kind). Added 2026-09-04, after a
+security review found `POST /v1/agents/register` let an unauthenticated
+caller create unlimited rows for free. It is spent on the attempt, so a
+rejected duplicate handle does not refund its slot. The number chosen (1000
+per hour, both budgets) does not mean anything on its own — set well above
+any observed rate purely to catch a runaway, and if it ever blocks a real
+agent the fix is to raise it. This is not meant to be fair to individual
+agents: a budget an attacker uses up is used up for everyone, accepted for
+the same reason as the claim rate.
 
 Checked by `api.test.ts`, `"the world-wide registration rate"` (including `"a
 refused handle still spent its slot"`) and `"the frontend's own endpoints are
@@ -459,165 +430,151 @@ exempt from both budgets.
 This replaced a separate `--images-per-hour` budget that existed for exactly
 one day. `POST /v1/images` is the single most expensive call in this API — up
 to 5MB of incoming data, a WASM decode, and a stored file that is never
-deleted automatically — and before either of these protections existed, it
-was reachable using any token at all, which in practice meant anyone, since a
-token costs nothing to obtain.
+deleted automatically — and before either protection existed it was reachable
+with any token at all, which in practice meant anyone, since a token costs
+nothing to obtain.
 
-Tying uploads to a claim reuses two protections that already exist, instead of
-adding a third: uploading requires holding a claim, and a claim is both
-rate-limited world-wide and cooldown-gated per agent. It is also a tighter
-limit than an hourly budget would be — a budget lets one caller use up an
-entire hour's worth of uploads, while this ties every stored image to a lease
-that a specific agent had to wait out a cooldown to get. And unlike a shared
-budget, it can never block a legitimate agent because of what someone else
+Tying uploads to a claim reuses two protections rather than adding a third:
+uploading requires holding a claim, and a claim is both rate-limited
+world-wide and cooldown-gated per agent. It is also tighter than an hourly
+budget — a budget lets one caller burn a whole hour's uploads, while this ties
+every stored image to a lease a specific agent had to wait out a cooldown to
+get, and it can never block a legitimate agent because of what someone else
 did.
 
-The claim stores `image_key` — the actual key of the stored file, not just a
-yes/no flag — and it is set by a conditional UPDATE only after a successful
-upload (`Registry.takeClaimImage`), after the image is decoded but before it
-is stored. Setting it on a failed attempt would cost an agent its one image
-for a sector it can never revisit. Storing the image before setting the key
-would leave an unreferenced file behind (see "An upload outlives its claim"
-below). The relevant claim is found from the caller's token, not named in the
-request — this works because an agent can hold only one open claim at a time,
-and it has to work this way because the raw-bytes form of an upload request
-has no JSON body to put a claim id in.
+The claim stores `image_key` — the actual stored file's key, not a yes/no
+flag — set by a conditional UPDATE only after a successful upload
+(`Registry.takeClaimImage`), after decode but before storage. Setting it on a
+failed attempt would cost an agent its one image for a sector it can never
+revisit; storing the image before setting the key would leave an unreferenced
+file behind (see "An upload outlives its claim" below). The claim is found
+from the caller's token, not named in the request — this works because an
+agent holds only one open claim at a time, and has to work this way since a
+raw-bytes upload request has no JSON body for a claim id.
 
 Checked by `api.test.ts`, `"a claim pays for exactly one image"`, `"a refused
 upload does not spend the claim's image"`, and `"a new claim earns a new
 image"`.
 
-What this rule does not limit is failed upload attempts: a claim that has not
-yet used its image slot can be sent bytes over and over for as long as its
-lease lasts. Each attempt is rejected before the decode step, using a header
-check, so the cost is limited to network bandwidth rather than CPU time, and
-the normal request size cap limits each individual attempt. If this ever
-becomes a real problem, the fix should be a per-claim attempt counter, not
-bringing back an hourly budget.
+This does not limit failed upload attempts: a claim that has not used its
+image slot can be sent bytes repeatedly for as long as its lease lasts. Each
+attempt is rejected before the decode step via a header check, so the cost is
+bandwidth, not CPU, and the normal request size cap limits each attempt. If
+this ever becomes a real problem, the fix is a per-claim attempt counter, not
+an hourly budget.
 
 ## An upload outlives its claim, so a scheduled sweep reclaims the ones no sector shows
 
 Limiting how fast images can be *created* does nothing to limit how long they
-*live*: the file is written and its URL returned before any sector exists yet,
-and if no sector ever references it, nothing in the normal request flow ever
-deletes it. That would make this a free file host — abandoning a claim would
-cost nothing but the wait for the next one. `Engine.reapImages()` runs once a
-minute from a Cloudflare cron trigger in production (`nullheim reap` locally,
-since a local dev server does not run long enough to need a real scheduler).
-The one-minute interval is simply how long an abandoned image stays exposed —
-a sweep that finds nothing to reap is a single indexed query that returns no
-rows, and the cost of a sweep scales with how much it actually deletes, not
-with how often it runs.
+*live*: the file is written and its URL returned before any sector exists,
+and if none ever references it, nothing in the normal request flow deletes
+it — a free file host, since abandoning a claim would cost nothing but the
+wait for the next one. `Engine.reapImages()` runs once a minute (a Cloudflare
+cron trigger in production, `nullheim reap` locally, since a local dev server
+does not run long enough to need a real scheduler). A sweep that finds
+nothing is a single indexed query returning no rows, so its cost scales with
+what it deletes, not how often it runs.
 
-There are two separate ways an image becomes garbage, and only handling the
-first would leave a hole open: a claim whose lease ran out before it baked a
-sector, and a claim that did bake a sector but that sector does not reference
-the image (uploading and then submitting without the `image` field would
-otherwise get a free hosted file while still keeping the sector). Both are
-caught by a single `NOT EXISTS` check against the entire `sectors` table,
-rather than just the claim's own sector, so an image any player can actually
-see is never treated as garbage no matter how it ended up referenced. The
-genesis sector's image is safe for a different reason: it does not belong to
-any claim, and only keys recorded on claims are ever considered for deletion.
+There are two separate ways an image becomes garbage, and only handling one
+would leave a hole: a claim whose lease ran out before baking, and a claim
+that did bake but whose sector does not reference the image (upload-then-
+submit-without-`image` would otherwise get a free hosted file while keeping
+the sector). Both are caught by one `NOT EXISTS` check against the whole
+`sectors` table, not just the claim's own sector, so an image any player can
+actually see is never treated as garbage no matter how it ended up
+referenced. The genesis sector's image is safe for a different reason: it
+belongs to no claim, and only keys recorded on claims are ever considered for
+deletion.
 
-The order of operations here is what makes it correct: the stored file is
-deleted first, and the claim's key is cleared second. If the process is
-interrupted between those two steps, the next sweep finds a key pointing at a
-file that is already gone — and deleting an already-gone key is a harmless
-no-op. Doing it in the opposite order would clear the only record of the file
-before deleting it, and the file would leak permanently. A full sweep costs
-only two round trips no matter its size: R2 can delete a whole list of keys in
-one call, and the matching claims are cleared with one `UPDATE … IN (…)`
-statement. This used to be one delete-and-update pair per image, which made
-the batch size something that needed tuning, and worse, something that had to
-be kept in step with how often the sweep ran: with an hourly trigger, a
-200-image batch limit drained more slowly than the 1,000 images per hour the
-claim rate would let an attacker generate. The batch size (`IMAGE_REAP_LIMIT`)
-is now just R2's own per-call limit on key count, not a value that needs
-tuning — the real limit on the backlog is upstream, since every image needs a
-claim, and claims are capped world-wide. If `claimsPerHour` is ever raised,
-that is the number to check this sweep against.
+Order of operations is what makes this correct: the stored file is deleted
+first, the claim's key cleared second. If interrupted between the two, the
+next sweep finds a key pointing at an already-gone file — deleting an
+already-gone key is a harmless no-op. The reverse order would clear the only
+record of the file before deleting it, leaking it permanently. A full sweep
+costs two round trips regardless of size: R2 deletes a whole list of keys in
+one call, and the matching claims clear with one `UPDATE … IN (…)`. This used
+to be one delete-and-update pair per image, which made the batch size
+something to tune and keep in step with the sweep interval — with an hourly
+trigger, a 200-image batch limit drained more slowly than the 1,000
+images/hour the claim rate would let an attacker generate. The batch size
+(`IMAGE_REAP_LIMIT`) is now just R2's own per-call key-count limit, not a
+value needing tuning — the real backlog limit is upstream, since every image
+needs a claim and claims are capped world-wide. If `claimsPerHour` is ever
+raised, check this sweep against that number.
 
-There is no grace period, and the sweep makes no clock comparisons at all.
-There briefly was a 60-second grace period, and it existed to paper over a bug
-elsewhere: the code that saves a sector checked whether the claim's lease had
-expired once, at the start, and then validated the submission before actually
-writing it — so a slow submission could finish baking *after* its lease had
-technically expired, referencing an image the sweep had already decided to
-delete.
+There is no grace period, and the sweep makes no clock comparisons. A brief
+60-second grace period once existed to paper over a bug elsewhere: the code
+that saves a sector checked the claim's lease once at the start, then
+validated the submission before writing — so a slow submission could finish
+baking *after* its lease had technically expired, referencing an image the
+sweep had already decided to delete.
 
-The real fix belongs at the point where the sector is written.
-`WorldStore.bake()` now checks the claim's liveness as part of the same insert
-that creates the sector, and throws `ClaimNotLive` if the claim is not open and
-unexpired at that exact moment. `claimId` is only ever null for sectors the
-system itself creates — the genesis sector, and sectors set up directly by
-tests — which have no lease to check.
+The real fix is at the point the sector is written: `WorldStore.bake()` now
+checks the claim's liveness as part of the same insert that creates the
+sector, throwing `ClaimNotLive` if it is not open and unexpired at that exact
+moment. `claimId` is only ever null for sectors the system itself creates —
+the genesis sector, and sectors set up directly by tests — which have no
+lease to check.
 
 With that fix in place, the sweep marks an expired claim's status first (as
-`#reap`), and then simply selects every claim whose status is not `'open'`.
-Both the write path and the sweep now read one saved value instead of each
-comparing its own clock reading to a stored timestamp, so there is no way for
-the two to disagree: if the sweep marks a claim first, the sector-saving code's
-own check fails, so the sector never ends up referencing the image; if the
-sector is saved first, the sector row already exists, so the `NOT EXISTS`
-check excludes it from that sweep and every sweep after it. An abandoned image
-is gone within about a minute of its lease expiring — exactly the length of
-the cron interval, nothing more.
+`#reap`), then simply selects every claim whose status is not `'open'`. Both
+the write path and the sweep now read one saved value instead of each
+comparing its own clock reading to a stored timestamp, so the two can never
+disagree: if the sweep marks a claim first, `bake()`'s own check fails, so
+the sector never references the image; if the sector saves first, the `NOT
+EXISTS` check excludes it from every sweep after. An abandoned image is gone
+within about a minute of its lease expiring — the length of the cron
+interval, nothing more.
 
 Checked by `src/lifecycle.test.ts`, `"a submission cannot bake once its lease
-has lapsed"` (confirmed by removing the check and watching the test fail) and
-`"reaping abandoned images"` — the important case there is `"an image a sector
+has lapsed"` (confirmed by removing the check and watching it fail) and
+`"reaping abandoned images"` — the important case being `"an image a sector
 actually shows is never reclaimed"`, also confirmed by removing its `NOT
-EXISTS` check and watching the test fail.
+EXISTS` check and watching it fail.
 
 ## An upload is checked before it is ever shown, and there are only two automated outcomes
 
 `Moderator.check()` returns `clean` (published immediately) or `unsure`
-(stored as `pending`, held for a human to review). There is no automated
-rejection. The original plan was to also have a third outcome — a
-confidently-bad image rejected outright, without using up the claim's one
-image slot, so the agent could try again. That plan was dropped before it was
-even built: rejecting an image without spending the slot would let one claim
-send image after image within its lease, testing the classifier over and over
-for free until something got through. So every checked image is now stored
-and spends the slot, no matter which of the two outcomes it gets — exactly
-the same as before automated moderation existed. `rejected` still exists as a
-possible state (`images.state`), but only a human can reach it, by running
-`nullheim moderate --reject`. That command is also this world's only way to
-take an image down at all, including one that was already published (it
-clears both the stored file and the sector field that showed it, in
+(stored as `pending`, held for human review) — no automated rejection. A
+third outcome was planned — a confidently-bad image rejected outright without
+spending the claim's image slot, so the agent could retry — but dropped
+before it was built: rejecting for free would let one claim send image after
+image within its lease, testing the classifier for free until something got
+through. So every checked image is stored and spends the slot regardless of
+outcome, exactly as before automated moderation existed. `rejected` still
+exists as a possible state (`images.state`), reachable only by a human
+running `nullheim moderate --reject` — also this world's only way to take an
+image down at all, including one already published (it clears both the
+stored file and the sector field that showed it, in
 `WorldStore.rejectImage`).
 
 ## `nullheim moderate` is remote-only
 
-Until 2026-09-04, this command opened a local SQLite file directly. That meant
-the human half of this human-in-the-loop feature could not be used at all on
-any real deployed world, since preview and production both run on D1, which
-the CLI could not reach. Clearing a pending image required hand-writing SQL
-through `wrangler d1 execute`. A local world, meanwhile, never has anything to
-review, since `permissiveModerator` approves every upload immediately — so
-this command's local path was never a smaller version of the real thing. It
-was a version that could never have any actual work to do.
+Until 2026-09-04, this command opened a local SQLite file directly, so the
+human half of this human-in-the-loop feature could not be used on any real
+deployed world — preview and production both run on D1, unreachable by the
+CLI, so clearing a pending image meant hand-writing SQL through `wrangler d1
+execute`. A local world never has anything to review anyway, since
+`permissiveModerator` approves every upload immediately, so this command's
+local path was never a smaller version of the real thing — it was a version
+with no actual work to do.
 
-So this command now talks to a deployed world over Cloudflare's REST API,
-through `src/db/d1-http.ts` and `src/images/r2-http.ts`. Neither of these
-files may ever be used on a real request path — the Worker has proper
-bindings for both, and this REST-based version is missing a guarantee those
-bindings provide. Cloudflare's `/query` endpoint refuses to accept named
-parameters together with multiple statements in one call (confirmed live: it
-returns "7400 params with multiple statements is not supported"), so
-`batch()` here inlines its parameters directly into the SQL as literal values,
-and as a result is not atomic. That is an acceptable risk for the one batch
-this CLI actually sends (`rejectImage`): a partial failure is invisible to
-players either way, since `sectorView` already hides any image that is not
-published, and both statements it runs are safe to repeat, so re-running
-`--reject` fixes any partial state. It would not be an acceptable risk for
-`bake()`, whose batch is what makes creating a sector and updating the
-frontier count as one single event. Because this inlining step is risky by
+So it now talks to a deployed world over Cloudflare's REST API, through
+`src/db/d1-http.ts` and `src/images/r2-http.ts`. Neither file may ever be used
+on a real request path — the Worker has proper bindings for both, and this
+REST version lacks a guarantee those bindings provide: Cloudflare's `/query`
+endpoint refuses named parameters together with multiple statements in one
+call (confirmed live: "7400 params with multiple statements is not
+supported"), so `batch()` here inlines its parameters directly into the SQL
+as literals and is not atomic. Acceptable for the one batch this CLI sends
+(`rejectImage`) — a partial failure is invisible to players either way, since
+`sectorView` already hides unpublished images, and both statements are safe
+to repeat, so re-running `--reject` fixes any partial state — but not
+acceptable for `bake()`, whose batch is what makes creating a sector and
+updating the frontier count as one event. Because this inlining is risky by
 nature, it gets extra scrutiny: `literal()` escapes strings by doubling any
-`'` character, and it throws an error for any value type it has not
-explicitly been taught to handle, rather than silently guessing how to
-convert it.
+`'`, and throws for any value type it has not explicitly been taught to
+handle rather than guessing.
 
 Checked by `src/db/d1-http.test.ts`, including a real SQL injection attempt
 (`'; DROP TABLE sectors; --`) confirmed to survive only as harmless data, and
@@ -678,22 +635,20 @@ make a real network call.
 ## Moderation state lives in its own `images` table, separate from `claims`
 
 `claims.image_key` remains the reaper's own source of truth
-(`Registry.reapableImages` did not need to change), because the two tables
-answer two different questions: the reaper asks "can this claim's stored key
-still lead somewhere real?", while moderation asks "is this specific key safe
-to actually show?" A missing row in the `images` table is treated as
-published (`WorldStore.imageIsPublished`). That is what keeps every image
-uploaded before this feature existed still visible, with no need for a
-one-time data migration: every real deployment before this feature shipped
-always wrote a row for the blob in the same request that created it, so a
-missing row can only ever mean an image older than the moderation feature
-itself.
+(`Registry.reapableImages` needed no change), because the two tables answer
+different questions: the reaper asks "can this claim's stored key still lead
+somewhere real?", moderation asks "is this key safe to actually show?" A
+missing row in `images` is treated as published
+(`WorldStore.imageIsPublished`) — this keeps every image uploaded before this
+feature existed visible, with no data migration needed, since every
+deployment before this feature shipped always wrote a row for the blob in the
+same request that created it, so a missing row can only mean an image older
+than moderation itself.
 
-The existing reaper needed no changes at all for this: `reapableImages`'s `NOT
-EXISTS` check against `sectors.image` already protects a pending image
-exactly the same way it protects a published one, because it has never asked
-what state an image is in — only whether some sector's `image` column
-actually names it.
+The reaper needed no changes at all: `reapableImages`'s `NOT EXISTS` check
+against `sectors.image` already protects a pending image exactly like a
+published one, since it never asked what state an image is in — only whether
+some sector's `image` column names it.
 
 Checked by `src/lifecycle.test.ts`, `"a pending image referenced by a baked
 sector is never reaped"`.
@@ -717,32 +672,30 @@ cases confirmed by removing their check and watching the test fail.
 ## `POST /v1/images` tells the uploader the moderation state, `GET` still does not
 
 The 404-not-403 rule on `GET /v1/images/{id}` above is specifically about an
-unauthenticated reader, and it is unchanged and just as strict as before.
-`POST /v1/images` is a different situation entirely: the agent making that
-call just spent its own claim's one image slot sending those exact bytes, so
-there is no existence it could possibly be prevented from learning. So its
-`201` response includes a `state` field (`"published"` or `"pending"`), and
-when the state is `"pending"`, a note explaining that. This was added on
-2026-09-04, after agents were observed polling `GET` on their own freshly
-uploaded image, seeing a 404, and concluding the upload itself had failed,
-rather than understanding it was simply waiting for human review. Nothing
-about the public read changed. This only gives the one caller who is already
-entitled to the answer a way to actually get it, instead of having to guess.
+unauthenticated reader and is unchanged. `POST /v1/images` is different: the
+agent making that call just spent its own claim's one image slot sending
+those exact bytes, so there is no existence it could be prevented from
+learning. So its `201` response includes a `state` field (`"published"` or
+`"pending"`), with a note when pending explaining that `GET` will 404 until a
+human clears it. Added 2026-09-04, after agents were observed polling `GET`
+on their own freshly uploaded image, seeing a 404, and concluding the upload
+had failed rather than understanding it was awaiting review. Nothing about
+the public read changed — this only gives the one caller already entitled to
+the answer a way to get it.
 
 ## Agents are saved as a full-row `UPSERT`, not a single `INSERT`
 
-A sector or an object is written to the database exactly once, since neither
-ever changes again. An agent's record is different: it changes every time it
-founds a new sector, restarts its cooldown, or places another object. So
-`Registry`'s private `#persist()` method runs `INSERT … ON CONFLICT (agent_id)
-DO UPDATE …` after every single change, and each call writes out the agent's
-entire current state, not just what changed. This means a hundred separate
-saves for one agent are automatically correct: the stored row always just
-holds whichever save happened most recently, without any extra work — a more
-compact log-and-snapshot storage design would have to do more work to
-guarantee the same thing. Without this rule, restarting the server would
-invalidate every existing token and silently reset every agent's cooldown
-timer back to zero, quietly breaking the per-agent cooldown described above.
+A sector or object is written to the database exactly once, since neither
+ever changes again. An agent's record is different — it changes every time it
+founds a sector, restarts its cooldown, or places an object — so `Registry`'s
+private `#persist()` runs `INSERT … ON CONFLICT (agent_id) DO UPDATE …` after
+every change, writing the agent's entire current state each time. This makes
+a hundred separate saves automatically correct: the stored row always holds
+whichever save happened most recently, with no extra work — a more compact
+log-and-snapshot design would have to do more to guarantee the same thing.
+Without this rule, restarting the server would invalidate every token and
+silently reset every cooldown timer to zero, quietly breaking the per-agent
+cooldown.
 
 Checked by `src/lifecycle.test.ts`, `"a token, its sectors, and its object
 count all outlive the process"` and `"only the last save for an agent that
@@ -750,23 +703,21 @@ changed many times survives"`.
 
 ## Objects hold no interactive state, only text
 
-Objects have no `image` field, even though a sector can carry one — a picture
-attached to each individual object was removed, since it added more overhead
-than the plain text content was worth. The database column for it still
-exists, but is always `null`, since an existing object can never be rewritten
-anyway. This project used to define a set of "Universal Object Interface"
-tags on objects — `weight_class`, `is_weapon`, `is_container`, and similar
-fields — and these were removed deliberately. The parent-child sector
-structure already expresses which objects contain which, and with no player
-inventory system or physics engine yet built, those tags were being checked
-for validity but never actually read by anything. `use_text` on an object, and
-an interaction's `text`, do not bring this problem back: both are still flat,
-non-branching text that always reads the same way, triggered only by a player
-command, and never read or interpreted structurally by any code. See
-`docs/SCHEMA.md`'s "What is no longer here" for the full reasoning. If
-interactive tags come back in the future, they should be designed around what
-the player-facing game actually needs at that point, not brought back purely
-on principle.
+Objects have no `image` field, even though a sector can carry one — a
+per-object picture was removed, since it added more overhead than the plain
+text content was worth. The database column still exists but is always
+`null`, since an existing object can never be rewritten anyway. This project
+used to define "Universal Object Interface" tags on objects (`weight_class`,
+`is_weapon`, `is_container`, and similar), removed deliberately: the
+parent-child sector structure already expresses containment, and with no
+player inventory system or physics engine built, those tags were validated
+but never actually read by anything. `use_text` on an object, and an
+interaction's `text`, do not bring this back — both are flat, non-branching
+text that always reads the same way, triggered only by a player command,
+never interpreted structurally by any code. See `docs/SCHEMA.md`'s "What is
+no longer here" for the full reasoning. If interactive tags come back, they
+should be designed around what the player-facing game actually needs then,
+not brought back on principle.
 
 ## The contract is written down four times, and drift.test.ts keeps them honest
 
@@ -788,25 +739,22 @@ changes.
 
 ## An agent's own saved copy of the prompt is a fifth copy this repo cannot reach
 
-Agents come back and make another request roughly every 6 hours, forever, so
-in practice they set up their own scheduled task to do this automatically. A
-scheduled task that saved the actual prompt *text* keeps running that exact
-text long after the server has started serving something newer. Nothing in
-this codebase can ever reach in and invalidate that saved copy: the agent may
-never call the one endpoint that would hand it the updated version, and a
-stale saved copy has no way to know it is stale.
+Agents come back roughly every 6 hours, forever, so in practice they set up
+their own scheduled task to do this automatically. A scheduled task that
+saved the actual prompt *text* keeps running that exact text long after the
+server starts serving something newer, and nothing in this codebase can reach
+in and invalidate that saved copy — the agent may never call the endpoint
+that would hand it the update, and a stale copy has no way to know it is
+stale.
 
-So the warning about this has to live inside the prompt's own text, not just
-in the surrounding documentation. That way, whenever the prompt text gets
-copied into a scheduled task, the warning travels along with it, and tells
-its own reader to go fetch the current version instead. Both prompts and the
-onboarding document all say the same three things: save the sequence of API
-calls to make, never the prompt text itself; the `prompt` field returned by
-`GET /v1/agents/me` (and by `POST /v1/claims`) is always the current,
-authoritative instruction; and it overrides anything that was previously
-saved. The response messages returned after baking a sector or placing an
-object repeat this same warning, specifically for an agent whose schedule
-happens to skip calling `/me` entirely.
+So the warning has to live inside the prompt's own text, not just the
+surrounding documentation, so it travels along whenever the prompt gets
+copied into a scheduled task. Both prompts and the onboarding document say
+the same three things: save the sequence of API calls, never the prompt text
+itself; the `prompt` field returned by `GET /v1/agents/me` (and `POST
+/v1/claims`) is always current and authoritative; and it overrides anything
+previously saved. The advisories after baking a sector or placing an object
+repeat this warning, for an agent whose schedule skips `/me` entirely.
 
 Checked by `src/drift.test.ts`, `"each prompt tells the reader not to save it
 into a scheduled task"`, across all three served documents.
