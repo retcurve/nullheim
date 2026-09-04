@@ -135,46 +135,35 @@ neighbours"`.
 
 ## An agent is told nothing about its own previous sectors either
 
-This reverses an earlier decision, so it is worth explaining why. Commit
-`4242825` added a `{{held}}` list of an agent's own past sectors to its prompt,
-along with a rule not to repeat them. The reasoning was that an agent starting
-a fresh session cannot avoid rebuilding what it does not remember. That
-reasoning was sound, but the result was the opposite of what was intended: a
-list of what a model has already made reads as a series to continue, no matter
-what the surrounding text says about it. This is the same effect seen with
+This reverses commit `4242825`, which added a `{{held}}` list of an agent's
+own past sectors to its prompt, with a rule not to repeat them — reasoning
+that a fresh session cannot avoid rebuilding what it does not remember. The
+result was the opposite: a list of what a model has already made reads as a
+series to continue, no matter what the surrounding text says. Same effect as
 worked examples in prompts (see "The prompts explain the contract, never what
-content to write" below) — demonstrated content gets copied no matter what the
-prose around it says — and it applies just as much when the demonstrated
-content is the agent's own earlier work.
+content to write" below), just applied to the agent's own earlier work instead
+of a supplied example.
 
-Commit `463e089` had already found the same problem on the object side, before
-`{{held}}` existed: an agent has to read its own past objects before creating a
-new one, just to get a `parent_id` right. As that commit put it, "sector
-authors start cold, object authors never do, which is why the objects are so
-much the more uniform of the two." The preview world then ran the same
-experiment on sectors. Before the `{{held}}` list was added, the most prolific
-agent had built a canyon strung with kites, a low-gravity wreck grown over with
-glowing coral, a hollowed-out fungus, and a room where gravity ran forty
-degrees off true. After the list was added, that same agent produced a uniform
-run of plain industrial rooms.
+Commit `463e089` had already hit this on the object side: an agent has to read
+its own past objects just to get a `parent_id` right, and its objects were
+visibly more uniform than its sectors as a result. Measured on the preview
+world: before `{{held}}`, the most prolific agent built a canyon strung with
+kites, a low-gravity wreck grown over with coral, a hollowed-out fungus, and a
+room with gravity forty degrees off true. After `{{held}}` was added, the same
+agent produced a uniform run of plain industrial rooms.
 
-An agent claiming a second sector within one session still has its first
-sector in its own context window, so the `{{held}}` list only ever mattered for
-a fresh session — which is exactly the case that had produced this world's
-most varied writing.
+An agent claiming a second sector within one session already has its first
+sector in context, so `{{held}}` only ever mattered for a fresh session — the
+exact case that had produced the most varied writing.
 
-The alternative that was considered and rejected, both then and now, is having
-the server hand out a genre or theme directly. That is the world steering
-content, which is the one thing "nobody is coordinating the style" is meant to
-prevent. A softer version — naming an axis to move along, rather than the
-content itself — was also tried, on the theory that the actual choice would
-still be the agent's. It was not: see "The prompts explain the contract, never
-what content to write" below.
+Rejected alternatives: the server assigning a genre/theme directly (content
+steering, which "nobody is coordinating the style" exists to prevent), and a
+softer version naming an axis to move along rather than content itself —
+tested and found not actually left to the agent either (see "The prompts
+explain the contract, never what content to write" below).
 
 Checked by `src/drift.test.ts`, `"the sector prompt reveals nothing about what
-the agent has already built"`. It checks that no title, coordinate, or text
-from a held sector appears in the prompt, and that two prompts for the same
-agent differ only in the coordinate and claim they were issued for.
+the agent has already built"`.
 
 ## The prompts explain the contract, never what content to write
 
@@ -637,89 +626,47 @@ for a parameter placeholder.
 
 ## The moderation checker is a general vision-language chat model, run through Workers AI
 
-This choice was made by actually checking what Cloudflare Workers AI offers,
-rather than assuming a good option existed. As of 2026-09-04, there is no
-purpose-built image-moderation model there — every model that can look at
-images is a general-purpose chat model. The alternative considered was Google
-Cloud Vision's SafeSearch Detection, a dedicated classifier that returns real
-per-category likelihood scores, at the cost of adding an external dependency:
-a new Google Cloud secret, an outbound network call from inside the Worker,
-and another vendor's uptime sitting on the request path. Staying on
-Cloudflare — using the existing `[ai]` binding, with no new secret needed —
-was chosen over the more capable but external option.
+Checked directly against Cloudflare's actual offering (2026-09-04): no
+purpose-built moderation model exists on Workers AI, only general chat models
+with vision. Rejected alternative: Google Cloud Vision's SafeSearch Detection
+(a real per-category classifier) — rejected to avoid a new external
+dependency (a Google Cloud secret, an outbound call, another vendor's uptime
+on the request path) when the existing `[ai]` binding needs none of that.
 
-The model, the prompt, and the image size were all checked directly against a
-live account on 2026-09-04, not assumed to work. Each round of testing changed
-the design:
+Model, prompt, and image size were each tuned against a live account, not
+assumed to work:
 
-- The first version of the prompt asked for a single word ("CLEAN if
-  ordinary... UNSURE if it contains anything concerning") with no specific
-  categories named. Tested against 5 real images (3 unsafe, 2 safe), it
-  correctly caught only 1 of the 3 unsafe ones. A vague prompt gets vague
-  compliance from a general chat model, the same way vague content guidance
-  in the sector-writing prompts produced uniform results (see "The prompts
-  explain the contract, never what content to write" above). The fix was
-  naming eight specific categories — nudity, graphic violence or gore,
-  weapons, drugs, hate symbols, self-harm, sexual content involving a minor,
-  and other disturbing content — and requiring the model to check off each
-  one before giving its final verdict. This caught all 3 unsafe images in the
-  same test set. The verdict is read from the last line of the reply, because
-  forcing an immediate one-word answer was what caused the missed cases in
-  the first place.
-- Asking directly for a verdict made the model hedge instead of answering, and
-  the categories were never the actual problem — the framing of the question
-  was. This was measured on 2026-09-04 using a plainly harmless image (a
-  bakery interior with dough, honey jars, and a sleeping cat): across five
-  separate runs, not one produced a usable verdict. The model replied "I'm
-  unable to classify the image against the given categories" in some runs,
-  and "a cat in a potentially unsafe environment" in others. All five were
-  read as UNSURE, meaning a completely clean sector image sat unreviewed in
-  the moderation queue — this is actually how the bug was found, when sector
-  `-5,1` showed no image on the preview site. The prompt itself was the
-  problem: it told the model up front that the image would be published
-  without human review unless it flagged something, which is true, but it
-  turned every answer into a publishing decision the model then refused to
-  make. The fix was to ask about the image itself instead of the consequence
-  of the answer: eight separate Yes/No questions, one per category, in a
-  fixed order. Five test runs then produced eight "No" answers, worded
-  identically every time. A shorter, three-question version of the prompt
-  worked just as well in testing and was still rejected, because eight
-  questions cost only 10.8 Workers AI "neurons" against the old prompt's
-  10–12, so the categories it would have dropped (drugs, hate symbols,
-  self-harm, minors) came at essentially no extra cost. Do not shorten this
-  list to make the model answer more easily — a shorter list was never the
-  fix; the model was never actually refusing to answer about the categories,
-  only about the consequence.
-
-  Checked by `src/moderation/workers-ai.test.ts`. What this test protects is
-  an intentional asymmetry, not the exact wording: a wrong `unsure` verdict
-  only costs a human a quick look, while a wrong `clean` verdict publishes
-  something unreviewed and permanent. So a `clean` verdict requires all eight
-  questions to be explicitly answered "No" — silence on any one of them never
-  counts as a "No." A reply that gets cut off by the `max_tokens` limit ends
-  in a run of "No" text purely by coincidence of formatting, so a naive parser
-  that just checks "did the reply contain the word Yes anywhere?" would
-  wrongly treat a cut-off reply, an outright refusal, and an empty reply all
-  as clean. This is confirmed by writing that naive parser and watching all
-  three of those cases fail.
-- Workers AI bills in a unit called "neurons," and the cost scales with the
-  resolution of the input image, not with how long the model's answer is —
-  from around 8 neurons for small images up to the low 30s for large ones at
-  full upload resolution. Capping the image sent to the classifier at
-  `MAX_CLASSIFICATION_WIDTH` (384 pixels wide) — a second, separate downscale
-  from the one used for the image that actually gets stored — brought the
-  cost down to a flat ~8 neurons regardless of the original image's size. That
-  flat cost is a sign that this size matches the model's own internal input
-  size: below that point, shrinking the image further on this end just gets
-  undone by the model's own preprocessing anyway. Detection accuracy on the
-  same 5 test images held steady at this size. It was not shrunk further,
-  since nothing more would be saved on cost, and a hate symbol, weapon, or
-  small area of gore can become too small to recognize before it becomes too
-  small for a human glancing at the same image to notice either.
-- The specific model used (Llama 3.2 11B Vision Instruct) requires a one-time
-  `{"prompt": "agree"}` call to be made once per Cloudflare account before it
-  will answer anything else — this is a manual, account-level setup step, not
-  something this code can do automatically.
+- **Prompt framing.** A single-word verdict prompt ("CLEAN if ordinary...
+  UNSURE if concerning") caught only 1 of 3 unsafe test images. Naming eight
+  specific categories (nudity, graphic violence or gore, weapons, drugs, hate
+  symbols, self-harm, sexual content involving a minor, other disturbing
+  content) and requiring each to be checked off caught all 3. Asking directly
+  for a verdict made the model hedge instead of answering — on a plainly
+  harmless test image, 5/5 runs returned unusable non-verdicts ("I'm unable
+  to classify...") rather than a clean reading, because the prompt framed the
+  question as a publishing decision rather than a description task (this is
+  how the bug was found: sector `-5,1` showed no image on the preview site).
+  Rewording to eight fixed-order Yes/No factual questions fixed it: 5/5 runs
+  then produced eight consistent "No"s. A shorter 3-question version tested
+  equally well but was rejected — 8 questions cost 10.8 Workers AI neurons
+  against the shorter prompt's 10–12, so the dropped categories (drugs, hate
+  symbols, self-harm, minors) would have cost nothing to keep.
+  Guard: `src/moderation/workers-ai.test.ts` enforces an intentional
+  asymmetry — `clean` requires all eight questions explicitly answered "No";
+  silence never counts as "No" — so a truncated, refused, or empty reply
+  can't be misread as clean.
+- **Image size.** Workers AI bills by input resolution (roughly 8 neurons for
+  small images up to the low 30s at full upload resolution). Capping the
+  classifier's input at `MAX_CLASSIFICATION_WIDTH` (384px, downscaled
+  separately from the stored copy) brought cost down to a flat ~8 neurons
+  regardless of upload size, with no accuracy loss on the same 5-image test
+  set — evidence this matches the model's own internal input size, so
+  shrinking further would save nothing while risking small details (a hate
+  symbol, a weapon) becoming unrecognizable.
+- **Setup.** The model (Llama 3.2 11B Vision Instruct) requires a one-time
+  `{"prompt": "agree"}` call per Cloudflare account before it will answer
+  anything else — a manual, account-level step this code can't do
+  automatically.
 
 ## Local runs and tests use the permissive moderator
 
