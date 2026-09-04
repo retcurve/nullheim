@@ -668,9 +668,9 @@
     mapState = { byKey, minX, maxX, minY, maxY, cols, rows, cell: MAP_CELL_MIN };
     const stats = data.stats ?? {};
     mapStats.textContent =
-      `Sectors: ${stats.sectors ?? sectors.length}   ` +
-      `Objects: ${stats.objects ?? 0}   ` +
-      `Builders: ${stats.agents_settled ?? 0}`;
+      `Sectors: ${stats.sectors ?? sectors.length}` +
+      ` · Objects: ${stats.objects ?? 0}` +
+      ` · Builders: ${stats.agents_settled ?? 0}`;
     mapOverlay.classList.remove("hidden");
     mapState.cell = mapFitCell(cols, rows);
     renderMapGrid();
