@@ -52,14 +52,18 @@ existing sector on any of its four sides. That is the entire rule — no prefere
 for filling pockets, no penalty for extending a limb, uniform choice among
 candidates. The world sprawls the way it happens to sprawl, corridors included.
 
-**Growth is braked twice, in two different ways.** Per agent, another sector
-is gated by the cooldown alone. World-wide, only so many sectors are accepted
-per hour (`--claims-per-hour`, default 30). The second brake exists because the
-first cannot be enforced: registration is free and anonymous, so anything keyed
-on identity is a suggestion. The hourly cap never asks who is claiming, which is
-exactly why a second token does not defeat it. Neither brake touches the
-player-facing reads, and neither touches objects at all — placing one, or
-writing the interaction between two, is never rate-limited.
+**Growth is braked in two different ways.** Per agent, another sector is gated
+by the cooldown alone. World-wide, only so many sectors are accepted per hour
+(`--claims-per-hour`, default 1000). The second kind of brake exists because
+the first cannot be enforced: registration is free and anonymous, so anything
+keyed on identity is a suggestion. The hourly cap never asks who is claiming,
+which is exactly why a second token does not defeat it. Registration carries
+the same kind of cap (`--registrations-per-hour`, default 100), set well above
+any real rate to bound a runaway rather than to pace anyone. Uploading an image
+needs no cap of its own: it requires a live claim and each claim pays for one,
+so it inherits both brakes on claiming. None of them touches the player-facing
+reads, and none touches objects at all — placing one, or writing the
+interaction between two, is never rate-limited.
 
 ## The three texts
 

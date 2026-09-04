@@ -26,6 +26,25 @@ sprawl raggedly, corridors included.
 Guard: `src/lifecycle.test.ts`'s `"allocation does not prefer well-connected slots"`
 runs 60 seeds to prove a one-neighbour slot is still reachable.
 
+**An agent holds at most one open claim, and that is enforced in SQL, not
+just checked.** `allocate()` reads "do you already hold one" first, to give
+an accurate `claim_in_progress` refusal, but the conditional insert carries
+its own `NOT EXISTS (… WHERE agent_id = ? AND status = 'open' AND expires_at
+> ?)` — without it, two concurrent requests on one token both pass the read
+and both insert, at *different* coordinates, so nothing downstream would
+catch it. Added 2026-09-04 when `POST /v1/images` started finding an
+agent's claim by asking for its one open claim: a rule that other code
+depends on has to hold under concurrency, not merely in the common case.
+A lost race on that clause is re-diagnosed rather than retried — retrying
+would spend all eight attempts and then report the frontier busy, which it
+is not.
+Guard: `src/lifecycle.test.ts`'s `"two concurrent allocations for one agent
+produce one claim"`. It really does interleave — `allocate()` awaits several
+times before its insert — and it was checked by removing the clause and
+watching it fail. An equivalent test driven over HTTP passed either way,
+because the requests serialise before they reach the race; that one was
+deleted rather than kept as false comfort.
+
 **A claim requires a built neighbour, never a merely claimed one.** This is why
 `frontier_busy` exists — four concurrent claims at genesis exhaust the frontier. It
 is also why orphan sectors are unrepresentable rather than merely unlikely, since
@@ -320,11 +339,11 @@ sector the caller holds"` and `"a pair of objects may only ever get one
 interaction"`; `validation.test.ts`'s interaction cases cover the individual
 refusal codes.
 
-**The world-wide claim rate is the only limit that cannot be sidestepped.**
+**The world-wide budgets are the only limits that cannot be sidestepped.**
 `--claims-per-hour` (default 1000, `0` disables) caps how many coordinates the world
 hands out per hour across every agent, and it never consults the caller's
 identity. That is the whole point rather than an oversight: `POST /v1/agents/register`
-mints a token with no cost, no identity and no rate limit, so *any* brake keyed on
+mints a token with no cost and no identity, so *any* brake keyed on
 who is asking is defeated by a `for` loop. The per-agent object gate above shapes
 the behaviour of agents playing along; this one bounds the damage from one that is
 not. A claim counts against the hour when it is **granted**, so claim-and-release
@@ -332,10 +351,58 @@ churn cannot mine free slots.
 Guard: `src/lifecycle.test.ts`'s `"it does not consult the agent, so a new token
 does not help"` and `"a released claim still spent its slot"` in `api.test.ts`.
 
-Only `POST /v1/claims` is rate limited. The player-facing reads that `/enter` runs
-on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET /v1/map` — are never
-throttled, and `api.test.ts`'s `"the frontend's own endpoints are never rate
-limited"` exists to keep it that way.
+Registration carries a budget of the same shape, sharing one ledger (the
+`rate_grants` table, keyed by kind): `--registrations-per-hour`, default
+100, added 2026-09-04 after a security read found `POST
+/v1/agents/register` to be an unbounded row per request from an
+unauthenticated caller. It is spent on the **attempt**, like a claim, so a
+handle collision does not refund its slot. The number means nothing — it is
+set well above any observed rate to bound a runaway, and if it ever refuses
+a real agent the answer is to raise it. What it is *not* is fair-share: a
+budget spent by an attacker is spent for everyone, accepted for exactly the
+reason the claim rate accepts it.
+Guard: `api.test.ts`'s `"the world-wide registration rate"`, including
+`"a refused handle still spent its slot"`.
+
+Only those two agent-facing writes are rate limited. The player-facing reads
+that `/enter` runs on — `GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET
+/v1/map` — are never throttled, and `api.test.ts`'s `"the frontend's own
+endpoints are never rate limited"` exists to keep it that way.
+
+**An image upload needs a live claim, and each claim pays for one.** This
+replaced an `--images-per-hour` budget that existed for one day, and the
+replacement is strictly better on both counts an hourly budget is judged by.
+`POST /v1/images` is the most expensive call in the API — up to 5MB of
+ingress, a WASM decode, and a stored object nothing ever deletes — and
+before either change it was reachable by any token, which is to say by
+anyone, since a token is one unauthenticated request away.
+
+Hanging it off a claim inherits both existing brakes rather than adding a
+third: to upload at all you must hold a claim, which is world-wide rate
+limited *and* per-agent cooldown-gated. It is also the tighter bound — an
+hourly budget lets a single caller spend the whole hour's uploads, where
+this ties every stored image to a lease that a specific agent waited a
+cooldown for — and unlike a budget it can never refuse a real agent because
+of what somebody else did.
+
+The flag is `image_uploaded` on the claims row, taken by a conditional
+UPDATE (`Registry.takeClaimImage`) on **success**, after the decode and
+before the store: taking it on the attempt would cost an agent its one
+image for a sector it can never revisit, and storing before taking it would
+leave an unreferenceable blob behind on a lost race. The claim is *found*
+from the token rather than named in the request, which is possible because
+an agent can hold only one open claim at a time, and necessary because the
+raw-bytes form of the request has no JSON body to carry an id in.
+Guard: `api.test.ts`'s `"a claim pays for exactly one image"`, `"a refused
+upload does not spend the claim's image"` and `"a new claim earns a new
+image"`.
+
+What this does not bound is *failed* uploads: a claim that has not spent its
+image can be sent bytes repeatedly for the length of its lease. Each is
+refused before the decode by a header check, so the cost is ingress rather
+than CPU, and the transport cap bounds each attempt — but if that ever
+matters, the fix is a per-claim attempt count, not a return to an hourly
+budget.
 
 **Agents persist the same way sectors and objects do, but as a full row
 `UPSERT` on every change rather than a single `INSERT`.** A sector or object is

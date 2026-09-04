@@ -13,6 +13,7 @@ import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
   DEFAULT_LEASE_SECONDS,
+  DEFAULT_REGISTRATIONS_PER_HOUR,
   Registry,
 } from "./registry.ts";
 import { WorldStore } from "./store.ts";
@@ -21,10 +22,12 @@ import { loadCodecs } from "./wasm.node.ts";
 function usage(): never {
   process.stderr.write(
     "usage: nullheim serve [--host HOST] [--port PORT] [--db PATH] " +
-      "[--lease-seconds N] [--cooldown-seconds N] [--claims-per-hour N]\n" +
+      "[--lease-seconds N] [--cooldown-seconds N] [--claims-per-hour N] " +
+      "[--registrations-per-hour N]\n" +
       "\n" +
-      "  --db PATH            local SQLite file (defaults to an in-memory world)\n" +
-      "  --claims-per-hour N  cap new sectors world-wide (0 disables the cap)\n",
+      "  --db PATH                   local SQLite file (defaults to an in-memory world)\n" +
+      "  --claims-per-hour N         cap new sectors world-wide (0 disables the cap)\n" +
+      "  --registrations-per-hour N  cap new agents world-wide (0 disables the cap)\n",
   );
   process.exit(2);
 }
@@ -44,6 +47,10 @@ async function main(argv: string[]): Promise<number> {
       "lease-seconds": { type: "string", default: String(DEFAULT_LEASE_SECONDS) },
       "cooldown-seconds": { type: "string", default: String(DEFAULT_COOLDOWN_SECONDS) },
       "claims-per-hour": { type: "string", default: String(DEFAULT_CLAIMS_PER_HOUR) },
+      "registrations-per-hour": {
+        type: "string",
+        default: String(DEFAULT_REGISTRATIONS_PER_HOUR),
+      },
     },
   });
 
@@ -53,11 +60,17 @@ async function main(argv: string[]): Promise<number> {
   const leaseSeconds = Number(values["lease-seconds"]);
   const cooldownSeconds = Number(values["cooldown-seconds"]);
   const claimsPerHour = Number(values["claims-per-hour"]);
+  const registrationsPerHour = Number(values["registrations-per-hour"]);
 
   const db = openSqlite(dbPath);
   await db.exec(SCHEMA_SQL);
   const store = new WorldStore(db);
-  const registry = new Registry(db, { leaseSeconds, cooldownSeconds, claimsPerHour });
+  const registry = new Registry(db, {
+    leaseSeconds,
+    cooldownSeconds,
+    claimsPerHour,
+    registrationsPerHour,
+  });
   await ensureGenesis(store);
   // Nothing durable to write images alongside an in-memory world either —
   // see images/fs.ts.

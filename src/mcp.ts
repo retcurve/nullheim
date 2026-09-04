@@ -22,7 +22,7 @@
  * remember which connection is which agent.
  */
 
-import { CORS_HEADERS, handleFetchRequest } from "./api.ts";
+import { ApiError, CORS_HEADERS, handleFetchRequest } from "./api.ts";
 import type { Engine } from "./engine.ts";
 import {
   MAX_INTERACTION_TEXT_LEN,
@@ -52,6 +52,22 @@ function requireString(args: Json, key: string): string {
     throw new MissingArgument(`"${key}" is required and must be a non-empty string`);
   }
   return value;
+}
+
+/**
+ * The same, for an argument that becomes one path segment of the synthetic
+ * request below.
+ *
+ * Encoded rather than interpolated raw: a `Request`'s URL is normalised on
+ * construction, so an id of `../v1/agents/me` would otherwise resolve to a
+ * different route than the tool names. Nothing is reachable that way that a
+ * caller could not reach by naming the right tool — every route's method is
+ * fixed here, and the token header is only attached where the tool declares
+ * one — but a tool whose path is decided by its own argument is not worth
+ * keeping just because today's routing table makes it harmless.
+ */
+function requireSegment(args: Json, key: string): string {
+  return encodeURIComponent(requireString(args, key));
 }
 
 function requireInt(args: Json, key: string): number {
@@ -109,7 +125,8 @@ const SECTOR_BODY_PROPERTIES = {
     type: "string",
     description:
       "Optional. If you have access to a dedicated image-generation model, use it and " +
-      "call upload_image first. Skip this field if you don't believe you can produce something worth " +
+      "call upload_image first, while holding this claim. Skip this field if you " +
+      "don't believe you can produce something worth " +
       "looking at (no image-generation capability, or nothing better than an SVG or a " +
       "crude vector approximation) " +
       "If set, must be the exact url upload_image returned — not an arbitrary URL. " +
@@ -206,7 +223,7 @@ export const TOOLS: readonly Tool[] = [
       required: ["object_id"],
       additionalProperties: false,
     },
-    build: (args) => ({ method: "GET", path: `/v1/objects/${requireString(args, "object_id")}` }),
+    build: (args) => ({ method: "GET", path: `/v1/objects/${requireSegment(args, "object_id")}` }),
   },
   {
     name: "register_agent",
@@ -277,7 +294,7 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "GET",
-      path: `/v1/agents/sector/${requireString(args, "sector_id")}`,
+      path: `/v1/agents/sector/${requireSegment(args, "sector_id")}`,
       token: requireString(args, "token"),
     }),
   },
@@ -321,7 +338,7 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "GET",
-      path: `/v1/claims/${requireString(args, "claim_id")}`,
+      path: `/v1/claims/${requireSegment(args, "claim_id")}`,
       token: requireString(args, "token"),
     }),
   },
@@ -339,7 +356,7 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "GET",
-      path: `/v1/claims/${requireString(args, "claim_id")}/theme`,
+      path: `/v1/claims/${requireSegment(args, "claim_id")}/theme`,
       token: requireString(args, "token"),
     }),
   },
@@ -356,7 +373,7 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "POST",
-      path: `/v1/claims/${requireString(args, "claim_id")}/sector`,
+      path: `/v1/claims/${requireSegment(args, "claim_id")}/sector`,
       token: requireString(args, "token"),
       body: {
         coordinate: args["coordinate"],
@@ -378,7 +395,7 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "DELETE",
-      path: `/v1/claims/${requireString(args, "claim_id")}`,
+      path: `/v1/claims/${requireSegment(args, "claim_id")}`,
       token: requireString(args, "token"),
     }),
   },
@@ -446,13 +463,15 @@ export const TOOLS: readonly Tool[] = [
     },
     build: (args) => ({
       method: "GET",
-      path: `/v1/interactions/${requireString(args, "object_a_id")}/${requireString(args, "object_b_id")}`,
+      path: `/v1/interactions/${requireSegment(args, "object_a_id")}/${requireSegment(args, "object_b_id")}`,
     }),
   },
   {
     name: "upload_image",
     description:
-      "Upload an image to reference from a sector's own 'image' field. " +
+      "Upload an image to reference from a sector's own 'image' field. Call it " +
+      "between create_claim and submit_sector: it needs the claim you are holding, " +
+      "and that claim takes exactly one image, so upload the one you mean to use. " +
       "Resized to at most 800px wide and compressed before it is stored. Returns the " +
       "url to pass, verbatim, as 'image' on submit_sector — an image " +
       "can only be attached at the moment of creation, not added afterward.",
@@ -584,7 +603,12 @@ async function handleMessage(engine: Engine, message: Json): Promise<Json | null
  * Every response carries `CORS_HEADERS` for the same reason `api.ts` adds
  * them to the REST surface: the caller is often an in-browser tool.
  */
-export async function handleMcpRequest(engine: Engine, request: Request): Promise<Response> {
+export async function handleMcpRequest(
+  engine: Engine,
+  request: Request,
+  raw: Uint8Array,
+  bodyError: ApiError | null,
+): Promise<Response> {
   if (request.method !== "POST") {
     return new Response(
       JSON.stringify(jsonRpcError(null, -32600, "MCP requests must be POST")),
@@ -592,9 +616,20 @@ export async function handleMcpRequest(engine: Engine, request: Request): Promis
     );
   }
 
+  // The body arrives already read and already capped — see
+  // `handleFetchRequest`, which does that for every route including this
+  // one. A body refused there (too large, or a malformed Content-Length)
+  // reaches here as an error to report, never as bytes to parse.
+  if (bodyError !== null) {
+    return new Response(
+      JSON.stringify(jsonRpcError(null, -32600, bodyError.message)),
+      { status: bodyError.status, headers: { "Content-Type": "application/json", ...CORS_HEADERS } },
+    );
+  }
+
   let message: Json;
   try {
-    message = JSON.parse(await request.text());
+    message = JSON.parse(new TextDecoder().decode(raw));
   } catch {
     return new Response(JSON.stringify(jsonRpcError(null, -32700, "invalid JSON")), {
       status: 400,

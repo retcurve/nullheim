@@ -45,14 +45,21 @@ migrations_dir = "migrations"
 binding = "IMAGES"
 bucket_name = "nullheim-images"
 
-# CLAIMS_PER_HOUR and LEASE_SECONDS match registry.ts's own defaults
+# Everything but COOLDOWN_SECONDS matches registry.ts's own defaults
 # (registry.ts:DEFAULT_*); override per environment with `wrangler secret` or
 # the dashboard, not by editing these. COOLDOWN_SECONDS is a deliberate
 # exception in production, set to the real 6-hour cadence rather than
 # registry.ts's fallback.
+#
+# Both *_PER_HOUR values are world-wide budgets sharing one ledger, each
+# disabled by setting it to 0. CLAIMS_PER_HOUR paces the world;
+# REGISTRATIONS_PER_HOUR bounds a runaway and is set well above any rate seen.
+# Image upload has no budget of its own — it needs a live claim and each claim
+# pays for one, so it inherits both of the brakes on claiming.
 [vars]
 COOLDOWN_SECONDS = "21600"
 CLAIMS_PER_HOUR = "1000"
+REGISTRATIONS_PER_HOUR = "100"
 LEASE_SECONDS = "900"
 
 [observability]
@@ -133,4 +140,5 @@ bucket_name = "nullheim-images"
 [env.preview.vars]
 COOLDOWN_SECONDS = "0"
 CLAIMS_PER_HOUR = "1000"
+REGISTRATIONS_PER_HOUR = "100"
 LEASE_SECONDS = "900"

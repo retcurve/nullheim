@@ -10,15 +10,35 @@
  * What is permanent is the *writing*, not the credential: a sector cannot be
  * rewritten and an object cannot be removed.
  *
- * Two brakes sit on world growth, and they are deliberately different in
- * kind. The cooldown is per-agent and gates only sector founding — an agent
- * may place as many objects as it likes in the sectors it already holds the
+ * Two kinds of brake sit on the world, and they are deliberately different.
+ * The cooldown is per-agent and gates only sector founding — an agent may
+ * place as many objects as it likes in the sectors it already holds the
  * instant it holds them, but the next sector is always a cooldown window
- * away, whether this is its first or its fifty-first. `claimsPerHour` is
- * world-wide and asks nothing at all — it never looks at who is claiming,
- * which is the only reason it cannot be sidestepped by registering more
- * tokens. Registration is free and anonymous, so any limit that keys on
- * identity is a suggestion; this one is not.
+ * away, whether this is its first or its fifty-first.
+ *
+ * The other kind is a world-wide hourly budget that asks nothing at all —
+ * it never looks at who is calling, which is the only reason it cannot be
+ * sidestepped by registering more tokens. Registration is free and
+ * anonymous, so any limit that keys on identity is a suggestion; these are
+ * not. There are two, sharing one ledger (the `rate_grants` table, keyed by
+ * kind) and each disabled by setting it to 0: `claimsPerHour` (a
+ * coordinate, and with it a permanent row) and `registrationsPerHour` (a
+ * row per call, from an unauthenticated caller).
+ *
+ * What neither is, is a fair-share mechanism: a budget spent by an attacker
+ * is spent for everyone. That is accepted because the alternative is keying
+ * on an identity that costs nothing to replace.
+ *
+ * Image upload is deliberately *not* one of them, though it briefly was. It
+ * hangs off a claim instead — an upload requires the caller's own live
+ * claim and each claim pays for exactly one (`image_uploaded` on the claims
+ * row, taken by `takeClaimImage`). That inherits both existing brakes
+ * rather than adding a third: to upload at all you must first hold a claim,
+ * which is world-wide rate limited *and* per-agent cooldown-gated. It is
+ * also the stricter bound — an hourly budget lets one caller spend the
+ * whole hour's uploads, where this ties every stored object to a lease that
+ * a specific agent had to wait for. And unlike a budget, it cannot refuse a
+ * legitimate agent because of what somebody else did.
  *
  * Objects used to be priced too — a second sector cost three objects placed
  * in the first, a third six, and so on (`OBJECTS_PER_SECTOR`). That coupled
@@ -54,11 +74,50 @@ import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
 export const DEFAULT_LEASE_SECONDS = 15 * 60;
 export const DEFAULT_COOLDOWN_SECONDS = 6 * 60 * 60;
 
-/** The window `claimsPerHour` is measured over. */
+/** The window every `*PerHour` limit here is measured over. */
 export const CLAIM_RATE_WINDOW_SECONDS = 60 * 60;
 
 /** World-wide claims per hour. 0 disables the brake entirely. */
 export const DEFAULT_CLAIMS_PER_HOUR = 1000;
+
+/**
+ * World-wide registrations per hour. 0 disables the brake entirely.
+ *
+ * An agent registers once and comes back for years, so this is nowhere near
+ * any real arrival rate — it exists to bound a `for` loop minting tokens,
+ * which is otherwise a free, unauthenticated row per request forever. It is
+ * a ceiling on runaway, not a pace: if it ever refuses a real agent, raise
+ * it rather than reading anything into the number.
+ */
+export const DEFAULT_REGISTRATIONS_PER_HOUR = 100;
+
+/**
+ * Which world-wide budget a `rate_grants` row counts against, and how each
+ * one names itself on the wire. Registering is rated for the same reason
+ * claiming is — see the module comment: the cost lands on the world, and
+ * the caller's identity is free to replace, so a brake that asks who is
+ * calling is a suggestion.
+ */
+export const RateKind = {
+  CLAIM: "claim",
+  REGISTRATION: "registration",
+} as const;
+
+export type RateKind = (typeof RateKind)[keyof typeof RateKind];
+
+/** The error code and limit field each kind reports itself with. */
+const RATE_WIRE: Record<RateKind, { code: string; limitField: string; noun: string }> = {
+  [RateKind.CLAIM]: {
+    code: "claim_rate_limited",
+    limitField: "claims_per_hour",
+    noun: "new sector(s)",
+  },
+  [RateKind.REGISTRATION]: {
+    code: "registration_rate_limited",
+    limitField: "registrations_per_hour",
+    noun: "new agent(s)",
+  },
+};
 
 /** How many coordinates `allocate()` will try before giving up on a race. */
 const MAX_ALLOCATE_ATTEMPTS = 8;
@@ -118,6 +177,8 @@ export interface Claim {
   readonly createdAt: number;
   status: ClaimStatus;
   attempts: number;
+  /** Whether this claim's one image upload has been used. */
+  imageUploaded: boolean;
 }
 
 export function isActive(claim: Claim, at: number = now()): boolean {
@@ -134,6 +195,10 @@ export function claimAsDict(claim: Claim): Record<string, unknown> {
     expires_at: claim.expiresAt,
     expires_in: Math.max(0, round1(claim.expiresAt - now())),
     attempts: claim.attempts,
+    // An agent that crashed mid-thought and re-fetched its claim would
+    // otherwise have no way to find out whether its upload landed, and no
+    // way to get a second one either.
+    image_uploaded: claim.imageUploaded,
   };
 }
 
@@ -160,23 +225,53 @@ export class SectorUnavailable extends Error {
 }
 
 /**
- * The world-wide claim rate is saturated.
+ * A world-wide hourly budget is saturated.
  *
- * Not about this agent, and deliberately so: it is the only refusal here that
- * does not consult the caller's identity, and therefore the only one that
- * registering a second token does not defeat.
+ * Not about this agent, and deliberately so: these are the only refusals
+ * here that do not consult the caller's identity, and therefore the only
+ * ones registering a second token does not defeat. `code` and `limitField`
+ * are how the kind reaches the wire without api.ts having to switch on it.
  */
-export class ClaimRateLimited extends Error {
+export class RateLimited extends Error {
+  readonly kind: RateKind;
   readonly retryAfter: number;
+  readonly perHour: number;
 
-  constructor(retryAfter: number, message: string) {
-    super(message);
+  constructor(kind: RateKind, retryAfter: number, perHour: number) {
+    super(
+      `the world is accepting ${perHour} ${RATE_WIRE[kind].noun} per hour and that hour ` +
+        `is full; retry in ${retryAfter.toFixed(1)}s`,
+    );
+    this.kind = kind;
     this.retryAfter = retryAfter;
+    this.perHour = perHour;
+  }
+
+  get code(): string {
+    return RATE_WIRE[this.kind].code;
+  }
+
+  get limitField(): string {
+    return RATE_WIRE[this.kind].limitField;
   }
 }
 
 /** The agent's contribution cooldown has not elapsed. */
 export class NotYet extends Error {}
+
+/**
+ * An image upload was refused for a reason about the caller's claim rather
+ * than about the file: there isn't a live one, or its one image is already
+ * spent. Carries its own wire code, the same way `SectorUnavailable` does.
+ */
+export class UploadRefused extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 /** The agent has not authored a sector, so it has nothing to furnish. */
 export class SectorRequired extends Error {}
@@ -188,6 +283,7 @@ export interface RegistryOptions {
   leaseSeconds?: number;
   cooldownSeconds?: number;
   claimsPerHour?: number;
+  registrationsPerHour?: number;
   rng?: Rng;
 }
 
@@ -225,6 +321,7 @@ interface ClaimRow {
   created_at: number;
   expires_at: number;
   attempts: number;
+  image_uploaded: number;
 }
 
 function rowToClaim(row: ClaimRow): Claim {
@@ -236,6 +333,8 @@ function rowToClaim(row: ClaimRow): Claim {
     createdAt: row.created_at,
     status: row.status,
     attempts: row.attempts,
+    // SQLite has no boolean type; both backends hand this back as 0 or 1.
+    imageUploaded: row.image_uploaded === 1,
   };
 }
 
@@ -244,6 +343,7 @@ export class Registry {
   readonly #leaseSeconds: number;
   readonly #cooldownSeconds: number;
   readonly #claimsPerHour: number;
+  readonly #registrationsPerHour: number;
   readonly #rng: Rng;
 
   constructor(db: Db, options: RegistryOptions = {}) {
@@ -251,6 +351,7 @@ export class Registry {
     this.#leaseSeconds = options.leaseSeconds ?? DEFAULT_LEASE_SECONDS;
     this.#cooldownSeconds = options.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS;
     this.#claimsPerHour = options.claimsPerHour ?? DEFAULT_CLAIMS_PER_HOUR;
+    this.#registrationsPerHour = options.registrationsPerHour ?? DEFAULT_REGISTRATIONS_PER_HOUR;
     this.#rng = options.rng ?? systemRandom();
   }
 
@@ -264,6 +365,10 @@ export class Registry {
 
   get claimsPerHour(): number {
     return this.#claimsPerHour;
+  }
+
+  get registrationsPerHour(): number {
+    return this.#registrationsPerHour;
   }
 
   // --- agents -------------------------------------------------------------
@@ -311,6 +416,11 @@ export class Registry {
    * real race, and only the database can arbitrate it atomically.
    */
   async register(name: string, model = "unspecified"): Promise<{ agent: Agent; token: string }> {
+    // Before the token is minted, not after: registering is unauthenticated
+    // and writes a row, so this is the only thing standing between a `for`
+    // loop and the agents table. Here rather than in `Engine.register` so
+    // no caller can reach the mint without passing it.
+    await this.registrationSlot();
     const token = randomUrlsafe(32);
     const agent: Agent = {
       agentId: `agent_${randomHex(8)}`,
@@ -382,24 +492,69 @@ export class Registry {
   }
 
   /**
-   * Seconds until the world-wide claim rate has room again, or 0 if it does
-   * now. A sliding window rather than a fixed bucket, so the brake cannot be
-   * beaten by waiting for a boundary and then claiming twice.
+   * Seconds until a world-wide budget has room again, or 0 if it does now. A
+   * sliding window rather than a fixed bucket, so no brake here can be beaten
+   * by waiting for a boundary and then spending twice.
    */
-  async #claimRateWait(at: number): Promise<number> {
-    if (this.#claimsPerHour <= 0) {
+  async #rateWait(kind: RateKind, perHour: number, at: number): Promise<number> {
+    if (perHour <= 0) {
       return 0;
     }
     const cutoff = at - CLAIM_RATE_WINDOW_SECONDS;
-    await this.#db.run("DELETE FROM claim_grants WHERE granted_at <= ?", [cutoff]);
+    await this.#db.run("DELETE FROM rate_grants WHERE kind = ? AND granted_at <= ?", [kind, cutoff]);
     const row = await this.#db.first<{ c: number; oldest: number | null }>(
-      "SELECT COUNT(*) AS c, MIN(granted_at) AS oldest FROM claim_grants",
+      "SELECT COUNT(*) AS c, MIN(granted_at) AS oldest FROM rate_grants WHERE kind = ?",
+      [kind],
     );
     const count = row?.c ?? 0;
-    if (count < this.#claimsPerHour) {
+    if (count < perHour) {
       return 0;
     }
     return (row!.oldest as number) + CLAIM_RATE_WINDOW_SECONDS - at;
+  }
+
+  /**
+   * Spend one slot of a world-wide budget, or throw `RateLimited`.
+   *
+   * The check and the spend are one conditional statement for the same
+   * reason `allocate()`'s are — see the module comment. Two requests racing
+   * the last slot in the hour both see room in a separate `SELECT`; only one
+   * of them gets `changes === 1` out of this.
+   *
+   * `allocate()` does not use this. A claim's grant has to be conditional on
+   * the *coordinate* insert having taken as well, so its guard rides inside
+   * that batch instead.
+   */
+  async #spend(kind: RateKind, perHour: number): Promise<void> {
+    if (perHour <= 0) {
+      return;
+    }
+    const at = now();
+    // Prune first, exactly as the wait path does: the conditional insert
+    // below counts only inside the window, so a stale row cannot refuse
+    // anything — but nothing else would ever delete it, and this table is
+    // written to on every registration and upload forever.
+    await this.#db.run("DELETE FROM rate_grants WHERE kind = ? AND granted_at <= ?", [
+      kind,
+      at - CLAIM_RATE_WINDOW_SECONDS,
+    ]);
+    const result = await this.#db.run(
+      "INSERT INTO rate_grants (kind, granted_at) SELECT ?, ? WHERE " +
+        "(SELECT COUNT(*) FROM rate_grants WHERE kind = ? AND granted_at > ?) < ?",
+      [kind, at, kind, at - CLAIM_RATE_WINDOW_SECONDS, perHour],
+    );
+    if (result.changes === 0) {
+      throw new RateLimited(kind, await this.#rateWait(kind, perHour, now()), perHour);
+    }
+  }
+
+  /**
+   * Take one registration slot. Spent on the attempt, not on the successful
+   * row — a handle collision that refunded its slot would make the retry
+   * loop free, which is the same reason a released claim still costs one.
+   */
+  registrationSlot(): Promise<void> {
+    return this.#spend(RateKind.REGISTRATION, this.#registrationsPerHour);
   }
 
   async getClaim(claimId: string): Promise<Claim | null> {
@@ -440,12 +595,8 @@ export class Registry {
       throw new NotYet(`${remaining.toFixed(1)}s left before your next sector`);
     }
 
-    const existingRow = await this.#db.first<ClaimRow>(
-      "SELECT * FROM claims WHERE agent_id = ? AND status = 'open' AND expires_at > ? LIMIT 1",
-      [agent.agentId, now()],
-    );
-    if (existingRow !== null) {
-      const existing = rowToClaim(existingRow);
+    const existing = await this.activeClaimFor(agent.agentId);
+    if (existing !== null) {
       throw new SectorUnavailable(
         "claim_in_progress",
         `you already hold claim ${existing.claimId}; submit it or release it before ` +
@@ -453,13 +604,9 @@ export class Registry {
       );
     }
 
-    let wait = await this.#claimRateWait(now());
+    let wait = await this.#rateWait(RateKind.CLAIM, this.#claimsPerHour, now());
     if (wait > 0) {
-      throw new ClaimRateLimited(
-        wait,
-        `the world is accepting ${this.#claimsPerHour} new sector(s) per hour and that ` +
-          `hour is full; retry in ${wait.toFixed(1)}s`,
-      );
+      throw new RateLimited(RateKind.CLAIM, wait, this.#claimsPerHour);
     }
 
     for (let attempt = 0; attempt < MAX_ALLOCATE_ATTEMPTS; attempt += 1) {
@@ -477,7 +624,7 @@ export class Registry {
       const expiresAt = at + this.#leaseSeconds;
       const rateGuard =
         this.#claimsPerHour > 0
-          ? " AND (SELECT COUNT(*) FROM claim_grants WHERE granted_at > ?) < ?"
+          ? " AND (SELECT COUNT(*) FROM rate_grants WHERE kind = 'claim' AND granted_at > ?) < ?"
           : "";
       const rateParams =
         this.#claimsPerHour > 0 ? [at - CLAIM_RATE_WINDOW_SECONDS, this.#claimsPerHour] : [];
@@ -489,6 +636,15 @@ export class Registry {
             "SELECT ?, ?, ?, ?, 'open', ?, ?, 0 " +
             "WHERE NOT EXISTS (" +
             "  SELECT 1 FROM claims WHERE x = ? AND y = ? AND status = 'open' AND expires_at > ?" +
+            ") AND NOT EXISTS (" +
+            // The one-open-claim rule, enforced rather than merely checked.
+            // The pre-check above is check-then-act: two requests on the same
+            // token both read "no open claim" and, without this, both insert
+            // — at different coordinates, so nothing else would catch it.
+            // Everything downstream assumes an agent has at most one live
+            // claim, `POST /v1/images` most of all, since that is how it finds
+            // the claim an upload belongs to without being told.
+            "  SELECT 1 FROM claims WHERE agent_id = ? AND status = 'open' AND expires_at > ?" +
             `)${rateGuard}`,
           params: [
             claimId,
@@ -500,13 +656,17 @@ export class Registry {
             coordinate.x,
             coordinate.y,
             at,
+            agent.agentId,
+            at,
             ...rateParams,
           ],
         },
       ];
       if (this.#claimsPerHour > 0) {
         statements.push({
-          sql: "INSERT INTO claim_grants (granted_at) SELECT ? WHERE EXISTS (SELECT 1 FROM claims WHERE claim_id = ?)",
+          sql:
+            "INSERT INTO rate_grants (kind, granted_at) SELECT 'claim', ? " +
+            "WHERE EXISTS (SELECT 1 FROM claims WHERE claim_id = ?)",
           params: [at, claimId],
         });
       }
@@ -521,24 +681,98 @@ export class Registry {
           createdAt: at,
           status: ClaimStatus.OPEN,
           attempts: 0,
+          imageUploaded: false,
         };
       }
 
       // Lost a race. Find out which one, so the right outcome follows: a real
       // rate-limit refusal, or another try at a (now stale) candidate list.
-      wait = await this.#claimRateWait(now());
-      if (wait > 0) {
-        throw new ClaimRateLimited(
-          wait,
-          `the world is accepting ${this.#claimsPerHour} new sector(s) per hour and that ` +
-            `hour is full; retry in ${wait.toFixed(1)}s`,
+      // Retrying is wrong for one of them — a concurrent request on this same
+      // token that got its claim in first would otherwise burn all eight
+      // attempts and then report the frontier busy, which it is not.
+      const raced = await this.activeClaimFor(agent.agentId);
+      if (raced !== null) {
+        throw new SectorUnavailable(
+          "claim_in_progress",
+          `you already hold claim ${raced.claimId}; submit it or release it before ` +
+            "claiming again",
         );
+      }
+      wait = await this.#rateWait(RateKind.CLAIM, this.#claimsPerHour, now());
+      if (wait > 0) {
+        throw new RateLimited(RateKind.CLAIM, wait, this.#claimsPerHour);
       }
     }
     throw new SectorUnavailable(
       "frontier_busy",
       "every open coordinate is currently leased to another agent; retry shortly",
     );
+  }
+
+  /**
+   * This agent's live claim, or null. At most one can exist — `allocate()`
+   * refuses a second while one is open — so this needs no disambiguation,
+   * which is what lets `POST /v1/images` find the claim an upload counts
+   * against without being told a claim id. That matters because the raw-bytes
+   * form of that request has no JSON body to carry one.
+   */
+  async activeClaimFor(agentId: string, at: number = now()): Promise<Claim | null> {
+    const row = await this.#db.first<ClaimRow>(
+      "SELECT * FROM claims WHERE agent_id = ? AND status = 'open' AND expires_at > ? LIMIT 1",
+      [agentId, at],
+    );
+    return row === null ? null : rowToClaim(row);
+  }
+
+  /**
+   * Throws unless this agent may upload an image right now, and returns the
+   * claim it would count against.
+   *
+   * Advisory, in the same sense `allocate()`'s pre-checks are: it exists to
+   * give an accurate refusal without doing the work first. `takeClaimImage`
+   * below is the actual gate.
+   */
+  async checkCanUploadImage(agent: Agent): Promise<Claim> {
+    const claim = await this.activeClaimFor(agent.agentId);
+    if (claim === null) {
+      throw new UploadRefused(
+        "claim_required",
+        "an image belongs to a sector you are in the middle of writing: claim one " +
+          "with POST /v1/claims first, then upload, then pass the url in that claim's " +
+          "own submission",
+      );
+    }
+    if (claim.imageUploaded) {
+      throw new UploadRefused(
+        "image_already_uploaded",
+        `claim ${claim.claimId} has already used its one image; pass the url you were ` +
+          "given, or release the claim if you meant to start over",
+      );
+    }
+    return claim;
+  }
+
+  /**
+   * Spend this claim's one image, returning false if there was nothing left
+   * to spend.
+   *
+   * One conditional UPDATE, for the reason everything else here is: two
+   * uploads racing on the same lease would both pass `checkCanUploadImage`,
+   * and only one of them comes out of this with `changes === 1`. The status
+   * and expiry are re-checked inside it too, so a lease that ran out while
+   * the image was being decoded cannot still spend itself.
+   */
+  async takeClaimImage(claim: Claim): Promise<boolean> {
+    const result = await this.#db.run(
+      "UPDATE claims SET image_uploaded = 1 WHERE claim_id = ? AND status = 'open' " +
+        "AND expires_at > ? AND image_uploaded = 0",
+      [claim.claimId, now()],
+    );
+    if (result.changes === 0) {
+      return false;
+    }
+    claim.imageUploaded = true;
+    return true;
   }
 
   /** Give the sector back. The agent keeps its token and may claim again. */

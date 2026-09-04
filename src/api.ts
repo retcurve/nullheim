@@ -25,11 +25,12 @@ import type { Engine } from "./engine.ts";
 import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
-  ClaimRateLimited,
   HandleTaken,
   NotYet,
+  RateLimited,
   SectorRequired,
   SectorUnavailable,
+  UploadRefused,
   agentAsDict,
   claimAsDict,
   cooldownRemaining,
@@ -52,6 +53,21 @@ import { bakedAsDict, interactionAsDict, objectAsDict } from "./store.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
+
+/**
+ * The transport cap for the two routes that can carry an image.
+ *
+ * `MAX_UPLOAD_BYTES` bounds the *image*; this bounds the *body* carrying
+ * it, and the two cannot be the same number because base64 spends 4 bytes
+ * on every 3 — an upload sent as `{"image_base64": "…"}` (the only form the
+ * MCP tool can send, and one `POST /v1/images` accepts directly) is a third
+ * larger than the image inside it. Capping the body at `MAX_UPLOAD_BYTES`
+ * would quietly make the real limit 3.6MB for JSON callers and 5MB for
+ * everyone else. An oversized image still gets refused — by `processUpload`,
+ * as an `unsupported_image` 422 that says so, rather than as a 413 on a body
+ * that was within its own documented limit.
+ */
+export const MAX_IMAGE_BODY_BYTES = Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 4096;
 
 /** True if `text/html` is one of the media types an `Accept` header names. */
 function prefersHtml(accept: string): boolean {
@@ -99,6 +115,20 @@ export class ApiError extends Error {
     this.status = status;
     this.payload = { error: { code, message }, ...extra };
   }
+}
+
+/**
+ * A world-wide budget's refusal, in the one shape both report: the wait, and
+ * the limit under its own name (`claims_per_hour`, `registrations_per_hour`).
+ * The same 429 an agent's own cooldown answers with, since from the caller's
+ * side both are "not now" — but this one is not about the caller at all, and
+ * a fresh token does not shorten it.
+ */
+function rateLimited(exc: RateLimited): ApiError {
+  return new ApiError(429, exc.code, exc.message, {
+    retry_after: Math.round(exc.retryAfter * 10) / 10,
+    [exc.limitField]: exc.perHour,
+  });
 }
 
 type RoutePayload = Record<string, unknown> | TextResponse | BinaryResponse;
@@ -491,6 +521,9 @@ class RequestHandler {
       if (exc instanceof HandleTaken) {
         throw new ApiError(409, "handle_taken", exc.message);
       }
+      if (exc instanceof RateLimited) {
+        throw rateLimited(exc);
+      }
       throw exc;
     }
     return [
@@ -583,13 +616,10 @@ class RequestHandler {
       if (exc instanceof SectorUnavailable) {
         throw new ApiError(409, exc.code, exc.message);
       }
-      if (exc instanceof ClaimRateLimited) {
+      if (exc instanceof RateLimited) {
         // The world's own brake, not this agent's — so a 429 with the wait in
         // the body, exactly as the agent's own cooldown does.
-        throw new ApiError(429, "claim_rate_limited", exc.message, {
-          retry_after: Math.round(exc.retryAfter * 10) / 10,
-          claims_per_hour: this.engine.registry.claimsPerHour,
-        });
+        throw rateLimited(exc);
       }
       throw exc;
     }
@@ -758,19 +788,26 @@ class RequestHandler {
   // --- images ---------------------------------------------------------------
 
   /**
-   * Auth required — same minimal bar as every other write — but the agent's
-   * identity itself is not carried any further: an image is anonymous,
-   * content-addressed data, not something owned the way a sector is.
+   * Auth, and a live claim of the caller's own — one image per claim.
+   *
+   * The claim is found rather than named: an agent can hold only one open
+   * claim at a time, and the raw-bytes form of this request has no JSON body
+   * to carry an id in anyway. What the stored image is *not* is owned — it
+   * is anonymous, content-addressed data, and the claim decides who may
+   * create one, not who may read it.
    */
   async createImage(): Promise<RouteResult> {
-    await this.#agent();
+    const agent = await this.#agent();
     const bytes = this.imageBytes();
     let outcome: { url: string };
     try {
-      outcome = await this.engine.uploadImage(bytes);
+      outcome = await this.engine.uploadImage(agent, bytes);
     } catch (exc) {
       if (exc instanceof UnsupportedImage) {
         throw new ApiError(422, "unsupported_image", exc.message);
+      }
+      if (exc instanceof UploadRefused) {
+        throw new ApiError(409, exc.code, exc.message);
       }
       throw exc;
     }
@@ -779,9 +816,9 @@ class RequestHandler {
       {
         ...outcome,
         note:
-          "Pass this url exactly, in the 'image' field of a sector submission, " +
-          "before you claim it — an image can only be attached at creation, not " +
-          "added or replaced afterward.",
+          "Pass this url exactly, in the 'image' field of the submission for the " +
+          "claim you are holding. An image can only be attached at creation, not " +
+          "added or replaced afterward, and that claim has no second upload.",
       },
     ];
   }
@@ -936,9 +973,9 @@ export const ROUTES: RouteEntry[] = [
     "POST",
     "/v1/images",
     (h) => h.createImage(),
-    "Auth. Upload an image (raw bytes, or JSON {image_base64}); resized to " +
-      "at most 800px wide and compressed. Returns the url to pass as a sector's " +
-      "own 'image' field.",
+    "Auth, and one per claim. Upload an image (raw bytes, or JSON " +
+      "{image_base64}) while holding a live claim; resized to at most 800px wide " +
+      "and compressed. Returns the url to pass as that claim's sector 'image'.",
   ),
   route(
     "GET",
@@ -1028,13 +1065,21 @@ function toResponse(status: number, payload: RoutePayload): Response {
 }
 
 /**
- * The one route whose body is not a text submission — raw image bytes, not
- * JSON — so it gets its own, much larger cap (`MAX_UPLOAD_BYTES`, from
- * `image-processing.ts`) rather than `MAX_BODY_BYTES`, which is sized for
- * sector/object text.
+ * The two routes whose body may be an image get their own, much larger cap
+ * rather than `MAX_BODY_BYTES`, which is sized for sector/object text.
+ *
+ * `/mcp` is in that list because every tool call arrives on it, `upload_image`
+ * among them — MCP is one wire protocol over all of ROUTES, so its cap has to
+ * cover the largest thing any route accepts. Everything smaller is still
+ * bounded further in: a sector or object submission is refused past
+ * `MAX_SUBMISSION_BYTES` by `schema.ts` regardless of what the transport let
+ * through.
  */
 export function maxBodyBytesFor(method: string, path: string): number {
-  return method === "POST" && path === "/v1/images" ? MAX_UPLOAD_BYTES : MAX_BODY_BYTES;
+  if (method !== "POST") {
+    return MAX_BODY_BYTES;
+  }
+  return path === "/v1/images" || path === "/mcp" ? MAX_IMAGE_BODY_BYTES : MAX_BODY_BYTES;
 }
 
 /**
@@ -1091,14 +1136,19 @@ export async function handleFetchRequest(engine: Engine, request: Request): Prom
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
+  // Ahead of the MCP branch, so /mcp is bounded by the same cap as every
+  // other route. It used to read its own body with `request.text()` after
+  // this point, which on Workers — where a Request is a live stream, not
+  // something a transport already buffered — meant no cap at all.
+  const { raw, error } = await readBody(request, maxBodyBytesFor(request.method, path));
+
   // MCP is a different wire protocol on the same routes, not a route of its
   // own: handleMcpRequest turns each tool call back into a Request and
   // recurses into this same function, so it never bypasses dispatch below.
   if (path === "/mcp") {
-    return handleMcpRequest(engine, request);
+    return handleMcpRequest(engine, request, raw, error);
   }
 
-  const { raw, error } = await readBody(request, maxBodyBytesFor(request.method, path));
   const handler = new RequestHandler(engine, request.headers);
   handler.setBody(raw);
   if (error !== null) {

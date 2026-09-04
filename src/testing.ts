@@ -94,6 +94,7 @@ export async function makeEngine(
     leaseSeconds?: number;
     cooldownSeconds?: number;
     claimsPerHour?: number;
+    registrationsPerHour?: number;
     seed?: number;
   } = {},
 ): Promise<TestWorld> {
@@ -104,6 +105,7 @@ export async function makeEngine(
     leaseSeconds: options.leaseSeconds ?? 900,
     cooldownSeconds: options.cooldownSeconds ?? 0,
     claimsPerHour: options.claimsPerHour ?? 0,
+    registrationsPerHour: options.registrationsPerHour ?? 0,
     rng: seeded(options.seed ?? 1),
   });
   await ensureGenesis(store);

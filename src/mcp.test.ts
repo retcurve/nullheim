@@ -6,8 +6,9 @@ import type { Server } from "node:http";
 
 import type { SqliteDb } from "./db/sqlite.ts";
 import type { Engine } from "./engine.ts";
+import { MAX_IMAGE_BODY_BYTES } from "./api.ts";
 import { listen, makeServer } from "./node-server.ts";
-import { makeEngine, sector } from "./testing.ts";
+import { makeEngine, makePng, sector } from "./testing.ts";
 
 interface Ctx {
   base: string;
@@ -81,6 +82,43 @@ function teardown(): Promise<void> {
     current = null;
   });
 }
+
+describe("the MCP body cap", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  /**
+   * /mcp is one route among many and is capped like one. It used to read its
+   * own body after the point where every other route's was already bounded,
+   * which on a runtime that hands over a live stream rather than a buffer —
+   * Workers — meant a tool call could be arbitrarily large.
+   *
+   * The cap is the image-sized one, since `upload_image` arrives here too.
+   */
+  test("a body past the cap is refused, not buffered", async () => {
+    const response = await fetch(`${ctx.base}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: new Uint8Array(MAX_IMAGE_BODY_BYTES + 1),
+    });
+    assert.equal(response.status, 413);
+  });
+
+  test("a tool call carrying an image is still inside it", async () => {
+    const token = await registerAgent(ctx, "uploader");
+    // upload_image needs the claim the image is for — see api.ts's createImage.
+    assert.equal(unwrap(await callTool(ctx, "create_claim", { token })).status, 201);
+    const result = await callTool(ctx, "upload_image", {
+      token,
+      image_base64: Buffer.from(makePng(40, 40)).toString("base64"),
+    });
+    assert.equal(result.isError, false);
+    assert.equal(unwrap(result).status, 201);
+  });
+});
 
 describe("MCP protocol handshake", () => {
   let ctx: Ctx;

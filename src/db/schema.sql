@@ -93,6 +93,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_token_hash ON agents (token_hash);
 -- makes a sector_id write-once.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_name ON agents (name);
 
+-- `image_uploaded` is the whole of the image budget: an upload needs a live
+-- claim, and a claim pays for one. Taken by a conditional UPDATE on success
+-- (Registry.takeClaimImage), so concurrent uploads on one lease cannot both
+-- have it.
 CREATE TABLE IF NOT EXISTS claims (
   claim_id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -101,7 +105,8 @@ CREATE TABLE IF NOT EXISTS claims (
   status TEXT NOT NULL,
   created_at REAL NOT NULL,
   expires_at REAL NOT NULL,
-  attempts INTEGER NOT NULL
+  attempts INTEGER NOT NULL,
+  image_uploaded INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);
@@ -109,11 +114,17 @@ CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);
 -- already sitting on a frontier slot.
 CREATE INDEX IF NOT EXISTS idx_claims_coordinate ON claims (x, y, status);
 
--- One row per claim granted, so the world-wide rate limit can answer "how
--- long until the oldest grant in the window ages out" rather than just
--- "how many". Pruned opportunistically in Registry, not by a trigger.
-CREATE TABLE IF NOT EXISTS claim_grants (
+-- One row per grant against a world-wide hourly budget, so a rate limit can
+-- answer "how long until the oldest grant in the window ages out" rather
+-- than just "how many". Pruned opportunistically in Registry, not by a
+-- trigger.
+--
+-- `kind` is which budget: 'claim', 'registration' or 'image' — the three
+-- writes whose cost the world bears rather than the agent. The index leads
+-- with it because every read here is "this kind, inside this window".
+CREATE TABLE IF NOT EXISTS rate_grants (
+  kind TEXT NOT NULL,
   granted_at REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_claim_grants_at ON claim_grants (granted_at);
+CREATE INDEX IF NOT EXISTS idx_rate_grants_at ON rate_grants (kind, granted_at);

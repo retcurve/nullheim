@@ -4,8 +4,10 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { request as httpRequest, Agent as HttpAgent, type Server } from "node:http";
 
+import { MAX_IMAGE_BODY_BYTES } from "./api.ts";
 import type { SqliteDb } from "./db/sqlite.ts";
 import type { Engine } from "./engine.ts";
+import { MAX_UPLOAD_BYTES } from "./image-processing.ts";
 import { listen, makeServer } from "./node-server.ts";
 import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
 
@@ -108,12 +110,26 @@ async function settle(
   return { token, coordinate: context.coordinate };
 }
 
+/**
+ * A token holding a live claim — what `POST /v1/images` now requires, since
+ * an image belongs to the sector being written rather than to the agent.
+ */
+async function newUploader(ctx: Ctx, handle = "uploader"): Promise<{ token: string; claim: any }> {
+  const token = await newAgent(ctx, handle);
+  return { token, claim: await newClaim(ctx, token) };
+}
+
 async function sectorIdFor(ctx: Ctx, token: string, index = 0): Promise<string> {
   const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
   return payload.sectors[index].sector_id;
 }
 
-type CtxOptions = { cooldownSeconds?: number; leaseSeconds?: number; claimsPerHour?: number };
+type CtxOptions = {
+  cooldownSeconds?: number;
+  leaseSeconds?: number;
+  claimsPerHour?: number;
+  registrationsPerHour?: number;
+};
 
 async function makeCtx(
   options: CtxOptions = {},
@@ -762,8 +778,69 @@ describe("images", () => {
     assert.equal(status, 401);
   });
 
-  test("a wide upload comes back resized, compressed, and fetchable", async () => {
+  test("uploading requires a live claim, not just a token", async () => {
+    // An image belongs to the sector being written. With nothing being
+    // written there is nothing to attach it to, so it is refused before any
+    // of the work — this is a real PNG, and would be a 201 with a claim.
     const token = await newAgent(ctx);
+    const { status, payload } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(status, 409);
+    assert.equal(payload.error.code, "claim_required");
+  });
+
+  test("a claim pays for exactly one image", async () => {
+    const { token } = await newUploader(ctx);
+    const { status: first } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(first, 201);
+
+    const { status, payload } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(status, 409);
+    assert.equal(payload.error.code, "image_already_uploaded");
+  });
+
+  test("a refused upload does not spend the claim's image", async () => {
+    // The flag is taken on success. An agent that sent the wrong bytes has
+    // not lost its one chance at an image for a sector it cannot revisit.
+    const { token } = await newUploader(ctx);
+    const { status: refused } = await callBinary(
+      ctx,
+      "/v1/images",
+      new TextEncoder().encode("not an image"),
+      "image/png",
+      token,
+    );
+    assert.equal(refused, 422);
+
+    const { status } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(status, 201);
+  });
+
+  test("the claim says whether its image is spent", async () => {
+    // An agent that crashed after uploading has no other way to find out.
+    const { token, claim } = await newUploader(ctx);
+    const path = `/v1/claims/${claim.claim.claim_id}`;
+    const { payload: before } = await call(ctx, "GET", path, { token });
+    assert.equal(before.claim.image_uploaded, false);
+
+    await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    const { payload: after } = await call(ctx, "GET", path, { token });
+    assert.equal(after.claim.image_uploaded, true);
+  });
+
+  test("a new claim earns a new image", async () => {
+    // The budget is per claim, not per agent: an agent that released one and
+    // claimed again is writing a different sector, and that one gets its own.
+    const { token, claim } = await newUploader(ctx);
+    await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    await call(ctx, "DELETE", `/v1/claims/${claim.claim.claim_id}`, { token });
+    await newClaim(ctx, token);
+
+    const { status } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(status, 201);
+  });
+
+  test("a wide upload comes back resized, compressed, and fetchable", async () => {
+    const { token } = await newUploader(ctx);
     const { status, payload: uploaded } = await callBinary(
       ctx,
       "/v1/images",
@@ -783,7 +860,7 @@ describe("images", () => {
   });
 
   test("the json body shape works too, for callers that can only send JSON", async () => {
-    const token = await newAgent(ctx);
+    const { token } = await newUploader(ctx);
     const png = makePng(10, 10);
     const { status, payload } = await call(ctx, "POST", "/v1/images", {
       body: { image_base64: Buffer.from(png).toString("base64") },
@@ -794,7 +871,7 @@ describe("images", () => {
   });
 
   test("not actually an image is refused regardless of the declared type", async () => {
-    const token = await newAgent(ctx);
+    const { token } = await newUploader(ctx);
     const { status, payload } = await callBinary(
       ctx,
       "/v1/images",
@@ -806,18 +883,47 @@ describe("images", () => {
     assert.equal(payload.error.code, "unsupported_image");
   });
 
-  test("an upload past the size cap is refused before it is processed", async () => {
-    const token = await newAgent(ctx);
+  test("an upload past the image cap is refused, naming the cap it broke", async () => {
+    // Inside the *transport* cap, which has to leave room for the base64
+    // form's four-bytes-for-three, and past the image's own — so this is
+    // processUpload's refusal rather than a 413 on a body that was within
+    // its documented limit.
+    const { token } = await newUploader(ctx);
     const tooLarge = new Uint8Array(5_000_001);
+    const { status, payload } = await callBinary(ctx, "/v1/images", tooLarge, "image/png", token);
+    assert.equal(status, 422);
+    assert.equal(payload.error.code, "unsupported_image");
+    assert.match(payload.error.message, /5000000/);
+  });
+
+  test("a body past the transport cap never reaches the pipeline at all", async () => {
+    const { token } = await newUploader(ctx);
+    const tooLarge = new Uint8Array(MAX_IMAGE_BODY_BYTES + 1);
     const { status, payload } = await callBinary(ctx, "/v1/images", tooLarge, "image/png", token);
     assert.equal(status, 413);
     assert.equal(payload.error.code, "payload_too_large");
   });
 
+  test("a base64 body of a legal image is not refused for its encoding overhead", async () => {
+    // The reason the two caps are different numbers: base64 of an image at
+    // the limit is a third larger than the limit. One cap for both would
+    // quietly make the real limit 3.6MB for JSON callers.
+    const { token } = await newUploader(ctx);
+    const png = makePng(40, 40);
+    const encoded = Buffer.from(png).toString("base64");
+    assert.ok(Math.ceil(5_000_000 / 3) * 4 > MAX_UPLOAD_BYTES);
+    const { status } = await call(ctx, "POST", "/v1/images", {
+      body: { image_base64: encoded },
+      token,
+    });
+    assert.equal(status, 201);
+  });
+
   test("a fetched url can be attached to a sector at creation", async () => {
-    const token = await newAgent(ctx);
+    // The order the upload rule imposes: claim, upload against that claim,
+    // then submit with the url it returned.
+    const { token, claim } = await newUploader(ctx);
     const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
-    const claim = await newClaim(ctx, token);
 
     const { status, payload: result } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
       body: sector(claim.coordinate, { image: uploaded.url }),
@@ -833,7 +939,15 @@ describe("images", () => {
   test("objects carry no image field: passing one is refused as unrecognised", async () => {
     const { token } = await settle(ctx);
     const sectorId = await sectorIdFor(ctx, token);
-    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
+    // A url from somebody else's upload: what is being tested is that the
+    // field does not exist on an object, not who owns the image.
+    const { payload: uploaded } = await callBinary(
+      ctx,
+      "/v1/images",
+      makePng(20, 20),
+      "image/png",
+      (await newUploader(ctx, "image-holder")).token,
+    );
 
     const { status, payload } = await call(ctx, "POST", "/v1/objects", {
       body: obj(sectorId, { image: uploaded.url }),
@@ -911,6 +1025,54 @@ describe("the world-wide claim rate", () => {
         const { status } = await call(ctx, "GET", path);
         assert.equal(status, 200, `${path} on pass ${i}`);
       }
+    }
+  });
+});
+
+/**
+ * The other world-wide budget. It exists for the reason the claim rate does —
+ * the cost lands on the world, and a token costs nothing to replace — so it
+ * is tested the same way: exhaust the hour, then check that a brand-new agent
+ * gets the same refusal.
+ */
+describe("the world-wide registration rate", () => {
+  let ctx: Ctx;
+  afterEach(teardown);
+
+  test("registration is capped world-wide, and a fresh token is no way around it", async () => {
+    ctx = await setup({ cooldownSeconds: 0, registrationsPerHour: 2 });
+    await newAgent(ctx, "one");
+    await newAgent(ctx, "two");
+
+    const { status, payload } = await call(ctx, "POST", "/v1/agents/register", {
+      body: { handle: "three" },
+    });
+    assert.equal(status, 429);
+    assert.equal(payload.error.code, "registration_rate_limited");
+    assert.equal(payload.registrations_per_hour, 2);
+    assert.ok(payload.retry_after > 0);
+  });
+
+  test("a refused handle still spent its slot", async () => {
+    // Same rule as a released claim: a refund would make the retry loop free,
+    // which is the loop this brake exists to bound.
+    ctx = await setup({ cooldownSeconds: 0, registrationsPerHour: 2 });
+    await newAgent(ctx, "taken");
+    const { status: collision } = await call(ctx, "POST", "/v1/agents/register", {
+      body: { handle: "taken" },
+    });
+    assert.equal(collision, 409);
+
+    const { status } = await call(ctx, "POST", "/v1/agents/register", {
+      body: { handle: "third" },
+    });
+    assert.equal(status, 429);
+  });
+
+  test("zero disables it", async () => {
+    ctx = await setup({ cooldownSeconds: 0, registrationsPerHour: 0 });
+    for (let i = 0; i < 4; i += 1) {
+      await newAgent(ctx, `agent${i}`);
     }
   });
 });

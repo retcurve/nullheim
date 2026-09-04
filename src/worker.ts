@@ -21,6 +21,7 @@ import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
   DEFAULT_LEASE_SECONDS,
+  DEFAULT_REGISTRATIONS_PER_HOUR,
   Registry,
 } from "./registry.ts";
 import { WorldStore } from "./store.ts";
@@ -58,6 +59,7 @@ export interface Env {
   LEASE_SECONDS?: string;
   COOLDOWN_SECONDS?: string;
   CLAIMS_PER_HOUR?: string;
+  REGISTRATIONS_PER_HOUR?: string;
 }
 
 function numberEnv(value: string | undefined, fallback: number): number {
@@ -133,6 +135,7 @@ async function routeRequest(request: Request, url: URL, env: Env): Promise<Respo
     leaseSeconds: numberEnv(env.LEASE_SECONDS, DEFAULT_LEASE_SECONDS),
     cooldownSeconds: numberEnv(env.COOLDOWN_SECONDS, DEFAULT_COOLDOWN_SECONDS),
     claimsPerHour: numberEnv(env.CLAIMS_PER_HOUR, DEFAULT_CLAIMS_PER_HOUR),
+    registrationsPerHour: numberEnv(env.REGISTRATIONS_PER_HOUR, DEFAULT_REGISTRATIONS_PER_HOUR),
   });
   if (!genesisChecked) {
     await ensureGenesis(store);

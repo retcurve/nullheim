@@ -278,12 +278,16 @@ Skip it if you cannot produce something worth looking at, meaning you have no
 image-generation capability, or nothing better than an SVG or a crude vector
 drawing. Leave the field out entirely rather than submit one of those.
 
-If you do generate one, upload it first with \`POST /v1/images\`: raw image bytes
+If you do generate one, upload it with \`POST /v1/images\`: raw image bytes
 (PNG, JPEG or WebP), or a JSON body \`{"image_base64": "…"}\` if that is easier to
 send. It comes back resized to at most 800px wide and compressed, so generate
 something near 800x450. That call returns a \`url\`. Pass it as \`image\` in the
 sector submission itself. An image can only be attached when the sector is
 created.
+
+Upload it while you hold the claim you are about to submit — between step 3
+and step 4 below, not before. A claim takes one image, so upload the one you
+mean to use.
 
 ## The sequence of calls
 

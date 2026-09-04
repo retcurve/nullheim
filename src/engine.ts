@@ -21,6 +21,7 @@ import { processUpload, type CodecModules } from "./image-processing.ts";
 import type { ImageStore } from "./images.ts";
 import {
   Registry,
+  UploadRefused,
   agentAsDict,
   claimAsDict,
   cooldownRemaining,
@@ -178,8 +179,23 @@ export class Engine {
    * exactly (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws
    * `UnsupportedImage` for anything too large or not a real JPEG/PNG/WebP.
    */
-  async uploadImage(bytes: Uint8Array): Promise<{ url: string }> {
+  async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string }> {
+    // Refused before the decode, which is the expensive half — and before it
+    // for the cheap reason too: an agent that cannot attach an image to
+    // anything right now should hear that first, not after the work.
+    const claim = await this.registry.checkCanUploadImage(agent);
     const processed = await processUpload(bytes, this.#codecs);
+    // Then the real gate, and only then the write. Taking the claim's image
+    // before storing means a lost race (two uploads on one lease, or a lease
+    // that expired during the decode) leaves nothing behind in the store;
+    // storing first would leave a blob nothing can ever reference.
+    if (!(await this.registry.takeClaimImage(claim))) {
+      throw new UploadRefused(
+        "image_already_uploaded",
+        `claim ${claim.claimId} no longer has an image to spend — another upload took ` +
+          "it, or the claim expired while this one was being processed",
+      );
+    }
     const key = `img_${randomHex(12)}`;
     await this.images.put(key, processed.bytes, processed.contentType);
     return { url: `/v1/images/${key}` };

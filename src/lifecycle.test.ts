@@ -12,7 +12,8 @@ import { openFsImages } from "./images/fs.ts";
 import { loadPrompts } from "./prompts.node.ts";
 import { seeded } from "./random.ts";
 import {
-  ClaimRateLimited,
+  RateKind,
+  RateLimited,
   ClaimStatus,
   HandleTaken,
   NotYet,
@@ -178,6 +179,27 @@ describe("leases", () => {
   });
 });
 
+describe("one claim at a time", () => {
+  test("two concurrent allocations for one agent produce one claim", async () => {
+    // Interleaving is real here, not theoretical: allocate() awaits several
+    // times before its insert, so both calls get past the "do you already
+    // hold one" read before either writes. Only the conditional insert can
+    // separate them — and everything downstream assumes it does, `POST
+    // /v1/images` most of all, which finds an upload's claim by asking for
+    // the agent's one open claim.
+    const { engine } = await makeEngine({ claimsPerHour: 0 });
+    const { agent } = await engine.register("racer");
+    const outcomes = await Promise.allSettled([engine.claim(agent), engine.claim(agent)]);
+
+    const granted = outcomes.filter((o) => o.status === "fulfilled");
+    assert.equal(granted.length, 1);
+    const refused = outcomes.find((o) => o.status === "rejected");
+    assert.ok(refused !== undefined);
+    assert.ok((refused as PromiseRejectedResult).reason instanceof SectorUnavailable);
+    assert.equal((refused as PromiseRejectedResult).reason.code, "claim_in_progress");
+  });
+});
+
 describe("the world-wide claim rate", () => {
   test("it refuses once the hour is full, and says how long", async () => {
     const { engine } = await makeEngine({ claimsPerHour: 2 });
@@ -188,7 +210,8 @@ describe("the world-wide claim rate", () => {
       await engine.claim((await engine.register("three")).agent);
       assert.fail("expected a refusal");
     } catch (exc) {
-      assert.ok(exc instanceof ClaimRateLimited);
+      assert.ok(exc instanceof RateLimited);
+      assert.equal(exc.kind, RateKind.CLAIM);
       // The wait points at the oldest grant ageing out of the window, so it is
       // the better part of an hour rather than a token back-off.
       assert.ok(exc.retryAfter > 3500 && exc.retryAfter <= 3600, String(exc.retryAfter));
@@ -201,7 +224,7 @@ describe("the world-wide claim rate", () => {
     await engine.claim((await engine.register("first")).agent);
     await assert.rejects(
       engine.claim((await engine.register("second")).agent),
-      ClaimRateLimited,
+      RateLimited,
     );
   });
 
