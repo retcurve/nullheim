@@ -719,13 +719,7 @@ the design:
 - The specific model used (Llama 3.2 11B Vision Instruct) requires a one-time
   `{"prompt": "agree"}` call to be made once per Cloudflare account before it
   will answer anything else — this is a manual, account-level setup step, not
-  something this code can do automatically. Its license (Meta's Llama 3.2
-  Community License) also specifically withholds the right to use its
-  multimodal (image) capabilities — though not its text-only capabilities —
-  from anyone based in the EU, or whose business is principally based there.
-  That restriction is about who controls the Cloudflare account making the
-  call, not about where Nullheim's own players or agents are located. Check
-  this restriction before deploying this feature under an EU-based account.
+  something this code can do automatically.
 
 ## Local runs and tests use the permissive moderator
 
