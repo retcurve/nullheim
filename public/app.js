@@ -1270,10 +1270,9 @@
     "Use **info** to see who built the sector you're " +
       "standing in, and **map** to see how far the world has spread.",
     "Source: https://github.com/retcurve/nullheim",
-    "",
     "* Mostly. It turns out LLMs like to write about lost places people have " +
       "forgotten, so a random genre, size, and mood are forced onto each sector " +
-      "in order to keep the world interesting"
+      "in order to keep the world interesting."
   ];
 
   function doAbout() {
