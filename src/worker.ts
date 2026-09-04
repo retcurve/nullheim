@@ -17,6 +17,7 @@ import { openR2 } from "./images/r2.ts";
 import { ENTER_CSP, handleFetchRequest } from "./api.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import type { CodecModules } from "./image-processing.ts";
+import { workersAiModerator } from "./moderation/workers-ai.ts";
 import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
@@ -40,6 +41,7 @@ const PROMPTS = { sector_architect: sectorArchitect, object_artisan: objectArtis
 // than letting each codec package fetch its own.
 import pngWasm from "../node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm";
 import jpegWasm from "../node_modules/@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm";
+import jpegEncodeWasm from "../node_modules/@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm";
 import resizeWasm from "../node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm";
 import webpDecodeWasm from "../node_modules/@jsquash/webp/codec/dec/webp_dec.wasm";
 import webpEncodeWasm from "../node_modules/@jsquash/webp/codec/enc/webp_enc.wasm";
@@ -47,6 +49,7 @@ import webpEncodeWasm from "../node_modules/@jsquash/webp/codec/enc/webp_enc.was
 const CODECS: CodecModules = {
   png: pngWasm,
   jpeg: jpegWasm,
+  jpegEncode: jpegEncodeWasm,
   resize: resizeWasm,
   webpDecode: webpDecodeWasm,
   webpEncode: webpEncodeWasm,
@@ -56,6 +59,7 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   IMAGES: R2Bucket;
+  AI: Ai;
   LEASE_SECONDS?: string;
   COOLDOWN_SECONDS?: string;
   CLAIMS_PER_HOUR?: string;
@@ -192,5 +196,9 @@ async function buildEngine(env: Env): Promise<Engine> {
     prompts: PROMPTS,
     images: openR2(env.IMAGES),
     codecs: CODECS,
+    // A plain wrapper closure, not `env.AI` passed straight through — see
+    // moderation/workers-ai.ts's module comment for why the two types are
+    // not asserted to be structurally interchangeable.
+    moderator: workersAiModerator({ run: (model, inputs) => env.AI.run(model, inputs) }),
   });
 }

@@ -19,6 +19,7 @@ import { ORIGIN, type Coordinate } from "./coords.ts";
 import type { ValidationError } from "./errors.ts";
 import { processUpload, type CodecModules } from "./image-processing.ts";
 import type { ImageStore } from "./images.ts";
+import type { Moderator } from "./moderation.ts";
 import {
   Registry,
   UploadRefused,
@@ -42,6 +43,7 @@ import {
   AlreadyBaked,
   WorldStore,
   bakedAsDict,
+  imageKeyFromUrl,
   interactionAsDict,
   now,
   objectAsDict,
@@ -176,6 +178,7 @@ export interface EngineOptions {
   prompts: PromptTemplates;
   images: ImageStore;
   codecs: CodecModules;
+  moderator: Moderator;
 }
 
 export class Engine {
@@ -184,6 +187,7 @@ export class Engine {
   readonly images: ImageStore;
   readonly #prompts: PromptTemplates;
   readonly #codecs: CodecModules;
+  readonly #moderator: Moderator;
 
   constructor(options: EngineOptions) {
     this.store = options.store;
@@ -191,13 +195,25 @@ export class Engine {
     this.images = options.images;
     this.#prompts = options.prompts;
     this.#codecs = options.codecs;
+    this.#moderator = options.moderator;
   }
 
   /**
-   * Resize, compress and store one uploaded image, returning the url a
-   * sector submission's own `image` field must then match
-   * exactly (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws
-   * `UnsupportedImage` for anything too large or not a real JPEG/PNG/WebP.
+   * Resize, compress, classify and store one uploaded image, returning the
+   * url a sector submission's own `image` field must then match exactly
+   * (see `schema.ts`'s `IMAGE_URL_PATTERN`). Throws `UnsupportedImage` for
+   * anything too large or not a real JPEG/PNG/WebP.
+   *
+   * Classification runs on `processed.classification` — a small copy built
+   * for the classifier, never the stored image — before the claim's image
+   * slot is spent. See `moderation.ts`'s module comment for why a
+   * classifier failure (a network error, not a verdict) must not cost an
+   * agent its one shot at an image the same way a malformed upload already
+   * doesn't.
+   * Whichever of the two verdicts comes back, the image is stored and the
+   * slot is spent exactly as it already was before moderation existed: only
+   * a `pending` verdict withholds the url's `image` from the player-facing
+   * reads (`readImage`, `sectorView`) until a human clears it.
    */
   async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string }> {
     // Refused before the decode, which is the expensive half — and before it
@@ -205,6 +221,10 @@ export class Engine {
     // anything right now should hear that first, not after the work.
     const claim = await this.registry.checkCanUploadImage(agent);
     const processed = await processUpload(bytes, this.#codecs);
+    const { verdict, score } = await this.#moderator.check(
+      processed.classification.bytes,
+      processed.classification.contentType,
+    );
     // Then the real gate, and only then the write. Taking the claim's image
     // before storing means a lost race (two uploads on one lease, or a lease
     // that expired during the decode) leaves nothing behind in the store;
@@ -218,7 +238,23 @@ export class Engine {
       );
     }
     await this.images.put(key, processed.bytes, processed.contentType);
+    await this.store.recordImage(key, claim.claimId, verdict === "clean" ? "published" : "pending", score);
     return { url: `/v1/images/${key}` };
+  }
+
+  /**
+   * A human refuses an image, whatever state it was in — including one a
+   * sector already shows, which is this world's only takedown path (see
+   * CLAUDE.md). The blob goes first and the record of it second, the same
+   * order `reapImages` uses and for the same reason: an interruption between
+   * them leaves a state naming a blob that is already gone, which the next
+   * attempt resolves for free (deleting an absent key is a no-op); clearing
+   * the record first would leave nothing telling a retry the blob still
+   * needs deleting.
+   */
+  async rejectImage(key: string): Promise<boolean> {
+    await this.images.delete(key);
+    return this.store.rejectImage(key);
   }
 
   /**
@@ -555,23 +591,32 @@ export class Engine {
    * object's `created_at` anywhere in the sector (objects come back
    * oldest-first from `objectsIn`, so the last one is the newest), or the
    * bake time itself when nothing has been added yet.
+   *
+   * A sector may bake referencing an image a human has not cleared yet (see
+   * `uploadImage`'s `pending` verdict) — this is what keeps that image out of
+   * a player's view until they do: the indexed lookup costs one query on a
+   * path that already makes several, which buys correctness on a row that
+   * can never be rewritten.
    */
   async sectorView(coordinate: Coordinate): Promise<Record<string, unknown> | null> {
     const baked = await this.store.get(coordinate);
     if (baked === null) {
       return null;
     }
-    const [exits, objects, creator] = await Promise.all([
+    const [exits, objects, creator, imagePublished] = await Promise.all([
       this.store.exitsFrom(coordinate),
       this.store.objectsIn(coordinate),
       this.registry.getAgent(baked.agentId),
+      baked.sector.image === null
+        ? Promise.resolve(true)
+        : this.store.imageIsPublished(imageKeyFromUrl(baked.sector.image)),
     ]);
     const children = objects.filter((o) => o.parentId === null);
     const lastObject = objects.at(-1);
     return {
       coordinate: coords.asList(coordinate),
       title: baked.sector.title,
-      image: baked.sector.image,
+      image: imagePublished ? baked.sector.image : null,
       description: baked.sector.longDescription,
       exits,
       things_you_can_see: children.map((o) => ({ object_id: o.objectId, title: o.title })),

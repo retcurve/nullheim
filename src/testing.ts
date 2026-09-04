@@ -17,6 +17,8 @@ import type { Coordinate } from "./coords.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import type { ValidationError } from "./errors.ts";
 import { openFsImages } from "./images/fs.ts";
+import type { Moderator } from "./moderation.ts";
+import { permissiveModerator } from "./moderation/permissive.ts";
 import { loadPrompts } from "./prompts.node.ts";
 import { seeded } from "./random.ts";
 import { Registry, type Agent } from "./registry.ts";
@@ -96,6 +98,7 @@ export async function makeEngine(
     claimsPerHour?: number;
     registrationsPerHour?: number;
     seed?: number;
+    moderator?: Moderator;
   } = {},
 ): Promise<TestWorld> {
   const db = openSqlite(":memory:");
@@ -115,6 +118,7 @@ export async function makeEngine(
     prompts: PROMPTS,
     images: openFsImages(null),
     codecs: CODECS,
+    moderator: options.moderator ?? permissiveModerator("clean"),
   });
   return { engine, db };
 }

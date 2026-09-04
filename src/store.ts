@@ -160,6 +160,42 @@ function rowToObject(row: ObjectRow): WorldObject {
   };
 }
 
+export type ImageModerationState = "published" | "pending" | "rejected";
+
+export interface ModeratedImage {
+  readonly imageKey: string;
+  readonly claimId: string;
+  readonly state: ImageModerationState;
+  readonly score: number | null;
+  readonly createdAt: number;
+  readonly reviewedAt: number | null;
+}
+
+interface ImageRow {
+  image_key: string;
+  claim_id: string;
+  state: ImageModerationState;
+  score: number | null;
+  created_at: number;
+  reviewed_at: number | null;
+}
+
+function rowToModeratedImage(row: ImageRow): ModeratedImage {
+  return {
+    imageKey: row.image_key,
+    claimId: row.claim_id,
+    state: row.state,
+    score: row.score,
+    createdAt: row.created_at,
+    reviewedAt: row.reviewed_at,
+  };
+}
+
+/** The bare key a `/v1/images/{key}` url was built from — the shape `images.image_key` and `claims.image_key` are both keyed by. */
+export function imageKeyFromUrl(url: string): string {
+  return url.slice(url.lastIndexOf("/") + 1);
+}
+
 interface InteractionRow {
   interaction_id: string;
   object_a_id: string;
@@ -232,6 +268,84 @@ export class WorldStore {
    */
   async imageIsReferenced(url: string): Promise<boolean> {
     return (await this.#db.first("SELECT 1 FROM sectors WHERE image = ? LIMIT 1", [url])) !== null;
+  }
+
+  // --- image moderation -----------------------------------------------------
+
+  /**
+   * Record a freshly uploaded image's verdict — `published` for clean,
+   * `pending` for unsure. Never `rejected`: nothing here writes that state
+   * automatically, only a human does, through `rejectImage` below. See
+   * `moderation.ts`'s module comment for why there is no automated third
+   * verdict that skips storing the image at all.
+   */
+  async recordImage(
+    key: string,
+    claimId: string,
+    state: "published" | "pending",
+    score: number | null,
+  ): Promise<void> {
+    await this.#db.run(
+      "INSERT INTO images (image_key, claim_id, state, score, created_at) VALUES (?, ?, ?, ?, ?)",
+      [key, claimId, state, score, now()],
+    );
+  }
+
+  /**
+   * Whether a stored image may be served. A missing row is treated as
+   * published: every upload since this table existed writes one in the same
+   * request that writes the blob, so a missing row only ever means an image
+   * that predates moderation — which was already public before this shipped,
+   * and 404ing it now would be a regression, not a safety improvement.
+   */
+  async imageIsPublished(key: string): Promise<boolean> {
+    const row = await this.#db.first<{ state: ImageModerationState }>(
+      "SELECT state FROM images WHERE image_key = ?",
+      [key],
+    );
+    return row === null || row.state === "published";
+  }
+
+  /** The review queue, oldest first — every state if `state` is omitted. */
+  async listImages(state?: ImageModerationState): Promise<ModeratedImage[]> {
+    const rows =
+      state === undefined
+        ? await this.#db.all<ImageRow>("SELECT * FROM images ORDER BY created_at ASC")
+        : await this.#db.all<ImageRow>(
+            "SELECT * FROM images WHERE state = ? ORDER BY created_at ASC",
+            [state],
+          );
+    return rows.map(rowToModeratedImage);
+  }
+
+  /** A human clears a `pending` image to show. False if it wasn't pending (including if there is no such image at all). */
+  async approveImage(key: string): Promise<boolean> {
+    const result = await this.#db.run(
+      "UPDATE images SET state = 'published', reviewed_at = ? WHERE image_key = ? AND state = 'pending'",
+      [now(), key],
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * A human refuses an image, whatever state it was in — including one a
+   * sector already shows. This is this world's only takedown path (see
+   * CLAUDE.md): both statements ride one `batch()` so a sector never ends up
+   * showing a url this table calls rejected, or vice versa. Returns false if
+   * there was no such image at all; the caller still owes an `ImageStore`
+   * delete either way, since a blob can exist with no row (one uploaded
+   * before this table did).
+   */
+  async rejectImage(key: string): Promise<boolean> {
+    const url = `/v1/images/${key}`;
+    const results = await this.#db.batch([
+      {
+        sql: "UPDATE images SET state = 'rejected', reviewed_at = ? WHERE image_key = ?",
+        params: [now(), key],
+      },
+      { sql: "UPDATE sectors SET image = NULL WHERE image = ?", params: [url] },
+    ]);
+    return results[0]!.changes > 0;
   }
 
   async bake(baked: BakedSector, claimId: string | null): Promise<void> {

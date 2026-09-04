@@ -22,12 +22,18 @@
  * enforce the resize cap and because a re-encode at a known quality is
  * cheaper to reason about than trusting whatever quality the upload was
  * encoded at.
+ *
+ * A third output, `classification`, is a second, smaller JPEG built from the
+ * same decode — for the moderation classifier, never for display. See
+ * `MAX_CLASSIFICATION_WIDTH`.
  */
 
 import { decode as decodePng } from "@jsquash/png";
 import { init as initPngDecode } from "@jsquash/png/decode.js";
 import decodeJpeg from "@jsquash/jpeg/decode.js";
 import { init as initJpegDecode } from "@jsquash/jpeg/decode.js";
+import encodeJpeg from "@jsquash/jpeg/encode.js";
+import { init as initJpegEncode } from "@jsquash/jpeg/encode.js";
 import decodeWebp from "@jsquash/webp/decode.js";
 import { init as initWebpDecode } from "@jsquash/webp/decode.js";
 import resizeImage, { initResize } from "@jsquash/resize";
@@ -57,10 +63,27 @@ export const MAX_OUTPUT_WIDTH = 800;
 
 const WEBP_QUALITY = 80;
 
+/**
+ * The width a second, separate copy is downscaled to for the moderation
+ * classifier (`Engine.uploadImage`) — never the stored image. Measured
+ * directly against Workers AI, 2026-09-04 (see CLAUDE.md's moderation
+ * entry): above this, cost scaled with the original image's resolution
+ * (image tokens, not the classifier's short answer); at and below it, cost
+ * flattened to the same ~8 neurons regardless of input size — the
+ * signature of hitting the model's own internal encoder size, past which
+ * further downscaling on this end is undone on the far end anyway. Recall
+ * on 3 known-unsafe test images held at this size with the validated
+ * prompt. Not pushed smaller: once cost has already flattened, shrinking
+ * further can only cost recall (a hate symbol, a weapon, gore occupying a
+ * small part of the frame) for no measured saving.
+ */
+export const MAX_CLASSIFICATION_WIDTH = 384;
+
 /** The five WASM modules this pipeline needs, compiled by whichever runtime is hosting it. */
 export interface CodecModules {
   readonly png: WebAssembly.Module;
   readonly jpeg: WebAssembly.Module;
+  readonly jpegEncode: WebAssembly.Module;
   readonly resize: WebAssembly.Module;
   readonly webpDecode: WebAssembly.Module;
   readonly webpEncode: WebAssembly.Module;
@@ -71,6 +94,16 @@ export interface ProcessedImage {
   readonly contentType: string;
   readonly width: number;
   readonly height: number;
+  /**
+   * A second, much smaller copy of the same decode, for the moderation
+   * classifier (`Engine.uploadImage`) rather than for display — see
+   * `MAX_CLASSIFICATION_WIDTH`. Always JPEG regardless of the upload's own
+   * format or the stored copy's WebP, because that is what was validated
+   * against Workers AI — see `moderation/workers-ai.ts`'s module comment.
+   * Built from the already-decoded, already-resized surface, so this never
+   * costs a second decode of the upload itself.
+   */
+  readonly classification: { readonly bytes: Uint8Array; readonly contentType: "image/jpeg" };
 }
 
 /** The upload is too large, or isn't really a JPEG, PNG or WebP regardless of its declared type. */
@@ -210,6 +243,7 @@ function ensureReady(codecs: CodecModules): Promise<void> {
     ready = (async () => {
       await initPngDecode(codecs.png);
       await initJpegDecode(codecs.jpeg);
+      await initJpegEncode(codecs.jpegEncode);
       await initWebpDecode(codecs.webpDecode);
       await initResize(codecs.resize);
       webpModule = initEmscriptenModule(webpEncoderFactory, codecs.webpEncode);
@@ -281,10 +315,26 @@ export async function processUpload(
     throw new Error("webp encoding failed");
   }
 
+  // A second, smaller resize of the same already-decoded surface, purely for
+  // the moderation classifier — see `MAX_CLASSIFICATION_WIDTH` and
+  // `ProcessedImage.classification`. JPEG (unlike WebP above) needs no
+  // bypass of its own package `encode()`: MozJPEG has no SIMD-variant
+  // question to dodge.
+  const classificationScale = Math.min(1, MAX_CLASSIFICATION_WIDTH / resized.width);
+  const classificationTarget =
+    classificationScale < 1
+      ? await resizeImage(resized, {
+          width: Math.max(1, Math.round(resized.width * classificationScale)),
+          height: Math.max(1, Math.round(resized.height * classificationScale)),
+        })
+      : resized;
+  const classificationBytes = new Uint8Array(await encodeJpeg(classificationTarget));
+
   return {
     bytes: new Uint8Array(encoded.buffer, encoded.byteOffset, encoded.byteLength),
     contentType: "image/webp",
     width: resized.width,
     height: resized.height,
+    classification: { bytes: classificationBytes, contentType: "image/jpeg" },
   };
 }

@@ -7,10 +7,15 @@
  * is close to a pass-through and `src/images/fs.ts` is the adapter doing
  * real work for local dev, writing to a plain directory on disk.
  *
- * There is no metadata table alongside this the way `sectors`/`objects`
- * have one: an image is immutable, content-addressed data with nothing to
- * query by, and R2 (and its fs stand-in) already carries the content type
- * as metadata on the object itself.
+ * There is no metadata table alongside *this* interface the way
+ * `sectors`/`objects` have one — R2 (and its fs stand-in) already carries the
+ * content type as metadata on the object itself, and nothing here needs more
+ * than put/get/delete by key. That is no longer the whole story for an image,
+ * though: `images` (the SQL table, `WorldStore`'s moderation methods) exists
+ * precisely because moderation gave one something to query by — `state`,
+ * `score`, who reviewed it and when — that this blob store was never meant
+ * to carry. The two are deliberately separate: this file answers "what are
+ * the bytes", the other answers "may they be shown".
  */
 
 export interface StoredImage {

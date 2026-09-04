@@ -839,6 +839,11 @@ class RequestHandler {
    * Unauthenticated, like every other player-facing read — never rate
    * limited.
    *
+   * A `pending` or `rejected` image 404s — never 403, so this endpoint can't
+   * be used to confirm an image exists at all before a human has cleared it.
+   * `imageIsPublished` treats a missing moderation row as published (see its
+   * own comment), so this is a no-op for every image older than moderation.
+   *
    * The reference lookup costs one indexed query, and only on a cache miss:
    * once an image is referenced the answer is `immutable` for a year, so a
    * player walking the world pays for it once per image at most. A url a
@@ -846,6 +851,9 @@ class RequestHandler {
    * thing that publishes one — so in practice this is the cached path.
    */
   async readImage(id: string): Promise<RouteResult> {
+    if (!(await this.engine.store.imageIsPublished(id))) {
+      throw new ApiError(404, "no_such_image", `no image ${id}`);
+    }
     const stored = await this.engine.images.get(id);
     if (stored === null) {
       throw new ApiError(404, "no_such_image", `no image ${id}`);

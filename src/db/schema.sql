@@ -139,3 +139,16 @@ CREATE TABLE IF NOT EXISTS rate_grants (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_grants_at ON rate_grants (kind, granted_at);
+
+-- What a classifier decided about an upload, before a human might override
+-- it. See migrations/0009_image_moderation.sql for the full reasoning.
+CREATE TABLE IF NOT EXISTS images (
+  image_key TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL,
+  state TEXT NOT NULL,          -- 'published' | 'pending' | 'rejected'
+  score REAL,
+  created_at REAL NOT NULL,
+  reviewed_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_images_state ON images (state, created_at);

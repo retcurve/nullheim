@@ -45,6 +45,12 @@ migrations_dir = "migrations"
 binding = "IMAGES"
 bucket_name = "nullheim-images"
 
+# Image moderation's real classifier — see src/moderation/workers-ai.ts.
+# Account-wide, unlike D1/R2 above, so there is no resource name or id to
+# give it.
+[ai]
+binding = "AI"
+
 # Everything but COOLDOWN_SECONDS matches registry.ts's own defaults
 # (registry.ts:DEFAULT_*); override per environment with `wrangler secret` or
 # the dashboard, not by editing these. COOLDOWN_SECONDS is a deliberate
@@ -146,6 +152,9 @@ migrations_dir = "migrations"
 [[env.preview.r2_buckets]]
 binding = "IMAGES"
 bucket_name = "nullheim-images"
+
+[env.preview.ai]
+binding = "AI"
 
 # COOLDOWN_SECONDS stays 0 here deliberately — this environment is what both
 # branch previews and local `wrangler dev` run against, and neither is for

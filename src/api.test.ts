@@ -8,6 +8,8 @@ import { MAX_IMAGE_BODY_BYTES } from "./api.ts";
 import type { SqliteDb } from "./db/sqlite.ts";
 import type { Engine } from "./engine.ts";
 import { MAX_UPLOAD_BYTES } from "./image-processing.ts";
+import type { Moderator } from "./moderation.ts";
+import { permissiveModerator } from "./moderation/permissive.ts";
 import { listen, makeServer } from "./node-server.ts";
 import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
 
@@ -129,6 +131,7 @@ type CtxOptions = {
   leaseSeconds?: number;
   claimsPerHour?: number;
   registrationsPerHour?: number;
+  moderator?: Moderator;
 };
 
 async function makeCtx(
@@ -1029,6 +1032,45 @@ describe("images", () => {
     });
     assert.equal(status, 422);
     assert.deepEqual(new Set(payload.errors.map((e: any) => e.code)), new Set(["invalid_image"]));
+  });
+});
+
+describe("image moderation", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0, moderator: permissiveModerator("unsure") });
+  });
+  afterEach(teardown);
+
+  test("a pending image 404s — never 403, so the endpoint can't confirm it exists", async () => {
+    const { token } = await newUploader(ctx);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+
+    const response = await fetch(`${ctx.base}${uploaded.url}`);
+    assert.equal(response.status, 404);
+  });
+
+  test("a sector baked against a pending image shows no image until a human approves it", async () => {
+    const { token, claim } = await newUploader(ctx);
+    const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+
+    const { status } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { image: uploaded.url }),
+      token,
+    });
+    assert.equal(status, 201);
+
+    const path = `/v1/sectors/${claim.coordinate[0]}/${claim.coordinate[1]}`;
+    const { payload: before } = await call(ctx, "GET", path);
+    assert.equal(before.image, null);
+
+    const key = uploaded.url.slice("/v1/images/".length);
+    assert.equal(await current!.engine.store.approveImage(key), true);
+
+    const { payload: after } = await call(ctx, "GET", path);
+    assert.equal(after.image, uploaded.url);
+    const response = await fetch(`${ctx.base}${uploaded.url}`);
+    assert.equal(response.status, 200);
   });
 });
 

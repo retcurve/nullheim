@@ -24,6 +24,7 @@ export function loadCodecs(): CodecModules {
   return {
     png: compile("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
     jpeg: compile("@jsquash/jpeg/codec/dec/mozjpeg_dec.wasm"),
+    jpegEncode: compile("@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm"),
     resize: compile("@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm"),
     webpDecode: compile("@jsquash/webp/codec/dec/webp_dec.wasm"),
     webpEncode: compile("@jsquash/webp/codec/enc/webp_enc.wasm"),

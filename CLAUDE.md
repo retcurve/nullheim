@@ -528,6 +528,107 @@ Guard: `src/lifecycle.test.ts`'s `"reaping abandoned images"`. The one that
 matters is `"an image a sector actually shows is never reclaimed"`, checked
 by deleting the `NOT EXISTS` clause and watching it fail.
 
+**An upload is classified before it is ever shown, and there are only two
+automated verdicts, never three.** `Moderator.check()` (`src/moderation.ts`)
+answers `clean` (published immediately) or `unsure` (stored, `pending`, held
+for a human — `nullheim moderate`). There is no automated `reject`. That was
+the original design — a confidently-bad image refused outright, without
+spending the claim's one image slot, so an agent could retry — and it was
+dropped before being built: refusing without spending the slot means one
+claim can try image after image inside its lease, probing for whatever the
+classifier happens to wave through, free of charge. Every classified image is
+now stored and spends the slot exactly as an upload already did before
+moderation existed, whichever of the two verdicts it gets. `rejected` still
+exists as a *state* (`images.state`), reachable only through a human's own
+`nullheim moderate --reject` — which is also this world's only takedown
+path, working on an already-`published` image too (clearing the blob and the
+sector field that showed it, `WorldStore.rejectImage`).
+
+The classifier itself is a vision-language chat model behind Cloudflare
+Workers AI (`src/moderation/workers-ai.ts`), prompted to answer CLEAN or
+UNSURE directly rather than a calibrated score. This was chosen after
+checking Workers AI's actual catalogue rather than assuming one existed:
+there is no purpose-built image-moderation classifier there (checked
+2026-09-04) — every vision-capable model is a general chat model. The
+alternative weighed was Google Cloud Vision's SafeSearch Detection, a
+dedicated classifier with real per-category likelihoods, at the cost of a new
+external dependency (a GCP secret, an outbound fetch from the Worker, another
+vendor's uptime in the request path). Staying on Cloudflare — one `[ai]`
+binding, no new secret — was chosen over the proven-but-external option.
+
+The model, prompt and image size were checked directly against a live
+account (2026-09-04) — not assumed — and each round of testing changed the
+design:
+
+- The first prompt asked for one word ("CLEAN if ordinary... UNSURE if it
+  contains anything concerning") with no named categories. Against 5 real
+  test images (3 unsafe, 2 safe) it caught 1 of the 3 unsafe ones. A vague
+  prompt on a general chat model gets vague compliance the same way vague
+  content guidance in the *sector* prompts produced monocultures — see this
+  file's own history above. The fix was naming eight concrete categories
+  (nudity, graphic violence/gore, weapons, drugs, hate symbols, self-harm,
+  sexual content involving a minor, other disturbing content) and requiring
+  the model to check each one and list which apply before giving a verdict —
+  full recall on the same 5 images afterward. The verdict is parsed from the
+  reply's *last* line for this reason: forcing an immediate one-word answer
+  is what produced the missed recall in the first place.
+- The classifier bills in Workers AI's "neuron" unit, and cost scaled with
+  the *input image's* resolution, not with the length of its answer,
+  ranging from ~8 neurons (small images) up to the low 30s (large ones) at
+  full upload resolution. Capping the classifier's own input at
+  `MAX_CLASSIFICATION_WIDTH` (384px, `image-processing.ts`) — a second,
+  separate downscale of the same decode from the one that produces the
+  stored image — flattened cost to ~8 neurons regardless of the original's
+  size, which is the signature of hitting the model's own internal encoder
+  size: below it, further downscaling on this end is undone on the far end
+  anyway. Recall on the same 5 test images held at 384px. Not pushed
+  smaller, since nothing was left to gain on cost and a hate symbol, weapon,
+  or small area of gore can shrink below recognisable detail before it's
+  visually obvious to a human eye skimming the same image.
+- The model (Llama 3.2 11B Vision Instruct) requires a one-time
+  `{"prompt": "agree"}` call per Cloudflare account before it answers
+  anything else — an account-level step, not something this code can do on
+  an account's behalf. Its license (Meta's Llama 3.2 Community License)
+  also withholds the *multimodal* grant specifically — not the text-only
+  grant — from anyone domiciled in, or with a principal place of business
+  in, the EU. That is about who is calling the model (whichever Cloudflare
+  account holds the `[ai]` binding), not about Nullheim's players or
+  agents elsewhere — check it applies before deploying this to an
+  EU-domiciled account.
+
+`permissiveModerator()` (`src/moderation/permissive.ts`) is what every local
+and test run actually uses; it is configurable to a fixed verdict so a test
+can exercise the `pending` path without a network call.
+
+An image's moderation state lives in its own table (`images`, migration
+0009), not folded into `claims`. `claims.image_key` stays the reaper's own
+source of truth — `Registry.reapableImages` is unchanged — because the two
+tables answer different questions: the reaper asks "can this claim's key
+still lead anywhere?", moderation asks "is this key fit to show?" A missing
+`images` row is treated as published (`WorldStore.imageIsPublished`), which
+is what keeps every image uploaded before this shipped visible without a
+backfill: real deployments before this feature reach production always write
+a row in the same request that writes the blob, so a missing row only ever
+means an image older than moderation itself.
+
+Both reads that decide whether an image may be shown check this table:
+`GET /v1/images/{id}` 404s (never 403 — the same reasoning as everywhere
+else an unauthenticated read must not leak existence) a `pending` or
+`rejected` key, and `sectorView` omits a sector's `image` field until it is
+published, at the cost of one indexed lookup on a player-facing path that
+already makes several. A sector may bake referencing an image no human has
+cleared yet — nothing in `bake()` changed to prevent that — which is exactly
+why the read side has to check on every fetch rather than once at bake time.
+Guard: `src/api.test.ts`'s `"image moderation"` describe block, both cases
+checked by deleting their guard and watching the test fail.
+
+The existing reaper needed no change at all: `reapableImages`'s `NOT EXISTS`
+over `sectors.image` already protects a *pending* reference exactly as it
+protects a published one, since it has never asked what state an image is
+in, only whether a sector's `image` column names it.
+Guard: `src/lifecycle.test.ts`'s `"a pending image referenced by a baked
+sector is never reaped"`.
+
 **Agents persist the same way sectors and objects do, but as a full row
 `UPSERT` on every change rather than a single `INSERT`.** A sector or object is
 written exactly once, because it never changes again; an agent does — a new

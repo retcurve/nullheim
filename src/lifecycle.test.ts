@@ -9,6 +9,7 @@ import * as coords from "./coords.ts";
 import { ORIGIN, coord } from "./coords.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import { openFsImages } from "./images/fs.ts";
+import { permissiveModerator } from "./moderation/permissive.ts";
 import { loadPrompts } from "./prompts.node.ts";
 import { seeded } from "./random.ts";
 import {
@@ -115,7 +116,7 @@ describe("the frontier", () => {
       const store = new WorldStore(db);
       const registry = new Registry(db, { rng: seeded(seed) });
       await ensureGenesis(store);
-      const engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
+      const engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
       await build(engine, [1, 0]);
       await build(engine, [2, 0]);
       await build(engine, [0, 1]);
@@ -322,6 +323,87 @@ describe("reaping abandoned images", () => {
 
     assert.equal((await engine.registry.getClaim(claim.claimId))?.imageKey, null);
     assert.deepEqual(await engine.reapImages(), { deleted: 0 });
+  });
+});
+
+/**
+ * Two verdicts only — `clean` publishes on the spot, `unsure` stores the
+ * image and waits for a human — and no automated `rejected`: see
+ * moderation.ts's module comment for why. `rejected` is reachable only
+ * through a human's own takedown, `Engine.rejectImage`.
+ */
+describe("image moderation", () => {
+  async function uploaded(engine: Engine, handle: string) {
+    const { agent } = await engine.register(handle);
+    const claim = await engine.claim(agent);
+    const { url } = await engine.uploadImage(agent, makePng(8, 8));
+    return { agent, claim, url, key: url.slice("/v1/images/".length) };
+  }
+
+  test("a clean verdict publishes the image immediately", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("clean") });
+    const { key } = await uploaded(engine, "clean-uploader");
+    assert.equal(await engine.store.imageIsPublished(key), true);
+  });
+
+  test("an unsure verdict stores the image but withholds it", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("unsure") });
+    const { key } = await uploaded(engine, "unsure-uploader");
+    assert.notEqual(await engine.images.get(key), null);
+    assert.equal(await engine.store.imageIsPublished(key), false);
+  });
+
+  test("approving a pending image publishes it", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("unsure") });
+    const { key } = await uploaded(engine, "reviewed");
+    assert.equal(await engine.store.approveImage(key), true);
+    assert.equal(await engine.store.imageIsPublished(key), true);
+  });
+
+  test("approving an image that is not pending does nothing", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("clean") });
+    const { key } = await uploaded(engine, "already-clean");
+    assert.equal(await engine.store.approveImage(key), false);
+  });
+
+  test("a pending image referenced by a baked sector is never reaped", async () => {
+    // The safety rule in reapableImages is unchanged by moderation — a
+    // sector reference is still what protects an image — this pins that a
+    // *pending* reference protects it exactly as a published one does.
+    const { engine } = await makeEngine({ moderator: permissiveModerator("unsure") });
+    const { agent, claim, url, key } = await uploaded(engine, "pending-builder");
+    const { errors } = await engine.submitSector(
+      agent,
+      claim,
+      sector(coords.asList(claim.coordinate) as [number, number], { image: url }),
+    );
+    assert.deepEqual(errors, []);
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 0 });
+    assert.notEqual(await engine.images.get(key), null);
+  });
+
+  test("rejecting an image a sector already shows takes it down", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("clean") });
+    const { agent, claim, url, key } = await uploaded(engine, "takedown-target");
+    const { errors } = await engine.submitSector(
+      agent,
+      claim,
+      sector(coords.asList(claim.coordinate) as [number, number], { image: url }),
+    );
+    assert.deepEqual(errors, []);
+    assert.equal((await engine.store.get(claim.coordinate))?.sector.image, url);
+
+    assert.equal(await engine.rejectImage(key), true);
+
+    assert.equal(await engine.images.get(key), null);
+    assert.equal((await engine.store.get(claim.coordinate))?.sector.image, null);
+    assert.equal(await engine.store.imageIsPublished(key), false);
+  });
+
+  test("rejecting an image that does not exist is reported honestly", async () => {
+    const { engine } = await makeEngine();
+    assert.equal(await engine.rejectImage("nonexistent"), false);
   });
 });
 
@@ -797,7 +879,7 @@ describe("agents survive a restart", () => {
     let store = new WorldStore(db);
     let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     await ensureGenesis(store);
-    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
+    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
     const { agent, token } = await engine.register("persisto");
     await found(engine, agent);
     await furnish(engine, agent, 3);
@@ -807,7 +889,7 @@ describe("agents survive a restart", () => {
     // carries state across it.
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
-    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
+    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
     const revived = await engine.registry.authenticate(token);
     assert.notEqual(revived, null, "the token must still authenticate");
     assert.deepEqual(revived!.coordinates, agent.coordinates);
@@ -827,14 +909,14 @@ describe("agents survive a restart", () => {
     let store = new WorldStore(db);
     let registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     await ensureGenesis(store);
-    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
+    let engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
     const { agent, token } = await engine.register("grinder");
     await found(engine, agent);
     await furnish(engine, agent, 5); // several separate saves of the same agent
 
     store = new WorldStore(db);
     registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
-    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS });
+    engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
     const revived = await engine.registry.authenticate(token);
     assert.equal(revived!.objectsCreated, 5);
     assert.equal((await engine.registry.stats()).agents, 1);

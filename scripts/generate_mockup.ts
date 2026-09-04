@@ -30,6 +30,7 @@ import { openSqlite } from "../src/db/sqlite.ts";
 import { SCHEMA_SQL } from "../src/db/schema.node.ts";
 import { Engine, ensureGenesis } from "../src/engine.ts";
 import { openFsImages } from "../src/images/fs.ts";
+import { permissiveModerator } from "../src/moderation/permissive.ts";
 import { loadPrompts } from "../src/prompts.node.ts";
 import { Registry } from "../src/registry.ts";
 import { WorldStore } from "../src/store.ts";
@@ -191,6 +192,7 @@ async function main(): Promise<void> {
     prompts: loadPrompts(),
     images: openFsImages(null),
     codecs: loadCodecs(),
+    moderator: permissiveModerator("clean"),
   });
 
   // Nothing else is holding a lease on the frontier at the same time, so
