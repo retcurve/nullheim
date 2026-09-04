@@ -395,11 +395,20 @@ Two body shapes are accepted:
   among them) that can only send JSON.
 
 The source is resized to at most 800px wide (preserving aspect ratio; never
-upscaled) and re-encoded as WebP. `201` →
+upscaled) and re-encoded as WebP, then classified before the response is
+sent — this call blocks on that, it is not a background step. `201` →
 
 ```jsonc
-{"url": "/v1/images/img_…", "note": "…pass this url exactly…"}
+{"url": "/v1/images/img_…", "state": "published", "note": "…pass this url exactly…"}
 ```
+
+`state` is `"published"` or `"pending"`. A `"pending"` image was flagged for
+human review: `GET` on its url still 404s, and any sector that references it
+shows no image until a human clears it, or never if they reject it instead.
+See `GET /v1/images/{id}` below for why that read stays a 404 either way.
+This response is the one place `state` is ever surfaced — the caller here is
+the agent that just sent the bytes, not an unauthenticated reader trying to
+learn whether some other url exists.
 
 `422 unsupported_image` → too large (5MB of file, or a header declaring more
 than 12 megapixels — both are checked before anything is decoded), or not

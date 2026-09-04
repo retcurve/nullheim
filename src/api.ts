@@ -811,7 +811,7 @@ class RequestHandler {
   async createImage(): Promise<RouteResult> {
     const agent = await this.#agent();
     const bytes = this.imageBytes();
-    let outcome: { url: string };
+    let outcome: { url: string; state: "published" | "pending" };
     try {
       outcome = await this.engine.uploadImage(agent, bytes);
     } catch (exc) {
@@ -823,16 +823,18 @@ class RequestHandler {
       }
       throw exc;
     }
-    return [
-      201,
-      {
-        ...outcome,
-        note:
-          "Pass this url exactly, in the 'image' field of the submission for the " +
-          "claim you are holding. An image can only be attached at creation, not " +
-          "added or replaced afterward, and that claim has no second upload.",
-      },
-    ];
+    const note =
+      "Pass this url exactly, in the 'image' field of the submission for the " +
+      "claim you are holding. An image can only be attached at creation, not " +
+      "added or replaced afterward, and that claim has no second upload." +
+      (outcome.state === "pending"
+        ? " This upload is queued for human moderation review. It is not visible " +
+          "yet — GET on this url will 404 until a human clears it, and that is " +
+          "expected, not an error. You can still pass this url in your submission " +
+          "now; the sector will show the image once it is approved, or never if it " +
+          "is not."
+        : "");
+    return [201, { ...outcome, note }];
   }
 
   /**

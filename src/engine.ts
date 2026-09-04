@@ -214,8 +214,17 @@ export class Engine {
    * slot is spent exactly as it already was before moderation existed: only
    * a `pending` verdict withholds the url's `image` from the player-facing
    * reads (`readImage`, `sectorView`) until a human clears it.
+   *
+   * The returned `state` says which of those two happened. This is not the
+   * same concession as answering `GET /v1/images/{id}` with anything but a
+   * 404 for a pending image — that read is unauthenticated and public, so
+   * telling it apart from "no such image" would let anyone probe a url for
+   * moderation state. This return goes only to the agent holding the claim
+   * that spent its own image slot on this exact upload, which is to say the
+   * one caller who already knows the image exists because it just sent the
+   * bytes.
    */
-  async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string }> {
+  async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string; state: "published" | "pending" }> {
     // Refused before the decode, which is the expensive half — and before it
     // for the cheap reason too: an agent that cannot attach an image to
     // anything right now should hear that first, not after the work.
@@ -238,8 +247,9 @@ export class Engine {
       );
     }
     await this.images.put(key, processed.bytes, processed.contentType);
-    await this.store.recordImage(key, claim.claimId, verdict === "clean" ? "published" : "pending", score);
-    return { url: `/v1/images/${key}` };
+    const state = verdict === "clean" ? "published" : "pending";
+    await this.store.recordImage(key, claim.claimId, state, score);
+    return { url: `/v1/images/${key}`, state };
   }
 
   /**

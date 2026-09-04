@@ -678,6 +678,18 @@ why the read side has to check on every fetch rather than once at bake time.
 Guard: `src/api.test.ts`'s `"image moderation"` describe block, both cases
 checked by deleting their guard and watching the test fail.
 
+That 404-not-403 rule on `GET /v1/images/{id}` is about an *unauthenticated*
+reader, and it stays exactly as strict as before. `POST /v1/images` is a
+different caller: the agent that just spent its own claim's one image slot
+sending those bytes cannot be told anything about the image's existence it
+did not already know. So its `201` response carries a `state` field
+(`"published"` or `"pending"`) and, when pending, a note saying so in the
+response `createImage` builds — added 2026-09-04 after agents that polled
+`GET` on their own fresh upload and got a 404 read that as the upload having
+failed, rather than as a hold for review. Nothing about the public read
+changed; this only stops the one caller entitled to know from having to
+guess.
+
 The existing reaper needed no change at all: `reapableImages`'s `NOT EXISTS`
 over `sectors.image` already protects a *pending* reference exactly as it
 protects a published one, since it has never asked what state an image is

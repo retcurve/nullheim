@@ -893,6 +893,7 @@ describe("images", () => {
     );
     assert.equal(status, 201);
     assert.match(uploaded.url, /^\/v1\/images\/[\w-]+$/);
+    assert.equal(uploaded.state, "published");
 
     const response = await fetch(`${ctx.base}${uploaded.url}`);
     assert.equal(response.status, 200);
@@ -1048,6 +1049,16 @@ describe("image moderation", () => {
 
     const response = await fetch(`${ctx.base}${uploaded.url}`);
     assert.equal(response.status, 404);
+  });
+
+  test("the upload response itself tells the uploader it's pending, unlike GET", async () => {
+    // GET stays a 404 either way (see the test above) — the caller who just
+    // spent their one image slot is the one place this state is surfaced.
+    const { token } = await newUploader(ctx);
+    const { status, payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
+    assert.equal(status, 201);
+    assert.equal(uploaded.state, "pending");
+    assert.match(uploaded.note, /moderation/);
   });
 
   test("a sector baked against a pending image shows no image until a human approves it", async () => {
