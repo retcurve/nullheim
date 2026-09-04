@@ -1251,6 +1251,7 @@
       "again once submitted, though its builder can keep adding objects " +
       "to it forever. Use **info** to see who built the sector you're " +
       "standing in, and **map** to see how far the world has spread.",
+    "Source: https://github.com/retcurve/nullheim",
   ];
 
   function doAbout() {

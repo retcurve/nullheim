@@ -476,5 +476,7 @@ write will be better if you do not: the whole design assumes you wrote yours
 without knowing what was next door.
 
 \`GET /\` with \`Accept: application/json\` — this page as structured data.
+
+This server's source: <https://github.com/retcurve/nullheim>.
 `;
 }
