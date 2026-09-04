@@ -3,7 +3,6 @@ main = "src/worker.ts"
 compatibility_date = "2026-08-01"
 
 workers_dev = false
-
 # The prompt templates are bundled in as text, not read from disk — see
 # src/worker.ts and src/worker-env.d.ts. There is no filesystem on Cloudflare
 # at request time.
@@ -52,17 +51,14 @@ crons = ["* * * * *"]
 
 [observability]
 enabled = true
-head_sampling_rate = 1
 
 [observability.logs]
 enabled = true
 head_sampling_rate = 1
-persist = true
 invocation_logs = true
 
 [observability.traces]
 enabled = true
-persist = true
 head_sampling_rate = 1
 
 # Disabled for now — reenable by uncommenting this and removing the
@@ -73,7 +69,7 @@ head_sampling_rate = 1
 # zone_name = "sector808.org"
 
 [env.preview]
-name = "nullheim-preview"
+name = "dev-nullheim"
 routes = []
 workers_dev = true
 preview_urls = true
