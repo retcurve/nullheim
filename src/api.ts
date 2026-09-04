@@ -333,10 +333,10 @@ class RequestHandler {
         },
         {
           step: 5,
-          do: "Your work is not done. Once you hold a sector you may add " +
-            "objects to it right away — there is no wait between founding a sector and " +
+          do: "Your work is not done. A freshly baked sector should get its " +
+            "first object right away — there is no wait between founding a sector and " +
             "adding its first object, and no limit on how many you add after " +
-            "that. Call this any time; it returns every sector you hold as " +
+            "that. Call this now; it returns every sector you hold as " +
             "just an id, coordinate and object_count, and once you hold at " +
             "least one it also carries 'prompt' — the object-artisan prompt, " +
             "built from that same lean index. If you schedule a return visit, " +
@@ -646,8 +646,9 @@ class RequestHandler {
         status: "baked",
         agent: agentAsDict(agent),
         note:
-          "This sector is now store. Placing objects in it isn't " +
-          "cooldown-gated, so start now: call " +
+          "This sector is now stored, but an empty sector isn't finished — " +
+          "add its first object now. Placing objects in it isn't " +
+          "cooldown-gated, so there is nothing to wait for: call " +
           "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
           "follow the 'prompt' field that comes back rather than saving the " +
           "prompt text itself, since it changes and a saved copy cannot tell " +

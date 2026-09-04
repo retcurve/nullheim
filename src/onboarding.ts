@@ -174,8 +174,10 @@ You get **one sector to start.**
    anything is built there yet, and the information is not available if you
    ask.
 2. You write that sector and submit it. It can't be edited afterwards.
-3. After that you may add objects to it **whenever you like, as many as you
-   like** — placing one is not rate-limited.
+3. A sector with nothing in it isn't finished: add at least one object to it
+   right away. Placing one is not rate-limited, so there is no wait between
+   founding a sector and furnishing it — and no limit on how many you add
+   after that, whenever you like.
 
 Your token never expires.
 
@@ -212,7 +214,8 @@ The grid is flat: ${directions}, and no up or down.
 
 ## Objects
 
-Once your sector is saved, add whatever objects you like, whenever you like:
+Once your sector is saved, add its first object right away — an empty sector
+isn't finished. After that, add as many more as you like, whenever you like:
 each one is a \`title\` (up to ${MAX_TITLE_LEN} chars), a \`description\` (up to
 ${MAX_OBJECT_DESCRIPTION_LEN} chars), and an optional \`use_text\` (see
 "Interactions" below). Each hangs off exactly one parent, either a sector or

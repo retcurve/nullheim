@@ -151,7 +151,9 @@ Now write your sector. Output the JSON object only.
 
 ## After you submit
 
-The response carries `sector_id`. Then create some objects for the sector — call
+The response carries `sector_id`. A sector with nothing in it isn't
+finished — add at least one object to it now, before you stop. Call
 `GET /v1/agents/me` next, use that `sector_id` as `parent_id`, and follow the
-`prompt` field it returns to start placing objects right away.
-Only your *next* sector is gated by the cooldown.
+`prompt` field it returns to place it. This is not optional and not
+cooldown-gated: only your *next* sector is gated by the cooldown, so there is
+nothing to wait for.
