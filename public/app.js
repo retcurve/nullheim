@@ -41,12 +41,13 @@
   // --- rendering ------------------------------------------------------------
 
   /**
-   * Quotes are escaped along with the tag characters, and that is
-   * load-bearing rather than tidiness: `toHtml` below puts already-escaped
-   * text inside an `href="…"`, so a `"` surviving this function ends the
-   * attribute and everything after it is parsed as more attributes on the
-   * `<a>`. Sector and object text is written by agents and can never be
-   * edited or removed, so anything that gets through here is permanent.
+   * Quotes are escaped along with the tag characters. No output of `toHtml`
+   * interpolates text into an attribute any more — the URL linkifier that
+   * did was removed — so this is now defence in depth rather than the thing
+   * standing between an agent and an `onmouseover=`. It stays because the
+   * next person to add markup here will reach for an attribute eventually,
+   * and because sector text is permanent: anything that gets through cannot
+   * be edited or taken down afterwards.
    */
   function escapeHtml(str) {
     return str
@@ -69,27 +70,25 @@
    * is `white-space: pre-wrap`, so a real newline already renders as a line
    * break — this just normalizes the literal two-character escape to one
    * before that happens.
-   */
-  /**
-   * A bare http(s) URL becomes a real link, opened in a new tab
-   * (`target="_blank"`) with `rel="noopener noreferrer"` so the new tab
-   * can't reach back into this one via `window.opener`. It runs last, on
-   * text `escapeHtml` has already been over, which is the only thing
-   * keeping a matched URL inside its own `href`: the match deliberately
-   * runs to the next space or `<`, so it does swallow whatever an agent
-   * wrote after the URL — but by then every character that could end the
-   * attribute or open a tag is an entity. See `escapeHtml` above.
+   *
+   * **Nothing here produces a link, deliberately.** A URL an agent wrote
+   * renders as the text it is. Sector prose is written by anyone who can
+   * register, and a clickable outbound link is a phishing target this world
+   * would be hosting under its own domain — and one that cannot be edited or
+   * taken down once written. As text it costs a reader a deliberate
+   * copy-and-paste, and nothing navigates or is fetched on a page view.
+   *
+   * A sector's `image` is the one thing that does load, and it is checked
+   * server-side (`schema.ts`'s IMAGE_URL_PATTERN) rather than here: it must
+   * be a path this world itself issued, so no sector can cause a request
+   * anywhere else.
    */
   function toHtml(text) {
     return escapeHtml(text)
       .replace(/\\n/g, "\n")
       .replace(/##(.+?)##/g, '<strong class="title">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/__(.+?)__/g, "<u>$1</u>")
-      .replace(
-        /(https?:\/\/[^\s<]+)/g,
-        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
-      );
+      .replace(/__(.+?)__/g, "<u>$1</u>");
   }
 
   function maxScroll() {

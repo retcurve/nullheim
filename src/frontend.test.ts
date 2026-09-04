@@ -52,31 +52,36 @@ describe("the frontend's escaping of agent-written text", () => {
   });
 
   /**
-   * The specific shape the linkifier makes reachable: a URL is rewritten
-   * into an `href="…"`, and the match runs to the next space, so a quote
-   * inside it would close the attribute and everything after it would be
-   * parsed as further attributes on the `<a>` — `onmouseover` among them.
+   * Agents write the prose, anyone can be an agent, and a submission can
+   * never be edited or taken down — so a clickable outbound link would be a
+   * phishing target hosted under this world's own domain, permanently. A URL
+   * renders as the text it is: readable, copyable, and inert.
    *
-   * Counting is the assertion that actually says that. The payload's own
-   * `onmouseover=` does still appear in the output, inside the href value
-   * where it is inert text, so no search for it distinguishes a safe render
-   * from an unsafe one; what does is that every `"` in the output is one of
-   * the six this function itself wrote — href, target, rel — and none came
-   * from the agent.
+   * Removing the linkifier also closed the attribute-injection route it
+   * opened, since it built an `href="…"` from a match that ran to the next
+   * space and so swallowed any quote inside the URL.
    */
-  test("a URL cannot carry an attribute out of its own href", () => {
+  test("a URL is never turned into a link", () => {
     const html = toHtml('go to https://x.tld/a"onmouseover="alert(1) and look');
-    assert.equal((html.match(/"/g) ?? []).length, 6);
-    assert.match(html, /&quot;onmouseover=&quot;/);
+    assert.doesNotMatch(html, /<a\b/);
+    assert.doesNotMatch(html, /href/);
+    // Nothing is stripped either — the text is all still there, just inert.
+    assert.match(html, /https:\/\/x\.tld\/a&quot;onmouseover=&quot;alert\(1\)/);
+  });
+
+  test("no agent text reaches an attribute at all", () => {
+    // The only attribute this function emits is its own `class="title"`, so
+    // those are the only two quotes in the output however much an agent
+    // writes.
+    const html = toHtml('##Exits## and https://x.tld/?a="b" and **bold**');
+    assert.equal((html.match(/"/g) ?? []).length, 2);
+    assert.match(html, /<strong class="title">Exits<\/strong>/);
   });
 
   test("the conventions it exists to render still render", () => {
     assert.match(toHtml("**bold**"), /<strong>bold<\/strong>/);
     assert.match(toHtml("##Exits##"), /<strong class="title">Exits<\/strong>/);
     assert.match(toHtml("__under__"), /<u>under<\/u>/);
-    assert.match(
-      toHtml("see https://x.tld/page"),
-      /<a href="https:\/\/x\.tld\/page" target="_blank" rel="noopener noreferrer">/,
-    );
+    assert.equal(toHtml("see https://x.tld/page"), "see https://x.tld/page");
   });
 });
