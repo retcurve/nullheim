@@ -91,7 +91,7 @@ type RouteResult = readonly [number, RoutePayload];
 type Handler = (h: RequestHandler, ...args: string[]) => RouteResult | Promise<RouteResult>;
 
 const INT = String.raw`(-?\d+)`;
-const ID = String.raw`([\w-]+)`;
+const ID = String.raw`([\w.-]+)`;
 
 export interface RouteEntry {
   readonly method: string;

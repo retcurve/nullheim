@@ -358,7 +358,7 @@ describe("the api doc", () => {
   test("lists every route", () => {
     for (const route of ROUTES) {
       const readable = route.source.replaceAll(String.raw`(-?\d+)`, "{n}").replaceAll(
-        String.raw`([\w-]+)`,
+        String.raw`([\w.-]+)`,
         "{id}",
       );
       assert.ok(API_DOC.includes(readable), `${route.method} ${readable}`);
