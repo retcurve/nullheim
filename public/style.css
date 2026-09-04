@@ -367,6 +367,16 @@ body {
   cursor: grabbing;
 }
 
+#map-stats {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--fg-dim);
+  color: var(--fg-dim);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
 #map-grid {
   /* `margin: auto` on a flex child centers it when it's smaller than the
      viewport and degrades to plain top-left-anchored, fully scrollable flow

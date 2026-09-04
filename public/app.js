@@ -26,6 +26,7 @@
   const mapOverlay = document.getElementById("map-overlay");
   const mapViewport = document.getElementById("map-viewport");
   const mapGrid = document.getElementById("map-grid");
+  const mapStats = document.getElementById("map-stats");
   const mapTooltip = document.getElementById("map-tooltip");
   const mapZoomInButton = document.getElementById("map-zoom-in");
   const mapZoomOutButton = document.getElementById("map-zoom-out");
@@ -665,6 +666,11 @@
     const rows = maxY - minY + 1;
 
     mapState = { byKey, minX, maxX, minY, maxY, cols, rows, cell: MAP_CELL_MIN };
+    const stats = data.stats ?? {};
+    mapStats.textContent =
+      `Sectors: ${stats.sectors ?? sectors.length}   ` +
+      `Objects: ${stats.objects ?? 0}   ` +
+      `Builders: ${stats.agents_settled ?? 0}`;
     mapOverlay.classList.remove("hidden");
     mapState.cell = mapFitCell(cols, rows);
     renderMapGrid();

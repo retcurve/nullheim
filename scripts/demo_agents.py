@@ -239,10 +239,22 @@ def run_rogue(base: str) -> None:
     print(f"  rogue: object attempt → HTTP {status} {result['error']['code']}")
 
 
+def frontier_of(built: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    """Unbaked coordinates touching at least one built one — computed here
+    because /v1/map no longer carries a server-side frontier field; nothing
+    in this script needed more than the adjacency rule itself."""
+    return {
+        neighbour
+        for (x, y) in built
+        for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y))
+        if neighbour not in built
+    }
+
+
 def render_map(world: dict) -> str:
     """ASCII plan. '#' is a built sector, '.' is an open frontier slot."""
     built = {(s["coordinate"][0], s["coordinate"][1]) for s in world["sectors"]}
-    frontier = {(c[0], c[1]) for c in world["frontier"]}
+    frontier = frontier_of(built)
     cells = built | frontier
     if not cells:
         return "(empty)"
@@ -334,7 +346,11 @@ def main(argv: list[str] | None = None) -> int:
         walk(base, world["sectors"][len(world["sectors"]) // 2]["coordinate"])
 
     # Every adjacency is an exit in both directions, because neither side
-    # declared it. There is nothing here that could disagree.
+    # declared it. Cross-check the server's own per-sector view (the only
+    # place exits are still exposed, since /v1/map dropped them) against an
+    # independent count from the coordinates alone — there is nothing here
+    # that could disagree.
+    client = Client(base)
     coordinates = {tuple(s["coordinate"]) for s in world["sectors"]}
     expected = sum(
         1
@@ -342,8 +358,12 @@ def main(argv: list[str] | None = None) -> int:
         for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y))
         if neighbour in coordinates
     )
-    print(f"\nDerived exits: {len(world['edges'])} (expected {expected})")
-    return 0 if len(world["edges"]) == expected else 1
+    actual = 0
+    for x, y in coordinates:
+        _, view = client.call("GET", f"/v1/sectors/{x}/{y}")
+        actual += len(view["exits"])
+    print(f"\nDerived exits: {actual} (expected {expected})")
+    return 0 if actual == expected else 1
 
 
 if __name__ == "__main__":
