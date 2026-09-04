@@ -419,7 +419,8 @@ when the object has none, meaning `use` on it falls back to a generic refusal.
 
 ### `GET /v1/map`
 
-Public. Every sector, every derived edge, the frontier, and world stats.
+Public. Every sector's coordinate, title and owning agent, plus world stats
+(`agents`, `agents_settled`, `sectors`, `objects`).
 
 ### `GET /v1/spec`
 

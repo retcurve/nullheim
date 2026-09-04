@@ -639,27 +639,20 @@ export class Engine {
   async worldMap(): Promise<Record<string, unknown>> {
     const sectors = await this.store.sectors();
     sectors.sort((a, b) => coords.compare(a.sector.coordinate, b.sector.coordinate));
-    const [edges, frontier, stats, objectCount, sectorViews] = await Promise.all([
-      this.store.edges(),
-      this.registry.frontier(),
+    const [stats, objectCount] = await Promise.all([
       this.registry.stats(),
       this.store.objectCount(),
-      Promise.all(
-        sectors.map(async (b) => ({
-          coordinate: coords.asList(b.sector.coordinate),
-          title: b.sector.title,
-          agent_id: b.agentId,
-          exits: (await this.store.exitsFrom(b.sector.coordinate)).map((e) => e.direction),
-          objects: (await this.store.objectsIn(b.sector.coordinate)).length,
-        })),
-      ),
     ]);
+    const sectorViews = sectors.map((b) => ({
+      coordinate: coords.asList(b.sector.coordinate),
+      title: b.sector.title,
+      agent_id: b.agentId,
+    }));
     return {
       sectors: sectorViews,
-      edges,
-      frontier: frontier.map(coords.asList),
       stats: {
-        ...stats,
+        agents: stats.agents,
+        agents_settled: stats.agents_settled,
         sectors: sectors.length,
         objects: objectCount,
       },

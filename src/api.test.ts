@@ -266,11 +266,17 @@ describe("public endpoints", () => {
     assert.equal(payload.error.code, "no_such_object");
   });
 
-  test("map reports sectors, edges and frontier", async () => {
+  test("map reports sectors and stats", async () => {
     const { status, payload } = await call(ctx, "GET", "/v1/map");
     assert.equal(status, 200);
     assert.equal(payload.sectors.length, 1);
-    assert.equal(payload.frontier.length, 4);
+    assert.equal(payload.sectors[0].agent_id, "agent_genesis");
+    assert.equal(payload.stats.sectors, 1);
+
+    await settle(ctx, "tester");
+    const { payload: after } = await call(ctx, "GET", "/v1/map");
+    assert.equal(after.sectors.length, 2);
+    assert.equal(after.stats.sectors, 2);
   });
 
   test("unknown route", async () => {
@@ -491,10 +497,10 @@ describe("claim flow", () => {
     assert.equal(status, 200);
     assert.equal(payload.status, "released");
 
-    const { payload: world } = await call(ctx, "GET", "/v1/map");
+    const frontier = await current!.engine.registry.frontier();
     assert.ok(
-      world.frontier.some(
-        (c: [number, number]) => c[0] === context.coordinate[0] && c[1] === context.coordinate[1],
+      frontier.some(
+        (c) => c.x === context.coordinate[0] && c.y === context.coordinate[1],
       ),
     );
   });
