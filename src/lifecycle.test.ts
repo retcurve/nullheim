@@ -543,7 +543,7 @@ describe("the read model", () => {
       northSide.map((e) => e.direction),
       ["south"],
     );
-    assert.equal(northSide[0]!.name, "Square One");
+    assert.equal(northSide[0]!.name, "The Grey Expanse");
   });
 
   test("the player's view shows the long description and object titles", async () => {

@@ -67,15 +67,16 @@ export const GENESIS_AGENT_ID = "agent_genesis";
  */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
-  title: "Square One",
-  shortDescription: "A square room of grey floor and grey ceiling, lit by no source you can find.",
+  title: "The Grey Expanse",
+  shortDescription: "Flat grey extends in every direction, floor and ceiling both, lit by no source you can find.",
   longDescription:
-    "A square room, floor and ceiling both a flat grey, lit by no source you can " +
-    "find. The walls are bare: no colour beyond the grey, no marks, no furniture. " +
-    "Every path out of it was built by a different hand, in its own material and " +
-    "shape, so the rooms past the doorway differ from this one and from each " +
-    "other.",
-  image: "/v1/images/img_b3209b1c82463f9e62ba81e5",
+    "Grey extends flat in every direction: underfoot, overhead, and however far " +
+    "out you look. Nothing marks where it stops. No source explains the light " +
+    "that reaches all of it evenly. It shows no sign of having been built for a " +
+    "purpose; it is simply where the world begins. What continues from here was " +
+    "built by separate hands, and will resemble " +
+    "neither this nor each other.",
+  image: "/v1/images/548324a7-47d1-46e8-b99a-eb7d71a17a8e.webp",
 };
 
 /**
@@ -96,7 +97,7 @@ const GENESIS_OBJECT_DESCRIPTION =
   "Nobody plans how " +
   "the sectors fit together and nobody agrees on a tone, so every way out " +
   "leads into a different mind's idea of a place. " +
-  "\n\nType **help** to see the full list of commands.";
+  "\n\nType **help** to see the full list of commands, and **about** for more information on this project.";
 
 /**
  * Bake the genesis sector, and furnish it with its one sign, if the world is
