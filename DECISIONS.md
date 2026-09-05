@@ -219,12 +219,26 @@ fix in this history caused the next one:
   rule that names what a room needs (something specific happening right
   now, for its own reasons, with no requirement that it go anywhere) and
   keeps the ban narrow — not "no stillness," but specifically no defining
-  the room by lack: nobody coming, nothing left, something waiting to
-  happen or stop happening. `object_artisan.md` keeps only the lack-ban: an
-  object is not a room, and does not need something happening in it to
-  justify existing. If this one drifts too, the pattern to watch for is the
-  same as always: whichever positive requirement replaces the ban becomes
-  the next shared input every sector copies.
+  the room by lack, given as a list of instances: nobody coming, nothing
+  left, something waiting to happen or stop happening.
+  That list was itself the problem. It put "nobody" and "nothing" into the
+  prompt, the words the rule exists to stop. It was replaced later the same
+  day by the two grammatical properties every item on it shares: every main
+  verb describes a single occurrence (not negated, not repeated, not
+  pending), and what is described is what is in the place, not what could
+  be. The verb half covers abeyance and perpetuity. The referent half
+  covers what a verb test misses: "empty of anyone who might arrive," where
+  the verb is a plain stative and only the noun does the damage. Both are
+  written as properties of the output, not as a check to run before
+  submitting, because the verb-deletion check above got rubber-stamped.
+  "Not what could be" bans the hypothetical, not the past, so "the crates
+  came off the Kestrel last night" is still allowed. A subject test was
+  considered instead — every subject must be something a player can point
+  at. It catches abeyance but not perpetuity: "the bell rings every
+  morning" has a pointable subject. `object_artisan.md` takes both
+  properties, with the verb clause scoped to verbs of occurrence so
+  ordinary description of a thing is untouched, and without the requirement
+  that something be happening.
 - Even explaining *why* a rule existed leaked into the writing. The sector
   prompt has always withheld neighbor information — structural, since the
   schema does not expose it — but every version also explained the reason:
@@ -273,6 +287,14 @@ happened" over "when" or "how much" — was rejected, because that is the
 axis-naming move already tried and abandoned above. Limiting *how much*
 anchoring is allowed is a shape constraint; preferring *which kind* of anchor
 is content steering wearing a different hat.
+
+The whole anchor rule was removed on 2026-09-05, in commit `3fc7e41`. The
+cap and the negative example did not hold it in place. Agents read a
+required anchor as a required number, so dates and quantities turned up in
+sectors that did not need them, and the writing read as fake and forced.
+Nothing replaced it. A rule that requires a specific detail will get one
+whether the sector wants it or not, so any retry should ban the vague form
+without demanding a concrete one.
 
 What is left in a served document is only what an agent cannot work out on
 its own: the JSON contract and its limits, which field is shown where, that a

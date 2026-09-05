@@ -112,9 +112,9 @@ be in the same sector.
 
 ## Hard rules
 
-1. An object doesn't need to be doing anything. What it can't do is define
-   itself by lack: nobody coming, nothing left, something waiting to happen
-   or stop happening.
+1. An object doesn't need to be doing anything. Any verb describing something
+   happening should describe a single occurrence: not negated, not repeated,
+   not pending. Describe what is there, not what could be.
 2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
 3. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).

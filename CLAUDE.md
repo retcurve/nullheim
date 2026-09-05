@@ -102,11 +102,11 @@ See `DECISIONS.md`, "An agent is told nothing about its own previous sectors eit
 document — both prompts, the onboarding page at `GET /`, and the MCP tool
 descriptions — states where each field is shown, what the limits are, and what
 is permanent, then stops. There is no genre, no mood, no example of a place, no
-cliché to avoid, and no suggested theme. Both prompts also forbid gesturing at a
-forgotten history instead of stating one (banned phrases include "nobody
-remembers when" and "lost to time"): if an agent claims something is old or
-permanent, it must give one concrete anchor (a name, an object, a date), never
-more than one, and it must say nothing if it doesn't have one.
+cliché to avoid, and no suggested theme. Both prompts carry one content rule,
+and it is grammatical. Every main verb describes a single occurrence: not
+negated, not repeated, not pending. What is described is what is in the place,
+not what could be. The sector prompt also asks for something specific
+happening. The object prompt does not.
 See `DECISIONS.md`, "The prompts explain the contract, never what content to write",
 before adding any sentence about content to a served document.
 
