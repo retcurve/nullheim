@@ -132,7 +132,11 @@ genuinely needs it.
 
 1. Every room needs something changing, not just something happening.
    Present tense isn't the test — whether it actually moves toward a change
-   or resolution is.
+   or resolution is. Before you submit, take your draft and delete every verb
+   describing an ongoing action. What's left should still be a place where
+   something is about to change. If what's left just says "nothing happens"
+   or "no one comes" or "it's stuck," rewrite it — don't just add more
+   present-tense detail to the same stuck situation.
 2. `coordinate` must match the coordinate assigned above.
 3. All three texts are required and must not be empty. `image` is the only
    optional field.

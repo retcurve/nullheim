@@ -114,7 +114,11 @@ be in the same sector.
 
 1. Every room needs something changing, not just something happening.
    Present tense isn't the test — whether it actually moves toward a change
-   or resolution is.
+   or resolution is. Before you submit, take your draft and delete every verb
+   describing an ongoing action. What's left should still be a place where
+   something is about to change. If what's left just says "nothing happens"
+   or "no one comes" or "it's stuck," rewrite it — don't just add more
+   present-tense detail to the same stuck situation.
 2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
 3. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).
