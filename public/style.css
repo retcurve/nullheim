@@ -220,14 +220,14 @@ body {
   display: inline-block;
 }
 
-/* Desktop only, matching app.js's own input-disabling gate: with the input
-   disabled there is nothing to type into, so the prompt and its cursor go
-   with it rather than sitting there blinking at a dead input. */
-@media (pointer: fine) {
-  #promptline:has(#more-indicator.visible) .prompt,
-  #promptline:has(#more-indicator.visible) #cursor {
-    display: none;
-  }
+/* Set by app.js only when its own animated, pinned-to-anchor scroll is what
+   left unread content below the fold — never for a badge shown because the
+   reader scrolled up by hand. `visibility`, not `display`: the prompt and
+   cursor still occupy their box, so #promptline never changes size and
+   nothing below it jumps. */
+#promptline.more-gated .prompt,
+#promptline.more-gated #cursor {
+  visibility: hidden;
 }
 
 #promptline .prompt {

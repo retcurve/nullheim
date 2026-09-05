@@ -22,6 +22,7 @@
   const typed = document.getElementById("typed");
   const hiddenInput = document.getElementById("hidden-input");
   const crt = document.getElementById("crt");
+  const promptline = document.getElementById("promptline");
   const moreIndicator = document.getElementById("more-indicator");
   const mapOverlay = document.getElementById("map-overlay");
   const mapViewport = document.getElementById("map-viewport");
@@ -163,29 +164,50 @@
   }
 
   /**
-   * Desktop only (a mouse, not a touch pointer): while the "More" badge is
-   * showing, the reader is expected to read the rest before typing a new
-   * command, so the input is disabled rather than left free to accept
-   * something the reader can't yet see below. Any key press while disabled
-   * scrolls the rest into view and hands the input straight back — see the
-   * document-level keydown handler further down.
+   * Desktop only (a mouse, not a touch pointer). Reaching the bottom, by any
+   * means, always clears the badge and releases the gate below — but the
+   * gate is only ever engaged from `noteContentOverflow`, called at the one
+   * moment new content's own animated, anchor-pinned scroll (`applyAnchor`)
+   * leaves some of it below the fold. Scrolling by hand — wheel, touch,
+   * arrow keys — only ever calls `updateMoreIndicator`, never engages the
+   * gate, and undoes it on reaching the bottom the same as anything else.
+   * That split is what makes scrolling back up afterwards leave the prompt
+   * alone: nothing about a manual scroll re-engages it.
    */
   const coarsePointer = window.matchMedia("(pointer: coarse)");
   let inputDisabledForMore = false;
 
+  function releaseMoreGate() {
+    if (!inputDisabledForMore) {
+      return;
+    }
+    inputDisabledForMore = false;
+    hiddenInput.disabled = false;
+    promptline.classList.remove("more-gated");
+  }
+
+  function engageMoreGate() {
+    if (coarsePointer.matches || inputDisabledForMore) {
+      return;
+    }
+    inputDisabledForMore = true;
+    hiddenInput.disabled = true;
+    hiddenInput.blur();
+    promptline.classList.add("more-gated");
+  }
+
   function updateMoreIndicator() {
     const moreVisible = !isAtBottom();
     moreIndicator.classList.toggle("visible", moreVisible);
-    if (coarsePointer.matches) {
-      return;
+    if (!moreVisible) {
+      releaseMoreGate();
     }
-    if (moreVisible && !inputDisabledForMore) {
-      inputDisabledForMore = true;
-      hiddenInput.disabled = true;
-      hiddenInput.blur();
-    } else if (!moreVisible && inputDisabledForMore) {
-      inputDisabledForMore = false;
-      hiddenInput.disabled = false;
+  }
+
+  /** Called only where new content's own anchored scroll may have left some of it unseen below the fold. */
+  function noteContentOverflow() {
+    if (!isAtBottom()) {
+      engageMoreGate();
     }
   }
 
@@ -238,6 +260,7 @@
     // overflows below waits behind the "More" badge.
     applyAnchor();
     updateMoreIndicator();
+    noteContentOverflow();
   }
 
   function print(text) {
@@ -275,6 +298,7 @@
     output.appendChild(div);
     applyAnchor();
     updateMoreIndicator();
+    noteContentOverflow();
   }
 
   function printError(text) {
@@ -1517,7 +1541,7 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
 
   output.addEventListener("scroll", updateMoreIndicator);
 
-  // While the input is disabled for an unread "More" (see updateMoreIndicator),
+  // While the input is gated behind an unread "More" (see engageMoreGate),
   // any key scrolls the rest into view and hands typing straight back — the
   // map and boss overlays own the keyboard while they're open, so this steps
   // aside for them.
@@ -1530,8 +1554,7 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
       return;
     }
     ev.preventDefault();
-    inputDisabledForMore = false;
-    hiddenInput.disabled = false;
+    releaseMoreGate();
     scrollOutputTo(maxScroll());
     refocus();
   });
