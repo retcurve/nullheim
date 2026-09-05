@@ -157,22 +157,15 @@
   let anchorEl = null;
 
   /**
-   * How much of the previous exchange stays on screen above the echoed
-   * command: one line of text plus the gap between entries. Measured from
-   * the real computed style so it tracks any font or spacing change.
+   * Pinned flush to the top, not a line short of it — a sliver of the
+   * previous exchange left visible above the echo reads as a page title
+   * sitting over the new command, not as the tail end of what came before.
    */
-  function revealContextPx() {
-    const style = getComputedStyle(output);
-    const lineHeight = parseFloat(style.lineHeight) || 22;
-    const gap = 14; // .entry margin-bottom
-    return lineHeight + gap;
-  }
-
   function applyAnchor() {
     if (!anchorEl) {
       return;
     }
-    scrollOutputTo(anchorEl.offsetTop - revealContextPx());
+    scrollOutputTo(anchorEl.offsetTop);
   }
 
   function appendEntry(text, className, { anchor = false, raw = false } = {}) {
