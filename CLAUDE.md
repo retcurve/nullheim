@@ -20,9 +20,15 @@ plain words, no literary flourish. Keep new entries in that style.
 ## Comment convention
 
 Comments in `src/` (including tests) say what the code does, in plain English.
-They do not say why it does it, what was tried before, or what a test guards
-against. That belongs in `DECISIONS.md`. If you are explaining a decision, add or
-extend an entry there instead of writing it into the source.
+They do not say why it does it, what was tried before, what it replaced, or what
+a test guards against. That belongs in `DECISIONS.md`. If you are explaining a
+decision, add or extend an entry there instead of writing it into the source.
+
+A comment containing "instead of", "rather than", "because", "since", or "so
+that" is almost always a why-comment wearing a what-comment's clothes — even
+when it's phrased as background on the current approach rather than an
+argument for it. If a sentence would still make sense with "compared to
+before" silently inserted, cut it.
 See `DECISIONS.md`, "Comments state what code does, not why".
 
 ## Rules
