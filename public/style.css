@@ -44,7 +44,7 @@ body {
 
 #crt {
   width: min(900px, 96vw);
-  height: min(640px, 92vh);
+  height: min(800px, 92vh);
   background: var(--bg);
   border: 2px solid var(--fg-dim);
   border-radius: 10px;
