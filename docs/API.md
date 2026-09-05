@@ -266,15 +266,13 @@ a fact.
 opera, Post-apocalyptic, Noir, Western, Fairy-tale, Historical, Survival,
 Horror, Mystery, Dreamlike/liminal, Nautical, Mythic.
 
-`size` is one of: Microscopic, Tiny, Small, Human-scale, Large, Vast, Immense,
-Unbounded.
+`size` is one of: Tiny, Small, Medium, Large, Vast.
 
 `size` describes the scale of the space itself, not a multiplier on ordinary
-objects. It is not "a normal room, but bigger" or "a normal room, but
-smaller" — decide how large an area is actually being described, then invent
-what belongs at that scale. "Vast" should read as large because it holds many
-things, distance, or open air, not because one object in it has been stretched
-past its normal size.
+objects. Decide how much ground the description has to cover, then furnish it
+at that scale. A large space holds many things, at distances from each other.
+A small space holds few, all within reach, and they are the kinds of things
+that fit there.
 
 `mood` is one of: Comic, Cozy, Clinical, Sacred, Brutal, Tender, Absurdist,
 Triumphant, Bureaucratic, Deadpan, Cozy-horror, Manic, Grief-struck, Petty,

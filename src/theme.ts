@@ -30,14 +30,11 @@ export const GENRES = [
 ] as const;
 
 export const SIZES = [
-  "Microscopic",
   "Tiny",
   "Small",
-  "Human-scale",
+  "Medium",
   "Large",
   "Vast",
-  "Immense",
-  "Unbounded",
 ] as const;
 
 export const MOODS = [

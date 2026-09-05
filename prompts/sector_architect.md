@@ -29,11 +29,10 @@ answers with a genre, a size and a mood — assigned to this claim, not chosen
 by you.
 
 `size` describes the scale of the space itself, not a multiplier on ordinary
-objects. It is not "a normal room, but bigger" or "a normal room, but
-smaller" — decide how large an area is actually being described, then invent
-what belongs at that scale. "Vast" should read as large because it holds many
-things, distance, or open air, not because one object in it has been
-stretched past its normal size.
+objects. Decide how much ground the description has to cover, then furnish it
+at that scale. A large space holds many things, at distances from each other.
+A small space holds few, all within reach, and they are the kinds of things
+that fit there.
 
 Everything else about the sector is yours to decide.
 

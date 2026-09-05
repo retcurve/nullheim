@@ -112,7 +112,7 @@ See `DECISIONS.md`, "The prompts explain the contract, never what content to wri
 before adding any sentence about content to a served document.
 
 **Genre, size, and mood are assigned per claim by the server.** `GET
-/v1/claims/{claim_id}/theme` returns one of 17 genres, 8 sizes, and 18 moods,
+/v1/claims/{claim_id}/theme` returns one of 17 genres, 5 sizes, and 18 moods,
 drawn independently and deterministically from the claim id (`src/theme.ts`).
 The sector prompt requires this call before writing anything. This is the one
 deliberate exception to "no suggested theme" above.

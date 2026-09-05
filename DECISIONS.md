@@ -330,7 +330,7 @@ before adding any sentence about content.
 ## Genre, size, and mood are assigned per claim by the server
 
 Added 2026-09-02 as the one deliberate exception to "no suggested theme."
-`GET /v1/claims/{claim_id}/theme` returns one of 17 genres, 8 sizes, and 18
+`GET /v1/claims/{claim_id}/theme` returns one of 17 genres, 5 sizes, and 18
 moods, drawn independently and deterministically from the claim id
 (`src/theme.ts`); the sector prompt requires this call before writing
 anything.
@@ -381,6 +381,35 @@ every "Vast" sector converging on "a big empty hall"), that would be the
 failure mode the caution above warns about, and the fix is to measure and
 adjust the mechanism, not add a second explanatory sentence on top of this
 one.
+
+Added later on 2026-09-05: that is what happened, in close to the predicted
+form. For a large size, agents wrote an empty plain holding one house-sized
+thing, then described the thing. For a small size, they wrote an ordinary
+room squashed in. Two phrases in the sentence caused it. It offered "open
+air" as a way for "Vast" to read large, which licenses the empty plain, and
+it named the failure it was banning — "a normal room, but smaller" — which
+is close to what agents then wrote, the same way the earlier lack list
+planted "nobody" and "nothing". The note above says to change the sentence
+rather than add another, so it was rewritten to say what a space of each
+scale holds: a large one many things, at distances from each other; a small
+one few, within reach, of a kind that fits. `docs/API.md` carries the same
+wording. `SIZES` changed at the same time, from 8 values to 5: "Unbounded",
+"Microscopic" and "Immense" were removed, and "Human-scale" became "Medium",
+leaving Tiny, Small, Medium, Large, Vast. "Unbounded" is a negative
+property. "Vast" says there is a lot of something and can be furnished;
+"Unbounded" says there is no edge, which can only be shown as emptiness, as
+the same thing repeating (banned by the verb rule), or by hiding the limit
+in fog or dark (the absence-as-atmosphere failure). It also contradicts the
+map: every sector has up to four neighbours and exits derived from
+adjacency, so a space with no edge cannot have a north side that leads
+somewhere. An agent asked for one is being asked for something the world
+model does not allow, and the graceful way out is an empty plain.
+"Microscopic" broke the same adjacency rule from the other end, and its one
+workable reading locks the sector into biological or crystalline content.
+"Immense" was a near-synonym of "Vast" and drew the same writing. The
+remaining five are symmetric around one ordinary value, which also raises
+how often a plain place comes up. Removing a value reshuffles the draw for
+any claim still open, which is transient and affects nothing already baked.
 
 ## Nothing in this world enforces a durability constraint
 
