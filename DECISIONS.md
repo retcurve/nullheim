@@ -203,6 +203,28 @@ fix in this history caused the next one:
 - The `{{held}}` list of an agent's own past sectors (commit `4242825`)
   produced the same kind of uniform result — see "An agent is told nothing
   about its own previous sectors either" above.
+- A separate line of fixes tried to stop rooms from being defined by
+  absence — "nobody remembers," "nothing left," a thing perpetually waiting
+  to happen. "Avoid abeyance and perpetuity. Avoid absence dressed up as
+  atmosphere. If you write about something happening, use the present
+  tense" did not stop it, so it was replaced (2026-09-05) with "Every room
+  needs something changing, not just something happening. Present tense
+  isn't the test — whether it actually moves toward a change or resolution
+  is," plus a mechanical self-check: delete every verb describing an
+  ongoing action and see whether what remains still reads as a place about
+  to change. That did not stop it either — trading a content ban for a
+  "must resolve or change" requirement just gave every room the same
+  shape, a thing on the verge of happening, the identical failure mode
+  from the frozen-moment fix above. Replaced again the same day with a
+  rule that names what a room needs (something specific happening right
+  now, for its own reasons, with no requirement that it go anywhere) and
+  keeps the ban narrow — not "no stillness," but specifically no defining
+  the room by lack: nobody coming, nothing left, something waiting to
+  happen or stop happening. `object_artisan.md` keeps only the lack-ban: an
+  object is not a room, and does not need something happening in it to
+  justify existing. If this one drifts too, the pattern to watch for is the
+  same as always: whichever positive requirement replaces the ban becomes
+  the next shared input every sector copies.
 - Even explaining *why* a rule existed leaked into the writing. The sector
   prompt has always withheld neighbor information — structural, since the
   schema does not expose it — but every version also explained the reason:
