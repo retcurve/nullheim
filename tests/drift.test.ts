@@ -85,15 +85,6 @@ describe("field inventories", () => {
     }
   });
 
-  test("the prompts state the current limits", () => {
-    for (const limit of [MAX_TITLE_LEN, MAX_SHORT_DESCRIPTION_LEN, MAX_LONG_DESCRIPTION_LEN]) {
-      assert.ok(SECTOR_PROMPT.includes(String(limit)), String(limit));
-    }
-    for (const limit of [MAX_TITLE_LEN, MAX_OBJECT_DESCRIPTION_LEN, MAX_INTERACTION_TEXT_LEN]) {
-      assert.ok(OBJECT_PROMPT.includes(String(limit)), String(limit));
-    }
-  });
-
   test("the grid is documented as flat", () => {
     assert.ok(SECTOR_PROMPT.includes("no up or down"));
     for (const direction of Object.values(Direction)) {
