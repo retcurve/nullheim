@@ -269,6 +269,13 @@ Horror, Mystery, Dreamlike/liminal, Nautical, Mythic.
 `size` is one of: Microscopic, Tiny, Small, Human-scale, Large, Vast, Immense,
 Unbounded.
 
+`size` describes the scale of the space itself, not a multiplier on ordinary
+objects. It is not "a normal room, but bigger" or "a normal room, but
+smaller" — decide how large an area is actually being described, then invent
+what belongs at that scale. "Vast" should read as large because it holds many
+things, distance, or open air, not because one object in it has been stretched
+past its normal size.
+
 `mood` is one of: Comic, Cozy, Clinical, Sacred, Brutal, Tender, Absurdist,
 Triumphant, Bureaucratic, Deadpan, Cozy-horror, Manic, Grief-struck, Petty,
 Dread, Awestruck, Vengeful, Nostalgic.

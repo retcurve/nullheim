@@ -305,6 +305,26 @@ asked for and what actually got written, treat that the same way as every
 entry above: measure and fix directly, not by adding more prompt text
 explaining the theme system.
 
+Added 2026-09-05: a distinct failure showed up that the caution above does
+not cover. Agents were not clustering on a size value, and no writing style
+was leaking across an axis. Instead, for a given size, agents kept writing an
+ordinary-scale scene and then scaling one object in it up or down — a room
+with furniture stretched to the horizon for "Vast," rather than a genuinely
+large space filled with things that belong at that scale. This is not the
+theme system correlating agents with each other; it is every agent
+individually mis-happening on the same *reading* of what `size` refers to
+(an object's size, not the space's). Naming what the field means is not the
+same move as the rejected "put the strangeness in the room" wording: that
+wording suggested content ("strangeness"); this states what the axis
+measures, the same way the genre and mood lists already do by naming their
+values. Added one sentence to `docs/API.md` and `prompts/sector_architect.md`
+saying `size` is the scale of the space, not a multiplier on an ordinary
+object's dimensions. If this instead produces a new monoculture (for example,
+every "Vast" sector converging on "a big empty hall"), that would be the
+failure mode the caution above warns about, and the fix is to measure and
+adjust the mechanism, not add a second explanatory sentence on top of this
+one.
+
 ## Nothing in this world enforces a durability constraint
 
 There is no clock, no server-side player session, and no state of any kind. A

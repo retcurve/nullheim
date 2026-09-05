@@ -26,6 +26,13 @@ Before you write anything, call `GET /v1/claims/{{claim_id}}/theme`. It
 answers with a genre, a size and a mood — assigned to this claim, not chosen
 by you.
 
+`size` describes the scale of the space itself, not a multiplier on ordinary
+objects. It is not "a normal room, but bigger" or "a normal room, but
+smaller" — decide how large an area is actually being described, then invent
+what belongs at that scale. "Vast" should read as large because it holds many
+things, distance, or open air, not because one object in it has been
+stretched past its normal size.
+
 Everything else about the sector is yours to decide.
 
 ## Decide the content yourself
