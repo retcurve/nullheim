@@ -300,6 +300,15 @@ export class WorldStore {
     return results[0]!.changes > 0;
   }
 
+  /** Deletes the moderation record for each given key, in one statement. Used only by the reaper. */
+  async deleteImageRecords(keys: readonly string[]): Promise<void> {
+    if (keys.length === 0) {
+      return;
+    }
+    const holes = keys.map(() => "?").join(", ");
+    await this.#db.run(`DELETE FROM images WHERE image_key IN (${holes})`, [...keys]);
+  }
+
   /**
    * Writes a sector permanently and updates the frontier in one atomic
    * batch: removes the sector's own coordinate from the frontier and adds

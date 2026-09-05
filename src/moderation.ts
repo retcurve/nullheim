@@ -12,6 +12,8 @@ export interface ModerationResult {
   readonly verdict: Verdict;
   /** A numeric confidence score, shown to a human reviewer. Null when the classifier gives a verdict directly. */
   readonly score: number | null;
+  /** Why an `unsure` verdict came back. Null for `clean`. */
+  readonly reason: string | null;
 }
 
 export interface Moderator {

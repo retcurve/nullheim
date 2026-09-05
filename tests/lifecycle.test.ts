@@ -292,6 +292,16 @@ describe("reaping abandoned images", () => {
     assert.equal((await engine.registry.getClaim(claim.claimId))?.imageKey, null);
     assert.deepEqual(await engine.reapImages(), { deleted: 0 });
   });
+
+  test("reaping a pending image also deletes its now-dangling moderation record", async () => {
+    const { engine } = await makeEngine({ moderator: permissiveModerator("unsure") });
+    const { claim, key } = await uploaded(engine, "orphan-maker");
+    await engine.release(claim);
+
+    assert.deepEqual(await engine.reapImages(), { deleted: 1 });
+    const remaining = await engine.store.listImages();
+    assert.equal(remaining.some((row) => row.imageKey === key), false);
+  });
 });
 
 describe("image moderation", () => {

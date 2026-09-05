@@ -12,10 +12,10 @@ function replying(response: unknown) {
   return workersAiModerator({ async run() { return { response }; } });
 }
 
-const ALL_NO = Array.from({ length: 8 }, (_, i) => `Question ${i + 1}: No`).join("\n");
+const ALL_NO = Array.from({ length: 5 }, (_, i) => `Question ${i + 1}: No`).join("\n");
 
 describe("the classifier's verdict", () => {
-  test("eight explicit Noes is the only clean answer", async () => {
+  test("five explicit Noes is the only clean answer", async () => {
     const { verdict, score } = await replying(ALL_NO).check(new Uint8Array(), "image/webp");
     assert.equal(verdict, "clean");
     assert.equal(score, null);
@@ -27,7 +27,7 @@ describe("the classifier's verdict", () => {
   });
 
   test("any single Yes is unsure, whichever question it answers", async () => {
-    for (let n = 1; n <= 8; n++) {
+    for (let n = 1; n <= 5; n++) {
       const lines = ALL_NO.split("\n");
       lines[n - 1] = `Question ${n}: Yes`;
       const { verdict } = await replying(lines.join("\n")).check(new Uint8Array(), "image/webp");
@@ -63,7 +63,7 @@ describe("the classifier's verdict", () => {
     const chatty = `Here is my inspection:\n\n${ALL_NO.split("\n").join("\n\n")}\n\nLet me know if you need more.`;
     assert.equal((await replying(chatty).check(new Uint8Array(), "image/webp")).verdict, "clean");
 
-    const shifted = `Question 7: Yes\n${ALL_NO}`;
+    const shifted = `Question 5: Yes\n${ALL_NO}`;
     assert.equal((await replying(shifted).check(new Uint8Array(), "image/webp")).verdict, "unsure");
   });
 });

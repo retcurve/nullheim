@@ -3,12 +3,10 @@
 
 import { parseArgs } from "node:util";
 
-import { openD1Http } from "./db/d1-http.ts";
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite } from "./db/sqlite.ts";
+import { openD1Wrangler } from "./db/d1-wrangler.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import { openFsImages } from "./images/fs.ts";
-import { openR2Http } from "./images/r2-http.ts";
+import { openR2Wrangler } from "./images/r2-wrangler.ts";
 import { permissiveModerator } from "./moderation/permissive.ts";
 import { listen, makeServer } from "./node-server.ts";
 import { loadPrompts } from "./prompts.node.ts";
@@ -19,8 +17,9 @@ import {
   DEFAULT_REGISTRATIONS_PER_HOUR,
   Registry,
 } from "./registry.ts";
-import { WorldStore, type ImageModerationState } from "./store.ts";
+import { WorldStore } from "./store.ts";
 import { loadCodecs } from "./wasm.node.ts";
+import { runWrangler } from "./wrangler-cli.ts";
 
 function usage(): never {
   process.stderr.write(
@@ -39,27 +38,26 @@ function usage(): never {
       "  command, because a dev server that outlives its images is not a\n" +
       "  problem worth a scheduler.\n" +
       "\n" +
-      "       nullheim moderate [TARGET] --list [--state STATE]\n" +
-      "       nullheim moderate [TARGET] --approve KEY\n" +
-      "       nullheim moderate [TARGET] --reject KEY\n" +
+      "       nullheim moderate [--env preview] --list\n" +
+      "       nullheim moderate [--env preview] --approve KEY\n" +
+      "       nullheim moderate [--env preview] --reject KEY\n" +
       "\n" +
       "  The human half of image moderation — there is no operator auth model,\n" +
       "  so this runs directly against the database rather than over HTTP.\n" +
-      "  --list shows every image, or only STATE ('pending', 'published' or\n" +
-      "  'rejected') if given. --reject also works on an already-published\n" +
-      "  image: it is this world's only takedown path, clearing the blob and\n" +
-      "  the sector field that showed it.\n" +
+      "  --list shows every image awaiting review (state 'pending'), each with\n" +
+      "  a Cloudflare dashboard link to view it. --reject also works on an\n" +
+      "  already-published image: it is this world's only takedown path,\n" +
+      "  clearing the blob and the sector field that showed it.\n" +
       "\n" +
-      "  This command is remote-only: it talks to a *deployed* world's D1 and\n" +
-      "  R2 over Cloudflare's API, because that is where images needing review\n" +
-      "  actually are. A local world moderates nothing — `permissiveModerator`\n" +
-      "  publishes every upload, so nothing is ever left pending to review.\n" +
+      "  This command is remote-only: it shells out to `wrangler d1 execute`\n" +
+      "  and `wrangler r2 object delete` to reach a *deployed* world, using\n" +
+      "  your own `wrangler login` session — no separate token to configure.\n" +
+      "  A local world moderates nothing — `permissiveModerator` publishes\n" +
+      "  every upload, so nothing is ever left pending to review.\n" +
       "\n" +
-      "  TARGET is --account ID --database ID [--bucket NAME], each falling\n" +
-      "  back to CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_DATABASE_ID /\n" +
-      "  CLOUDFLARE_R2_BUCKET (default nullheim-images). The API token is read\n" +
-      "  from CLOUDFLARE_API_TOKEN and has no flag, so it stays out of shell\n" +
-      "  history: it needs D1 Edit, plus R2 Edit to use --reject.\n",
+      "  --env ENV selects which wrangler.toml environment to target (e.g.\n" +
+      "  'preview'); omit it for the top-level (production) database.\n" +
+      "  --bucket NAME overrides the R2 bucket, default nullheim-images.\n",
   );
   process.exit(2);
 }
@@ -68,6 +66,8 @@ function usage(): never {
 async function reap(argv: string[]): Promise<number> {
   const { values } = parseArgs({ args: argv, options: { db: { type: "string" } } });
   const dbPath = values.db ?? ":memory:";
+  const { openSqlite } = await import("./db/sqlite.ts");
+  const { SCHEMA_SQL } = await import("./db/schema.node.ts");
   const db = openSqlite(dbPath);
   await db.exec(SCHEMA_SQL);
   const engine = new Engine({
@@ -84,55 +84,46 @@ async function reap(argv: string[]): Promise<number> {
   return 0;
 }
 
-/**
- * Where a deployed world is, and the token to reach it. Flags take
- * precedence over environment variables; the token is read only from the
- * environment, never from a flag.
- */
-function remoteTarget(values: { account?: string; database?: string; bucket?: string }) {
-  const account = values.account ?? process.env.CLOUDFLARE_ACCOUNT_ID;
-  const database = values.database ?? process.env.CLOUDFLARE_DATABASE_ID;
-  const bucket = values.bucket ?? process.env.CLOUDFLARE_R2_BUCKET ?? "nullheim-images";
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  const missing = [
-    account ? null : "--account (or CLOUDFLARE_ACCOUNT_ID)",
-    database ? null : "--database (or CLOUDFLARE_DATABASE_ID)",
-    token ? null : "CLOUDFLARE_API_TOKEN",
-  ].filter((m) => m !== null);
-  if (missing.length > 0) {
-    process.stderr.write(
-      `nullheim moderate needs: ${missing.join(", ")}\n\n` +
-        "  The database id for a world is in wrangler.toml — the top-level\n" +
-        "  [[d1_databases]] block is production, [[env.preview.d1_databases]]\n" +
-        "  is preview. `npx wrangler d1 list` shows them with their names.\n" +
-        "  The token needs D1 Edit and, for --reject, R2 Edit.\n",
-    );
-    process.exit(2);
+/** Wraps `text` in an OSC 8 terminal hyperlink to `url` — clickable, and immune to line-wrap. */
+function hyperlink(url: string, text: string): string {
+  return `]8;;${url}${text}]8;;`;
+}
+
+/** The account id `dash.cloudflare.com` URLs are addressed under. */
+async function resolveAccountId(): Promise<string> {
+  const { stdout, code } = await runWrangler(["whoami", "--json"]);
+  const info = code === 0 ? (JSON.parse(stdout) as { accounts?: { id: string }[] }) : null;
+  const accountId = info?.accounts?.[0]?.id;
+  if (!accountId) {
+    throw new Error("could not resolve the Cloudflare account id from `wrangler whoami`");
   }
-  return { accountId: account!, databaseId: database!, bucket, token: token! };
+  return accountId;
+}
+
+/** The dashboard URL a human can open to view one R2 object directly. */
+function dashboardImageUrl(accountId: string, bucket: string, key: string): string {
+  return `https://dash.cloudflare.com/${accountId}/r2/default/buckets/${bucket}/objects/${key}/details`;
 }
 
 async function moderate(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
     options: {
-      account: { type: "string" },
-      database: { type: "string" },
+      env: { type: "string" },
       bucket: { type: "string" },
       list: { type: "boolean", default: false },
-      state: { type: "string" },
       approve: { type: "string" },
       reject: { type: "string" },
     },
   });
-  const target = remoteTarget(values);
-  const db = openD1Http(target);
+  const bucket = values.bucket ?? "nullheim-images";
+  const db = openD1Wrangler({ database: "DB", ...(values.env !== undefined && { env: values.env }) });
   const store = new WorldStore(db);
   const engine = new Engine({
     store,
     registry: new Registry(db),
     prompts: loadPrompts(),
-    images: openR2Http(target),
+    images: openR2Wrangler({ bucket }),
     codecs: loadCodecs(),
     moderator: permissiveModerator("clean"),
   });
@@ -144,13 +135,15 @@ async function moderate(argv: string[]): Promise<number> {
     const ok = await engine.rejectImage(values.reject);
     console.log(ok ? `rejected ${values.reject} (and cleared it from any sector showing it)` : `no such image ${values.reject}`);
   } else if (values.list) {
-    const rows = await store.listImages(values.state as ImageModerationState | undefined);
+    const rows = await store.listImages("pending");
     if (rows.length === 0) {
       console.log("nothing to show");
     }
+    const accountId = rows.length > 0 ? await resolveAccountId() : "";
     for (const row of rows) {
       const score = row.score === null ? "" : `  score=${row.score}`;
-      console.log(`${row.imageKey}  ${row.state}  claim=${row.claimId}${score}`);
+      const url = dashboardImageUrl(accountId, bucket, row.imageKey);
+      console.log(hyperlink(url, `${row.imageKey}  claim=${row.claimId}${score}`));
     }
   } else {
     usage();
@@ -194,6 +187,8 @@ async function main(argv: string[]): Promise<number> {
   const claimsPerHour = Number(values["claims-per-hour"]);
   const registrationsPerHour = Number(values["registrations-per-hour"]);
 
+  const { openSqlite } = await import("./db/sqlite.ts");
+  const { SCHEMA_SQL } = await import("./db/schema.node.ts");
   const db = openSqlite(dbPath);
   await db.exec(SCHEMA_SQL);
   const store = new WorldStore(db);

@@ -552,6 +552,27 @@ has lapsed"` (confirmed by removing the check and watching it fail) and
 actually shows is never reclaimed"`, also confirmed by removing its `NOT
 EXISTS` check and watching it fail.
 
+**The sweep left the `images` moderation table untouched until 2026-09-05,
+which orphaned a row every time a `pending` or `rejected` image's claim was
+reaped.** `reapImages()` deleted the R2 blob and cleared `claims.image_key`
+but never deleted the matching row in `images` (added later, by the
+moderation feature — see "An upload is checked before it is ever shown" and
+"Moderation state lives in its own `images` table" below), so a moderation
+record for a blob that no longer exists stayed `pending` forever. Found live:
+`nullheim moderate --list` on the preview world kept showing
+`img_897960f5606420056ef0163b` with a dashboard link that 404s, because its
+claim had already been reaped days earlier — confirmed by checking `claims`
+(no row referenced that key any more) and R2 directly (`wrangler r2 object
+get` reported "The specified key does not exist"). Fixed by adding
+`WorldStore.deleteImageRecords()`, called with the same reaped keys right
+after `clearClaimImages()` — one more round trip, following the same
+`DELETE ... WHERE image_key IN (...)` shape as `clearClaimImages`'s `UPDATE`.
+The one orphaned row this left behind on the preview world was deleted by
+hand once the fix shipped, since nothing automated will revisit a row this
+old on its own.
+Guard: `tests/lifecycle.test.ts`, `"reaping a pending image also deletes its
+now-dangling moderation record"`.
+
 ## An upload is checked before it is ever shown, and there are only two automated outcomes
 
 `Moderator.check()` returns `clean` (published immediately) or `unsure`
@@ -601,6 +622,43 @@ Checked by `tests/db/d1-http.test.ts`, including a real SQL injection attempt
 a check that a literal `?` character inside a quoted string is not mistaken
 for a parameter placeholder.
 
+**On 2026-09-05, `src/db/d1-http.ts` and `src/images/r2-http.ts` were replaced
+by `src/db/d1-wrangler.ts` and `src/images/r2-wrangler.ts`, which shell out to
+the `wrangler` CLI instead of calling Cloudflare's REST API directly.** The
+REST adapters required a separate `CLOUDFLARE_API_TOKEN` plus `--account`/
+`--database` IDs, duplicating credentials and IDs the operator's own
+`wrangler login` session and `wrangler.toml` already carry. `wrangler d1
+execute` has no way to bind parameters either, so the same `literal()`/
+`inline()` logic moved over unchanged, now applied to every statement
+(`run`/`first`/`all`), not only `batch()` — `wrangler d1 execute --command`
+takes one raw SQL string regardless of how many statements it holds. `wrangler
+r2 object delete` replaced the REST call in `r2-http.ts`; `get` still throws,
+unchanged from before. `d1-wrangler.ts`'s `query()` treats a non-array JSON
+response as wrangler's own error shape (`{error: {text, notes}}`) and
+surfaces both `error.text` and `error.notes[].text` — the first alone is
+often just a generic wrapper ("A request to the Cloudflare API (...)
+failed."), with the actual reason (e.g. "no such table: images") one level
+deeper in `notes`.
+Guard: `tests/db/d1-wrangler.test.ts`, `tests/images/r2-wrangler.test.ts`.
+
+**`--list` was narrowed to show only `pending` images, each with a Cloudflare
+dashboard link, also on 2026-09-05.** The original design let `--list` show
+any state and, for a `published` image, printed a `/v1/images/{key}` URL —
+but the one state a reviewer actually needs to look at before deciding is
+`pending`, and a pending image has no working URL there at all (`GET
+/v1/images/{id}` 404s until published, by design — see "Both reads that
+decide whether an image can be shown check moderation state" below). A URL
+column that only ever resolved for the state nobody needs to review was
+solving the wrong problem. A brief attempt at fixing it by downloading each
+pending image's bytes locally (`--download-to DIR`, via a new `get()` on
+`r2-wrangler.ts`) was itself replaced within the same session: pointing at
+the object's own Cloudflare dashboard page
+(`https://dash.cloudflare.com/{account}/r2/default/buckets/{bucket}/objects/{key}/details`)
+needs no download step, no local file, and no content-type assumption — the
+dashboard renders the image itself. The account id is resolved with
+`wrangler whoami --json` rather than hardcoded, since it's the one piece
+neither `wrangler.toml` nor a `--env` flag carries.
+
 ## The moderation checker is a general vision-language chat model, run through Workers AI
 
 Checked directly against Cloudflare's actual offering (2026-09-04): no
@@ -644,6 +702,34 @@ assumed to work:
   `{"prompt": "agree"}` call per Cloudflare account before it will answer
   anything else — a manual, account-level step this code can't do
   automatically.
+
+**The eighth category, a catch-all for "anything else... disturbing," was
+dropped (2026-09-05).** Re-running the checker against a real `pending` image
+(an industrial refinery scene with fire and smoke, otherwise ordinary) showed
+it was the catch-all alone that flagged it — none of the seven concrete
+categories matched. "Disturbing" is not the bar this feature exists to
+enforce, and it isn't a fixed target the way the other seven are: everything
+actually unpublishable is already covered by one of them. Dropping it also
+needed no re-tuning — the seven-question cost (10.8 neurons) was already
+being paid before the eighth question was added, per the neuron math above.
+
+**`ModerationResult` gained a `reason` field so an `unsure` verdict is
+explainable without re-running the classifier by hand.** Before this,
+diagnosing why an image was flagged meant downloading it, rebuilding the
+downscaled classification copy, and calling Workers AI again — which is how
+the eighth category's failure above was actually found. `parseVerdict` now
+returns which question number (and its category label) got a Yes, or that a
+question was missing/unparseable, and `Engine.uploadImage` logs it at the
+moment of upload. It is logged, not persisted to the `images` table: the
+human reviewer queue works from the image itself, and a schema column would
+outlive whatever wording the prompt happens to use at any given time.
+
+**Two more categories — blood/physical injuries/weapons, and drugs/drug
+paraphernalia — were dropped (2026-09-05), leaving five.** Requested directly
+rather than found by measurement; no test image or live-account run backs
+this one the way the others above do. If either category needs restoring,
+re-add it as its own numbered question and CATEGORIES entry rather than
+folding it into the "other disturbing content" shape that was removed above.
 
 ## Local runs and tests use the permissive moderator
 

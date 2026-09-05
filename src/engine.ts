@@ -190,10 +190,13 @@ export class Engine {
   async uploadImage(agent: Agent, bytes: Uint8Array): Promise<{ url: string; state: "published" | "pending" }> {
     const claim = await this.registry.checkCanUploadImage(agent);
     const processed = await processUpload(bytes, this.#codecs);
-    const { verdict, score } = await this.#moderator.check(
+    const { verdict, score, reason } = await this.#moderator.check(
       processed.classification.bytes,
       processed.classification.contentType,
     );
+    if (verdict === "unsure") {
+      console.log(`image flagged for moderation: ${reason ?? "no reason given"}`);
+    }
     const key = `img_${randomHex(12)}`;
     if (!(await this.registry.takeClaimImage(claim, key))) {
       throw new UploadRefused(
@@ -221,16 +224,19 @@ export class Engine {
    * Delete stored images that no claim can put anywhere any more, up to the
    * given limit (`IMAGE_REAP_LIMIT` by default). Runs on a schedule (a
    * Cloudflare cron trigger, or `nullheim reap` locally). Fetches the
-   * candidate keys, deletes the blobs, then clears the claim rows — two
-   * round trips regardless of how many images are reaped.
+   * candidate keys, deletes the blobs, clears the claim rows, and deletes
+   * their moderation records — three round trips regardless of how many
+   * images are reaped.
    */
   async reapImages(options: { limit?: number } = {}): Promise<{ deleted: number }> {
     const candidates = await this.registry.reapableImages(options.limit ?? IMAGE_REAP_LIMIT);
     if (candidates.length === 0) {
       return { deleted: 0 };
     }
-    await this.images.delete(candidates.map((c) => c.key));
+    const keys = candidates.map((c) => c.key);
+    await this.images.delete(keys);
     await this.registry.clearClaimImages(candidates.map((c) => c.claimId));
+    await this.store.deleteImageRecords(keys);
     return { deleted: candidates.length };
   }
 

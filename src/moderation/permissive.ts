@@ -5,7 +5,7 @@ import type { Moderator, Verdict } from "../moderation.ts";
 export function permissiveModerator(verdict: Verdict = "clean"): Moderator {
   return {
     async check() {
-      return { verdict, score: null };
+      return { verdict, score: null, reason: verdict === "unsure" ? "fixed test verdict" : null };
     },
   };
 }
