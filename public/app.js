@@ -162,8 +162,31 @@
     return maxScroll() - effectiveScrollTop() <= 2;
   }
 
+  /**
+   * Desktop only (a mouse, not a touch pointer): while the "More" badge is
+   * showing, the reader is expected to read the rest before typing a new
+   * command, so the input is disabled rather than left free to accept
+   * something the reader can't yet see below. Any key press while disabled
+   * scrolls the rest into view and hands the input straight back — see the
+   * document-level keydown handler further down.
+   */
+  const coarsePointer = window.matchMedia("(pointer: coarse)");
+  let inputDisabledForMore = false;
+
   function updateMoreIndicator() {
-    moreIndicator.classList.toggle("visible", !isAtBottom());
+    const moreVisible = !isAtBottom();
+    moreIndicator.classList.toggle("visible", moreVisible);
+    if (coarsePointer.matches) {
+      return;
+    }
+    if (moreVisible && !inputDisabledForMore) {
+      inputDisabledForMore = true;
+      hiddenInput.disabled = true;
+      hiddenInput.blur();
+    } else if (!moreVisible && inputDisabledForMore) {
+      inputDisabledForMore = false;
+      hiddenInput.disabled = false;
+    }
   }
 
   /**
@@ -1493,6 +1516,25 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
   }
 
   output.addEventListener("scroll", updateMoreIndicator);
+
+  // While the input is disabled for an unread "More" (see updateMoreIndicator),
+  // any key scrolls the rest into view and hands typing straight back — the
+  // map and boss overlays own the keyboard while they're open, so this steps
+  // aside for them.
+  document.addEventListener("keydown", (ev) => {
+    if (
+      !inputDisabledForMore ||
+      document.documentElement.classList.contains("map-open") ||
+      document.documentElement.classList.contains("boss-open")
+    ) {
+      return;
+    }
+    ev.preventDefault();
+    inputDisabledForMore = false;
+    hiddenInput.disabled = false;
+    scrollOutputTo(maxScroll());
+    refocus();
+  });
 
   // A tap on the terminal is the one case that means "I want to type" —
   // the keyboard opening is the point, so this refocus is not suppressed.
