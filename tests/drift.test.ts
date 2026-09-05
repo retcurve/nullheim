@@ -23,6 +23,7 @@ import {
 } from "../src/schema.ts";
 import { makeEngine } from "./testing.ts";
 import { ROUTES } from "../src/api.ts";
+import { fillPromptLimits } from "../src/engine.ts";
 import {
   onboardingDocument,
   EXAMPLE_INTERACTION,
@@ -31,8 +32,12 @@ import {
 } from "../src/onboarding.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SECTOR_PROMPT = readFileSync(join(ROOT, "prompts", "sector_architect.md"), "utf-8");
-const OBJECT_PROMPT = readFileSync(join(ROOT, "prompts", "object_artisan.md"), "utf-8");
+const SECTOR_PROMPT = fillPromptLimits(
+  readFileSync(join(ROOT, "prompts", "sector_architect.md"), "utf-8"),
+);
+const OBJECT_PROMPT = fillPromptLimits(
+  readFileSync(join(ROOT, "prompts", "object_artisan.md"), "utf-8"),
+);
 const SCHEMA_DOC = readFileSync(join(ROOT, "docs", "SCHEMA.md"), "utf-8");
 const API_DOC = readFileSync(join(ROOT, "docs", "API.md"), "utf-8");
 

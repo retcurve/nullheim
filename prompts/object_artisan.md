@@ -75,8 +75,8 @@ Return **one JSON object and nothing else**.
 ```json
 {
   "parent_id": "sec_… or obj_…",
-  "title": "string, <= 64 chars",
-  "description": "string, <= 2000 chars",
+  "title": "string, <= {{max_title_len}} chars",
+  "description": "string, <= {{max_object_description_len}} chars",
   "use_text": "optional, see below"
 }
 ```
@@ -86,15 +86,15 @@ Return **one JSON object and nothing else**.
 Placing objects two or three deep is how a sector gets its density: a key can sit in a can on a bench.
 
 **`title`** is what a player sees in the sector's "things you can see" list, or
-in the contents of whatever you attached it to. Up to 64 characters.
+in the contents of whatever you attached it to. Up to {{max_title_len}} characters.
 
 **`description`** is what a player sees when they look at the object directly.
 
-Aim for 200 to 500 characters. 2000 is the hard limit, not a target.
+Aim for 200 to 500 characters. {{max_object_description_len}} is the hard limit, not a target.
 
 **`use_text`** is optional. It is what a player sees when they type `use`,
 `push`, or `pull` on this object — all three show the same text, and an object
-without it falls back to a generic refusal. Up to 300 characters.
+without it falls back to a generic refusal. Up to {{max_interaction_text_len}} characters.
 
 ## Interactions: what happens when a player uses one object on another
 
@@ -118,7 +118,7 @@ be in the same sector.
    Show one specific thing happening right now that makes it matter.
 2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
-3. Length caps: 64 / 2000 / 300 characters (title / description / use_text).
+3. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).
 4. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
    id from that sector's detail fetch, and nothing else.
 5. No control characters other than newlines. No fields other than the four

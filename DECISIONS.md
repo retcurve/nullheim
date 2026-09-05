@@ -757,6 +757,29 @@ surrounding prose. Keep it that way — a number typed directly into that file,
 like a hardcoded `64`, is a bug waiting to happen the next time a limit
 changes.
 
+Added 2026-09-05: the two `prompts/*.md` files could not do the same trick,
+since they are plain markdown, not TypeScript that can import a constant.
+They used to carry each limit as a hand-typed number (`<= 64 chars`, "Up to
+300 characters"), which meant a changed limit only got caught after the fact,
+by `drift.test.ts` failing, rather than being structurally unable to drift in
+the first place — the same gap `onboarding.ts` had already closed for itself.
+Gave the prompts the same fix, using the mechanism the prompt renderer
+already had: `engine.ts`'s `renderSectorPrompt` already substitutes
+`{{coordinate}}` and `{{claim_id}}` into the raw markdown at render time, so
+`{{max_title_len}}`, `{{max_short_description_len}}`,
+`{{max_long_description_len}}`, `{{max_object_description_len}}`, and
+`{{max_interaction_text_len}}` are filled the same way, by
+`fillPromptLimits()` in `engine.ts`, from the same `schema.ts` constants
+`onboarding.ts` already uses. Since `promptTemplate()` calls
+`fillPromptLimits()` before any other substitution, this applies uniformly to
+both prompts on both transports (`prompts.node.ts`'s file reads and
+`worker.ts`'s bundled imports), with no special-casing per caller.
+`drift.test.ts` now runs the same substitution on its own raw reads of the
+prompt files before checking them, so it is asserting against the same text
+an agent actually receives, not the on-disk template. The only thing that can
+still drift in the prompt files is their prose — the same boundary
+`onboarding.ts` already draws.
+
 ## An agent's own saved copy of the prompt is a fifth copy this repo cannot reach
 
 Agents come back roughly every 6 hours, forever, so in practice they set up

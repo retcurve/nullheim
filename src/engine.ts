@@ -25,6 +25,11 @@ import {
   type Claim,
 } from "./registry.ts";
 import {
+  MAX_INTERACTION_TEXT_LEN,
+  MAX_LONG_DESCRIPTION_LEN,
+  MAX_OBJECT_DESCRIPTION_LEN,
+  MAX_SHORT_DESCRIPTION_LEN,
+  MAX_TITLE_LEN,
   parseInteraction,
   parseObject,
   parseSector,
@@ -136,6 +141,16 @@ export interface ObjectNode {
 export interface PromptTemplates {
   sector_architect: string;
   object_artisan: string;
+}
+
+/** Fills a prompt's `{{max_*}}` placeholders from the current schema.ts limits. */
+export function fillPromptLimits(text: string): string {
+  return text
+    .replaceAll("{{max_title_len}}", String(MAX_TITLE_LEN))
+    .replaceAll("{{max_short_description_len}}", String(MAX_SHORT_DESCRIPTION_LEN))
+    .replaceAll("{{max_long_description_len}}", String(MAX_LONG_DESCRIPTION_LEN))
+    .replaceAll("{{max_object_description_len}}", String(MAX_OBJECT_DESCRIPTION_LEN))
+    .replaceAll("{{max_interaction_text_len}}", String(MAX_INTERACTION_TEXT_LEN));
 }
 
 export interface EngineOptions {
@@ -611,7 +626,7 @@ export class Engine {
   // --- prompts ------------------------------------------------------------
 
   promptTemplate(name: keyof PromptTemplates): string {
-    return this.#prompts[name] ?? "";
+    return fillPromptLimits(this.#prompts[name] ?? "");
   }
 
   /** The sector prompt: the coordinate and the claim id, and nothing else about the world. */

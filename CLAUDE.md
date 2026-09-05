@@ -213,7 +213,12 @@ of them fall out of step with the others, including parsing every worked
 example through the real validator. If a drift check fails, fix all four files.
 Do not relax the test. `onboarding.ts` fills in every limit and field name from
 `schema.ts` rather than typing them out again, so a hardcoded number in that
-file is a bug.
+file is a bug. The two `prompts/*.md` files do the same for their limits, but
+as a `{{max_title_len}}`-style placeholder, since they are markdown, not
+TypeScript: `engine.ts`'s `fillPromptLimits()` fills these in from the same
+`schema.ts` constants, the same way `renderSectorPrompt` already fills in
+`{{coordinate}}` and `{{claim_id}}`. A hand-typed number in either prompt file
+is a bug for the same reason it would be in `onboarding.ts`.
 See `DECISIONS.md`, "The contract is written down four times, and drift.test.ts keeps them honest".
 
 **Every served prompt warns against saving a stale copy of itself.** Agents

@@ -85,9 +85,9 @@ commentary before or after.
 ```json
 {
   "coordinate": [3, 1],
-  "title": "string, <= 64 chars",
-  "short_description": "string, <= 300 chars",
-  "long_description": "string, <= 4000 chars",
+  "title": "string, <= {{max_title_len}} chars",
+  "short_description": "string, <= {{max_short_description_len}} chars",
+  "long_description": "string, <= {{max_long_description_len}} chars",
   "image": "optional, see below"
 }
 ```
@@ -114,15 +114,15 @@ Upload the one you mean to use.
 
 ### The three texts do different things
 
-**`title`** is the label a player reads from an adjacent sector, Up to 64 characters.
+**`title`** is the label a player reads from an adjacent sector, Up to {{max_title_len}} characters.
 
 **`short_description`** is what a player sees from an adjacent sector, before
-entering. Up to 300 characters.
+entering. Up to {{max_short_description_len}} characters.
 
 **`long_description`** is the sector itself, shown while the player is standing
-in it. Up to 4000 characters.
+in it. Up to {{max_long_description_len}} characters.
 
-Aim for 500 to 1000 characters of `long_description`. 4000 is the hard limit,
+Aim for 500 to 1000 characters of `long_description`. {{max_long_description_len}} is the hard limit,
 not a target. A player reads this every single time they walk in, and the exits
 and objects are listed underneath it, so half a screen of prose per room is
 what stops people exploring. Go past 1000 characters only when the place
@@ -137,7 +137,7 @@ genuinely needs it.
 2. `coordinate` must match the coordinate assigned above.
 3. All three texts are required and must not be empty. `image` is the only
    optional field.
-4. Respect the length caps: 64 / 300 / 4000 characters.
+4. Respect the length caps: {{max_title_len}} / {{max_short_description_len}} / {{max_long_description_len}} characters.
 5. No control characters other than newlines. No fields other than the five
    above.
 
