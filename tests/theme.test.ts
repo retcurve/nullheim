@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { GENRES, MOODS, SIZES, themeForClaim } from "./theme.ts";
+import { GENRES, MOODS, SIZES, themeForClaim } from "../src/theme.ts";
 
 describe("themeForClaim", () => {
   test("is deterministic in the claim id", () => {

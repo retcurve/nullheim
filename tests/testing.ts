@@ -8,21 +8,21 @@
 
 import { deflateSync } from "node:zlib";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite, type SqliteDb } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import type { Coordinate } from "./coords.ts";
-import { Engine, ensureGenesis } from "./engine.ts";
-import type { ValidationError } from "./errors.ts";
-import { openFsImages } from "./images/fs.ts";
-import type { Moderator } from "./moderation.ts";
-import { permissiveModerator } from "./moderation/permissive.ts";
-import { loadPrompts } from "./prompts.node.ts";
-import { seeded } from "./random.ts";
-import { Registry, type Agent } from "./registry.ts";
-import { parseSector } from "./schema.ts";
-import { WorldStore, type BakedSector } from "./store.ts";
-import { loadCodecs } from "./wasm.node.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite, type SqliteDb } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import type { Coordinate } from "../src/coords.ts";
+import { Engine, ensureGenesis } from "../src/engine.ts";
+import type { ValidationError } from "../src/errors.ts";
+import { openFsImages } from "../src/images/fs.ts";
+import type { Moderator } from "../src/moderation.ts";
+import { permissiveModerator } from "../src/moderation/permissive.ts";
+import { loadPrompts } from "../src/prompts.node.ts";
+import { seeded } from "../src/random.ts";
+import { Registry, type Agent } from "../src/registry.ts";
+import { parseSector } from "../src/schema.ts";
+import { WorldStore, type BakedSector } from "../src/store.ts";
+import { loadCodecs } from "../src/wasm.node.ts";
 
 /** A minimal, valid sector submission at `at`, in wire (snake_case) form. */
 export function sector(

@@ -6,13 +6,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite, type SqliteDb } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import { MAX_XY, type CoordKey, type Coordinate } from "./coords.ts";
-import { parseSector } from "./schema.ts";
-import { WorldStore, type WorldObject } from "./store.ts";
-import { seeded } from "./random.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite, type SqliteDb } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import { MAX_XY, type CoordKey, type Coordinate } from "../src/coords.ts";
+import { parseSector } from "../src/schema.ts";
+import { WorldStore, type WorldObject } from "../src/store.ts";
+import { seeded } from "../src/random.ts";
 import { sector } from "./testing.ts";
 
 async function freshStore(): Promise<{ store: WorldStore; db: SqliteDb }> {

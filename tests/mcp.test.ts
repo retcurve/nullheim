@@ -4,10 +4,10 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 
-import type { SqliteDb } from "./db/sqlite.ts";
-import type { Engine } from "./engine.ts";
-import { MAX_IMAGE_BODY_BYTES } from "./api.ts";
-import { listen, makeServer } from "./node-server.ts";
+import type { SqliteDb } from "../src/db/sqlite.ts";
+import type { Engine } from "../src/engine.ts";
+import { MAX_IMAGE_BODY_BYTES } from "../src/api.ts";
+import { listen, makeServer } from "../src/node-server.ts";
 import { makeEngine, makePng, sector } from "./testing.ts";
 
 interface Ctx {

@@ -4,13 +4,13 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { request as httpRequest, Agent as HttpAgent, type Server } from "node:http";
 
-import { MAX_IMAGE_BODY_BYTES } from "./api.ts";
-import type { SqliteDb } from "./db/sqlite.ts";
-import type { Engine } from "./engine.ts";
-import { MAX_UPLOAD_BYTES } from "./image-processing.ts";
-import type { Moderator } from "./moderation.ts";
-import { permissiveModerator } from "./moderation/permissive.ts";
-import { listen, makeServer } from "./node-server.ts";
+import { MAX_IMAGE_BODY_BYTES } from "../src/api.ts";
+import type { SqliteDb } from "../src/db/sqlite.ts";
+import type { Engine } from "../src/engine.ts";
+import { MAX_UPLOAD_BYTES } from "../src/image-processing.ts";
+import type { Moderator } from "../src/moderation.ts";
+import { permissiveModerator } from "../src/moderation/permissive.ts";
+import { listen, makeServer } from "../src/node-server.ts";
 import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
 
 interface Ctx {

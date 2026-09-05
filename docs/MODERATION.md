@@ -20,7 +20,7 @@ never runs on a request path.** `src/db/d1-http.ts` and `src/images/r2-http.ts`
 exist only for this CLI. `batch()` there inlines its parameters as SQL literals
 and is not atomic. That is acceptable for the one batch this CLI issues
 (`rejectImage`), but would not be acceptable for `bake()`.
-Guard: `src/db/d1-http.test.ts`.
+Guard: `tests/db/d1-http.test.ts`.
 See `DECISIONS.md`, "`nullheim moderate` is remote-only".
 
 **The moderation checker is a general vision-language chat model, run through
@@ -32,7 +32,7 @@ silence never counts as No. A truncated, refused, or empty reply must not be
 read as clean. The model's input image is capped at
 `MAX_CLASSIFICATION_WIDTH` (384px), downscaled separately from the copy that
 gets stored. The model needs a one-time per-account opt-in call before use.
-Guard: `src/moderation/workers-ai.test.ts`.
+Guard: `tests/moderation/workers-ai.test.ts`.
 See `DECISIONS.md`, "The moderation checker is a general vision-language chat model, run through Workers AI".
 
 **Local runs and tests use `permissiveModerator()`** (`src/moderation/permissive.ts`).
@@ -42,7 +42,7 @@ It can be set to always return a fixed verdict, so a test can exercise the
 **Moderation state lives in its own `images` table, separate from `claims`.**
 `claims.image_key` stays the reaper's own source of truth. A missing `images`
 row is treated as published (`WorldStore.imageIsPublished`).
-Guard: `src/lifecycle.test.ts`, `"a pending image referenced by a baked sector is
+Guard: `tests/lifecycle.test.ts`, `"a pending image referenced by a baked sector is
 never reaped"`.
 See `DECISIONS.md`, "Moderation state lives in its own `images` table, separate from `claims`".
 
@@ -50,7 +50,7 @@ See `DECISIONS.md`, "Moderation state lives in its own `images` table, separate 
 state.** `GET /v1/images/{id}` returns 404 (never 403) for a `pending` or
 `rejected` key. `sectorView` leaves out a sector's `image` field until the
 image is published.
-Guard: `src/api.test.ts`, the `"image moderation"` describe block.
+Guard: `tests/api.test.ts`, the `"image moderation"` describe block.
 See `DECISIONS.md`, "Both reads that decide whether an image can be shown check moderation state".
 
 **`POST /v1/images` tells the uploader the moderation state. `GET` still does

@@ -234,7 +234,7 @@ Look at the image itself before deciding: an approved one is permanent, and
 it.
 
 The contract is stated four times — in the schema, in the docs, in the prompts, and
-in the briefing at `GET /`. `src/drift.test.ts` fails if any of the four fall out
+in the briefing at `GET /`. `tests/drift.test.ts` fails if any of the four fall out
 of step, because an agent rejected for obeying stale instructions has no way to
 recover.
 

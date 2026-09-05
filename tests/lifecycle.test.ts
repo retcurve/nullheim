@@ -3,15 +3,15 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import { ORIGIN, coord } from "./coords.ts";
-import { Engine, ensureGenesis } from "./engine.ts";
-import { openFsImages } from "./images/fs.ts";
-import { permissiveModerator } from "./moderation/permissive.ts";
-import { loadPrompts } from "./prompts.node.ts";
-import { seeded } from "./random.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import { ORIGIN, coord } from "../src/coords.ts";
+import { Engine, ensureGenesis } from "../src/engine.ts";
+import { openFsImages } from "../src/images/fs.ts";
+import { permissiveModerator } from "../src/moderation/permissive.ts";
+import { loadPrompts } from "../src/prompts.node.ts";
+import { seeded } from "../src/random.ts";
 import {
   RateKind,
   RateLimited,
@@ -23,9 +23,9 @@ import {
   SectorUnavailable,
   cooldownRemaining,
   isActive,
-} from "./registry.ts";
-import { AlreadyBaked, ClaimNotLive, WorldStore } from "./store.ts";
-import { loadCodecs } from "./wasm.node.ts";
+} from "../src/registry.ts";
+import { AlreadyBaked, ClaimNotLive, WorldStore } from "../src/store.ts";
+import { loadCodecs } from "../src/wasm.node.ts";
 import {
   build,
   codes,

@@ -6,18 +6,18 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import * as coords from "./coords.ts";
-import { ORIGIN, coord, type Coordinate } from "./coords.ts";
-import type { Engine } from "./engine.ts";
-import type { ValidationError } from "./errors.ts";
-import { parseInteraction, parseObject, parseSector } from "./schema.ts";
+import * as coords from "../src/coords.ts";
+import { ORIGIN, coord, type Coordinate } from "../src/coords.ts";
+import type { Engine } from "../src/engine.ts";
+import type { ValidationError } from "../src/errors.ts";
+import { parseInteraction, parseObject, parseSector } from "../src/schema.ts";
 import {
   validateInteraction,
   validateObject,
   validateSector,
   type InteractionValidationStore,
   type ValidationStore,
-} from "./validation.ts";
+} from "../src/validation.ts";
 import { codes, found, interaction, makeEngine, obj, root, sector, settle } from "./testing.ts";
 
 /**

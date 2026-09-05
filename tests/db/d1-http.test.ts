@@ -7,7 +7,7 @@
 import { test, describe, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { literal, openD1Http } from "./d1-http.ts";
+import { literal, openD1Http } from "../../src/db/d1-http.ts";
 
 describe("inlining a SQL literal", () => {
   test("strings are quoted and internal quotes doubled", () => {

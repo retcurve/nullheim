@@ -8,9 +8,9 @@ import {
   MAX_OUTPUT_WIDTH,
   UnsupportedImage,
   processUpload,
-} from "./image-processing.ts";
+} from "../src/image-processing.ts";
 import { makePng } from "./testing.ts";
-import { loadCodecs } from "./wasm.node.ts";
+import { loadCodecs } from "../src/wasm.node.ts";
 
 const CODECS = loadCodecs();
 

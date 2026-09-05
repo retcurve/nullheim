@@ -6,7 +6,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { workersAiModerator } from "./workers-ai.ts";
+import { workersAiModerator } from "../../src/moderation/workers-ai.ts";
 
 function replying(response: unknown) {
   return workersAiModerator({ async run() { return { response }; } });

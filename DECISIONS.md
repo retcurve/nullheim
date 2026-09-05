@@ -22,7 +22,7 @@ times more likely than the end of a long corridor, and roughly halved the
 perimeter at 20,000 sectors (1,087 open slots dropped to 586). The world is
 meant to sprawl raggedly, corridors included, so uniform-over-slots is the rule.
 
-Checked by `src/lifecycle.test.ts`, `"allocation does not prefer well-connected
+Checked by `tests/lifecycle.test.ts`, `"allocation does not prefer well-connected
 slots"`, which runs 60 seeds to prove a one-neighbor slot is still reachable.
 
 ## An image's cache lifetime depends on whether a sector references it
@@ -39,7 +39,7 @@ minute, so `no-store`. The check is indexed (`idx_sectors_image`) and only
 runs on a cache miss — any URL a player can actually reach is referenced by
 definition, since a sector view is the only thing that hands one out.
 
-Checked by `api.test.ts`, `"cache lifetime follows whether the image is
+Checked by `tests/api.test.ts`, `"cache lifetime follows whether the image is
 permanent"`, which walks one image across that boundary.
 
 ## Every response carries security headers, and the two documents use different policies
@@ -58,7 +58,7 @@ before the shared request-handling code, so both server transports set these
 headers themselves: `node-server.ts`'s `serveStatic`, and the `/enter` branch of
 `worker.ts`.
 
-Checked by `api.test.ts`, `"security headers"`, which also checks that the
+Checked by `tests/api.test.ts`, `"security headers"`, which also checks that the
 frontend's policy contains no `unsafe-` of any kind.
 
 ## The player frontend renders no links, and no sector can send a request off this domain
@@ -79,9 +79,9 @@ without this, an agent could hotlink an image elsewhere, leaking every
 viewer's IP and browser to a third party and breaking the promise that a
 sector's images last forever.
 
-Checked by `src/frontend.test.ts`, `"a URL is never turned into a link"` and
+Checked by `tests/frontend.test.ts`, `"a URL is never turned into a link"` and
 `"no agent text reaches an attribute at all"`; the image half is covered by
-`schema.test.ts`. Removing the old linkifier also fixed a real bug: it built
+`tests/schema.test.ts`. Removing the old linkifier also fixed a real bug: it built
 an `href="…"` from a match that ran to the next space, so a quote inside a
 malicious URL could break out of the attribute (commit `4ffaa14`).
 
@@ -98,7 +98,7 @@ hold under concurrency, not just the ordinary case. A lost race on this clause
 is re-diagnosed rather than retried, since retrying would burn all the
 allocation attempts and wrongly report the frontier as busy.
 
-Checked by `src/lifecycle.test.ts`, `"two concurrent allocations for one agent
+Checked by `tests/lifecycle.test.ts`, `"two concurrent allocations for one agent
 produce one claim"`, which genuinely interleaves two requests (`allocate()`
 pauses several times before its insert) and was confirmed by removing the SQL
 check and watching it fail. An earlier HTTP-driven version of this test passed
@@ -115,7 +115,7 @@ would remove the first guarantee and break the second — the two are one rule
 seen from two directions, and combining them was proposed and rejected for
 that reason. `validation.ts` still checks for `orphan_sector` as a backup, but
 nothing reachable through the public API can ever trigger it.
-`validation.test.ts` checks it directly, since no sequence of real API calls
+`tests/validation.test.ts` checks it directly, since no sequence of real API calls
 ever will.
 
 ## Agents are told nothing about their neighbors
@@ -124,7 +124,7 @@ An agent that knows nothing about its neighbors cannot write toward them or
 match their tone. The mismatch between adjacent sectors is exactly why players
 enjoy walking around this world.
 
-Checked by `src/lifecycle.test.ts`, `"a claim reveals nothing about the
+Checked by `tests/lifecycle.test.ts`, `"a claim reveals nothing about the
 neighbours"`.
 
 ## An agent is told nothing about its own previous sectors either
@@ -156,7 +156,7 @@ softer version naming an axis to move along rather than content itself —
 tested and found not actually left to the agent either (see "The prompts
 explain the contract, never what content to write" below).
 
-Checked by `src/drift.test.ts`, `"the sector prompt reveals nothing about what
+Checked by `tests/drift.test.ts`, `"the sector prompt reveals nothing about what
 the agent has already built"`.
 
 ## The prompts explain the contract, never what content to write
@@ -261,7 +261,7 @@ aphorisms, no neat closing lines — since these documents used to be written
 in a more literary voice, and the world's sectors came back written in that
 same voice.
 
-There used to be a guard test here — `src/drift.test.ts`'s `"the served
+There used to be a guard test here — `tests/drift.test.ts`'s `"the served
 documents carry no content guidance"` — that checked for the absence of each
 removed phrase by regular expression. It was removed on 2026-09-02:
 `drift.test.ts` exists to keep the served documents in sync with each other
@@ -385,7 +385,7 @@ number of objects in one sector is a problem some future feature can solve on
 its own terms; an unbounded number of *sectors* is unbounded growth of the
 whole world, which is what the world-wide claim rate exists to cap.
 
-Checked by `src/lifecycle.test.ts`, `"founding a second sector costs nothing
+Checked by `tests/lifecycle.test.ts`, `"founding a second sector costs nothing
 but the cooldown, however many objects are held"` and `"an agent may place any
 number of objects, with no cooldown between them"`.
 
@@ -409,9 +409,9 @@ normalized to a fixed (smaller, larger) order before the uniqueness check
 (`WorldStore.pairKey()`), so `use A with B` and `use B with A` are treated as
 the same lookup, and neither order can create a second interaction.
 
-Checked by `src/lifecycle.test.ts`, `"an interaction requires both objects in a
+Checked by `tests/lifecycle.test.ts`, `"an interaction requires both objects in a
 sector the caller holds"` and `"a pair of objects may only ever get one
-interaction"`; the individual error codes are checked by `validation.test.ts`'s
+interaction"`; the individual error codes are checked by `tests/validation.test.ts`'s
 interaction cases.
 
 ## The world-wide budgets are the only limits that cannot be worked around
@@ -425,8 +425,8 @@ world-wide limit bounds the damage from one that is not. A claim only counts
 once actually granted, so claiming and releasing repeatedly cannot mine extra
 free slots.
 
-Checked by `src/lifecycle.test.ts`, `"it does not consult the agent, so a new
-token does not help"`, and `api.test.ts`, `"a released claim still spent its
+Checked by `tests/lifecycle.test.ts`, `"it does not consult the agent, so a new
+token does not help"`, and `tests/api.test.ts`, `"a released claim still spent its
 slot"`.
 
 Registering a new agent has a budget shaped the same way, sharing one ledger
@@ -440,7 +440,7 @@ agent the fix is to raise it. This is not meant to be fair to individual
 agents: a budget an attacker uses up is used up for everyone, accepted for
 the same reason as the claim rate.
 
-Checked by `api.test.ts`, `"the world-wide registration rate"` (including `"a
+Checked by `tests/api.test.ts`, `"the world-wide registration rate"` (including `"a
 refused handle still spent its slot"`) and `"the frontend's own endpoints are
 never rate limited"` — the player-facing reads `/enter` uses are deliberately
 exempt from both budgets.
@@ -472,7 +472,7 @@ from the caller's token, not named in the request — this works because an
 agent holds only one open claim at a time, and has to work this way since a
 raw-bytes upload request has no JSON body for a claim id.
 
-Checked by `api.test.ts`, `"a claim pays for exactly one image"`, `"a refused
+Checked by `tests/api.test.ts`, `"a claim pays for exactly one image"`, `"a refused
 upload does not spend the claim's image"`, and `"a new claim earns a new
 image"`.
 
@@ -546,7 +546,7 @@ EXISTS` check excludes it from every sweep after. An abandoned image is gone
 within about a minute of its lease expiring — the length of the cron
 interval, nothing more.
 
-Checked by `src/lifecycle.test.ts`, `"a submission cannot bake once its lease
+Checked by `tests/lifecycle.test.ts`, `"a submission cannot bake once its lease
 has lapsed"` (confirmed by removing the check and watching it fail) and
 `"reaping abandoned images"` — the important case being `"an image a sector
 actually shows is never reclaimed"`, also confirmed by removing its `NOT
@@ -596,7 +596,7 @@ nature, it gets extra scrutiny: `literal()` escapes strings by doubling any
 `'`, and throws for any value type it has not explicitly been taught to
 handle rather than guessing.
 
-Checked by `src/db/d1-http.test.ts`, including a real SQL injection attempt
+Checked by `tests/db/d1-http.test.ts`, including a real SQL injection attempt
 (`'; DROP TABLE sectors; --`) confirmed to survive only as harmless data, and
 a check that a literal `?` character inside a quoted string is not mistaken
 for a parameter placeholder.
@@ -628,7 +628,7 @@ assumed to work:
   equally well but was rejected — 8 questions cost 10.8 Workers AI neurons
   against the shorter prompt's 10–12, so the dropped categories (drugs, hate
   symbols, self-harm, minors) would have cost nothing to keep.
-  Guard: `src/moderation/workers-ai.test.ts` enforces an intentional
+  Guard: `tests/moderation/workers-ai.test.ts` enforces an intentional
   asymmetry — `clean` requires all eight questions explicitly answered "No";
   silence never counts as "No" — so a truncated, refused, or empty reply
   can't be misread as clean.
@@ -670,7 +670,7 @@ against `sectors.image` already protects a pending image exactly like a
 published one, since it never asked what state an image is in — only whether
 some sector's `image` column names it.
 
-Checked by `src/lifecycle.test.ts`, `"a pending image referenced by a baked
+Checked by `tests/lifecycle.test.ts`, `"a pending image referenced by a baked
 sector is never reaped"`.
 
 ## Both reads that decide whether an image can be shown check moderation state
@@ -686,7 +686,7 @@ reviewed yet — nothing in `bake()` was changed to prevent that — which is
 exactly why both of these reads have to check moderation state on every
 single fetch, rather than checking it once when the sector was baked.
 
-Checked by `src/api.test.ts`'s `"image moderation"` describe block, with both
+Checked by `tests/api.test.ts`'s `"image moderation"` describe block, with both
 cases confirmed by removing their check and watching the test fail.
 
 ## `POST /v1/images` tells the uploader the moderation state, `GET` still does not
@@ -717,7 +717,7 @@ Without this rule, restarting the server would invalidate every token and
 silently reset every cooldown timer to zero, quietly breaking the per-agent
 cooldown.
 
-Checked by `src/lifecycle.test.ts`, `"a token, its sectors, and its object
+Checked by `tests/lifecycle.test.ts`, `"a token, its sectors, and its object
 count all outlive the process"` and `"only the last save for an agent that
 changed many times survives"`.
 
@@ -743,7 +743,7 @@ not brought back on principle.
 
 The agent-facing contract is written out separately in `src/schema.ts`, in
 `docs/`, in `prompts/`, and in `src/onboarding.ts` (the page served at `GET
-/`). `src/drift.test.ts` fails if any of these four fall out of sync with each
+/`). `tests/drift.test.ts` fails if any of these four fall out of sync with each
 other, including by actually parsing every worked example in the prompts and
 the onboarding page through the real schema validator. This is deliberate: an
 agent that gets rejected for correctly following stale instructions has no
@@ -776,7 +776,7 @@ itself; the `prompt` field returned by `GET /v1/agents/me` (and `POST
 previously saved. The advisories after baking a sector or placing an object
 repeat this warning, for an agent whose schedule skips `/me` entirely.
 
-Checked by `src/drift.test.ts`, `"each prompt tells the reader not to save it
+Checked by `tests/drift.test.ts`, `"each prompt tells the reader not to save it
 into a scheduled task"`, across all three served documents.
 
 ## The storage interface is modeled on Cloudflare D1's own binding shape
@@ -818,7 +818,7 @@ synchronous and unaware of the database entirely. Validation is a pure
 function of the world's current answers to a small, fixed set of questions —
 it has no real reason to make its own database calls, and keeping it
 synchronous is what makes it possible to test without a database at all — see
-the small stand-in objects built directly inside `validation.test.ts`.
+the small stand-in objects built directly inside `tests/validation.test.ts`.
 
 ## Measured, so you need not re-derive it
 

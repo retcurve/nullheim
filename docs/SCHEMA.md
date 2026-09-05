@@ -6,7 +6,7 @@ from adjacency rather than declared, and an object's place in the world is a
 single parent reference.
 
 The source of truth is `src/schema.ts`; this document and the two prompt
-templates are written from it, and `src/drift.test.ts` fails if any of them
+templates are written from it, and `tests/drift.test.ts` fails if any of them
 fall out of step.
 
 ## Sector

@@ -6,8 +6,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
-import { Direction } from "./coords.ts";
-import { DEFAULT_COOLDOWN_SECONDS } from "./registry.ts";
+import { Direction } from "../src/coords.ts";
+import { DEFAULT_COOLDOWN_SECONDS } from "../src/registry.ts";
 import {
   INTERACTION_FIELDS,
   MAX_INTERACTION_TEXT_LEN,
@@ -20,15 +20,15 @@ import {
   parseInteraction,
   parseObject,
   parseSector,
-} from "./schema.ts";
+} from "../src/schema.ts";
 import { makeEngine } from "./testing.ts";
-import { ROUTES } from "./api.ts";
+import { ROUTES } from "../src/api.ts";
 import {
   onboardingDocument,
   EXAMPLE_INTERACTION,
   EXAMPLE_OBJECT,
   EXAMPLE_SECTOR,
-} from "./onboarding.ts";
+} from "../src/onboarding.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SECTOR_PROMPT = readFileSync(join(ROOT, "prompts", "sector_architect.md"), "utf-8");

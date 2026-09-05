@@ -3,7 +3,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { coord } from "./coords.ts";
+import { coord } from "../src/coords.ts";
 import {
   MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
@@ -14,7 +14,7 @@ import {
   parseObject,
   parseSector,
   sectorAsDict,
-} from "./schema.ts";
+} from "../src/schema.ts";
 import { codes, interaction, obj, sector } from "./testing.ts";
 
 describe("parsing a sector", () => {

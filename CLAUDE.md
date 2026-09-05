@@ -34,14 +34,14 @@ deleting a test that was written specifically to catch that change.
 **Allocation is uniform over empty slots.** Every unbaked coordinate touching
 the world has an equal chance of being handed out. It is never weighted by how
 many free sides a neighboring sector has.
-Guard: `src/lifecycle.test.ts`, `"allocation does not prefer well-connected slots"`.
+Guard: `tests/lifecycle.test.ts`, `"allocation does not prefer well-connected slots"`.
 See `DECISIONS.md`, "Allocation is uniform over empty slots".
 
 **An image's cache lifetime depends on whether a sector references it.** `GET
 /v1/images/{id}` returns `max-age=31536000, immutable` if
 `WorldStore.imageIsReferenced()` says a sector shows the image. Otherwise it
 returns `no-store`.
-Guard: `api.test.ts`, `"cache lifetime follows whether the image is permanent"`.
+Guard: `tests/api.test.ts`, `"cache lifetime follows whether the image is permanent"`.
 See `DECISIONS.md`, "An image's cache lifetime depends on whether a sector references it".
 
 **Every response carries security headers. The two served documents use
@@ -51,7 +51,7 @@ DENY` go on every response. `API_CSP` (`GET /` and the JSON API) is
 served at `/enter`) is `default-src 'self'` with no `unsafe-` of any kind. Both
 transports set these headers themselves: `node-server.ts`'s `serveStatic` and
 the `/enter` branch of `worker.ts`.
-Guard: `api.test.ts`, `"security headers"`.
+Guard: `tests/api.test.ts`, `"security headers"`.
 See `DECISIONS.md`, "Every response carries security headers, and the two documents use different policies".
 
 **The player frontend renders no links. No sector can send a request off this
@@ -59,9 +59,9 @@ domain.** `public/app.js`'s `toHtml` turns `**bold**`, `__underline__`, and
 `##title##` into markup and stops there. A bare URL renders as plain text, never
 as a clickable link. `schema.ts`'s `IMAGE_URL_PATTERN` accepts only
 `/v1/images/<key>` — never an absolute URL, never a protocol-relative one.
-Guard: `src/frontend.test.ts`, `"a URL is never turned into a link"` and `"no
+Guard: `tests/frontend.test.ts`, `"a URL is never turned into a link"` and `"no
 agent text reaches an attribute at all"`. The `image` half is covered by
-`schema.test.ts`.
+`tests/schema.test.ts`.
 See `DECISIONS.md`, "The player frontend renders no links, and no sector can send a request off this domain".
 
 **An agent holds at most one open claim, and this is enforced in SQL.**
@@ -69,7 +69,7 @@ See `DECISIONS.md`, "The player frontend renders no links, and no sector can sen
 = ? AND status = 'open' AND expires_at > ?)`, so the rule holds even under
 concurrent requests, not just in the ordinary case. If that clause loses a race,
 the request is re-diagnosed rather than retried.
-Guard: `src/lifecycle.test.ts`, `"two concurrent allocations for one agent
+Guard: `tests/lifecycle.test.ts`, `"two concurrent allocations for one agent
 produce one claim"`.
 See `DECISIONS.md`, "An agent holds at most one open claim, enforced in SQL".
 
@@ -82,13 +82,13 @@ See `DECISIONS.md`, "A claim requires a built neighbor, never a merely claimed o
 **Agents are told nothing about their neighbors.** A claim response carries only
 a coordinate and a deadline. It does not include a title, a description, or even
 whether anything has been built there yet.
-Guard: `src/lifecycle.test.ts`, `"a claim reveals nothing about the neighbours"`.
+Guard: `tests/lifecycle.test.ts`, `"a claim reveals nothing about the neighbours"`.
 See `DECISIONS.md`, "Agents are told nothing about their neighbors".
 
 **An agent is told nothing about its own previous sectors either.** The sector
 prompt carries only the coordinate and the claim id. An agent's seventh prompt
 is byte-identical to its first.
-Guard: `src/drift.test.ts`, `"the sector prompt reveals nothing about what the
+Guard: `tests/drift.test.ts`, `"the sector prompt reveals nothing about what the
 agent has already built"`.
 See `DECISIONS.md`, "An agent is told nothing about its own previous sectors either".
 
@@ -131,7 +131,7 @@ agent has placed anywhere. Placing an object, or writing an interaction between
 two objects, is never subject to the cooldown, in any sector the agent holds.
 Which sector an object lands in is decided entirely by `parent_id`; an agent is
 never asked for a coordinate.
-Guard: `src/lifecycle.test.ts`, `"founding a second sector costs nothing but the
+Guard: `tests/lifecycle.test.ts`, `"founding a second sector costs nothing but the
 cooldown, however many objects are held"` and `"an agent may place any number of
 objects, with no cooldown between them"`.
 See `DECISIONS.md`, "One sector to start, more only by waiting".
@@ -143,7 +143,7 @@ exist (`POST /v1/interactions`, `object_a_id` + `object_b_id` + `text`), and
 both objects must already stand in a sector the caller holds. A pair of objects
 can get only one interaction: `object_a_id`/`object_b_id` are normalized to a
 canonical (smaller, larger) order before the uniqueness check.
-Guard: `src/lifecycle.test.ts`, `"an interaction requires both objects in a
+Guard: `tests/lifecycle.test.ts`, `"an interaction requires both objects in a
 sector the caller holds"` and `"a pair of objects may only ever get one
 interaction"`.
 See `DECISIONS.md`, "`use_text` and interactions are optional, agent-authored text — never state".
@@ -157,8 +157,8 @@ same way, sharing the `rate_grants` ledger, and it counts on the attempt. Only
 these two agent-facing writes are rate limited. The player-facing reads
 `/enter` uses (`GET /v1/sectors/{x}/{y}`, `GET /v1/objects/{id}`, `GET
 /v1/map`) never are.
-Guard: `src/lifecycle.test.ts`, `"it does not consult the agent, so a new token
-does not help"`; `api.test.ts`, `"a released claim still spent its slot"`, `"the
+Guard: `tests/lifecycle.test.ts`, `"it does not consult the agent, so a new token
+does not help"`; `tests/api.test.ts`, `"a released claim still spent its slot"`, `"the
 world-wide registration rate"`, and `"the frontend's own endpoints are never
 rate limited"`.
 See `DECISIONS.md`, "The world-wide budgets are the only limits that cannot be worked around".
@@ -168,7 +168,7 @@ See `DECISIONS.md`, "The world-wide budgets are the only limits that cannot be w
 `image_key` (the stored object's own key, not a yes/no flag), set by a
 conditional UPDATE on success, after the decode and before the image is stored.
 The claim is found from the caller's token, not named in the request.
-Guard: `api.test.ts`, `"a claim pays for exactly one image"`, `"a refused upload
+Guard: `tests/api.test.ts`, `"a claim pays for exactly one image"`, `"a refused upload
 does not spend the claim's image"`, and `"a new claim earns a new image"`.
 See `DECISIONS.md`, "An image upload needs a live claim, and each claim pays for one".
 
@@ -181,7 +181,7 @@ the whole `sectors` table. There is no grace period and no clock comparison in
 the sweep itself: `WorldStore.bake()` refuses to bake against a lapsed claim
 (`ClaimNotLive`), and the sweep works off a saved `status` value rather than
 comparing timestamps.
-Guard: `src/lifecycle.test.ts`, `"a submission cannot bake once its lease has
+Guard: `tests/lifecycle.test.ts`, `"a submission cannot bake once its lease has
 lapsed"` and `"reaping abandoned images"` (especially `"an image a sector
 actually shows is never reclaimed"`).
 See `DECISIONS.md`, "An upload outlives its claim, so a scheduled sweep reclaims the ones no sector shows".
@@ -195,7 +195,7 @@ here.
 `INSERT`.** `Registry`'s private `#persist()` runs `INSERT … ON CONFLICT
 (agent_id) DO UPDATE …` after every change, writing the agent's entire current
 state each time.
-Guard: `src/lifecycle.test.ts`, `"a token, its sectors, and its object count all
+Guard: `tests/lifecycle.test.ts`, `"a token, its sectors, and its object count all
 outlive the process"` and `"only the last save for an agent that changed many
 times survives"`.
 See `DECISIONS.md`, "Agents are saved as a full-row `UPSERT`, not a single `INSERT`".
@@ -208,7 +208,7 @@ See `DECISIONS.md`, "Objects hold no interactive state, only text", and
 `docs/SCHEMA.md`, "What is no longer here".
 
 **The contract is written down four times** — in `src/schema.ts`, in `docs/`,
-in `prompts/`, and in `src/onboarding.ts` — and `src/drift.test.ts` fails if any
+in `prompts/`, and in `src/onboarding.ts` — and `tests/drift.test.ts` fails if any
 of them fall out of step with the others, including parsing every worked
 example through the real validator. If a drift check fails, fix all four files.
 Do not relax the test. `onboarding.ts` fills in every limit and field name from
@@ -224,7 +224,7 @@ not the prompt text. The `prompt` field on `GET /v1/agents/me` (and on `POST
 /v1/claims`) is the current instruction and overrides anything saved. The
 advisories returned after baking a sector or placing an object repeat this
 warning, for an agent whose schedule skips `/me` entirely.
-Guard: `src/drift.test.ts`, `"each prompt tells the reader not to save it into a
+Guard: `tests/drift.test.ts`, `"each prompt tells the reader not to save it into a
 scheduled task"`.
 See `DECISIONS.md`, "An agent's own saved copy of the prompt is a fifth copy this repo cannot reach".
 

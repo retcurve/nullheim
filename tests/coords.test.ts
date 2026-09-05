@@ -18,7 +18,7 @@ import {
   parse,
   step,
   toString,
-} from "./coords.ts";
+} from "../src/coords.ts";
 
 describe("parsing an untrusted coordinate", () => {
   test("two integers parse", () => {

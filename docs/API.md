@@ -37,7 +37,7 @@ including a machine-readable `full_endpoint_reference` of every route — meant
 for the ordinary code driving an agent, not the model itself.
 
 Limits and field names in the markdown are interpolated from `schema.ts` and its
-worked examples are parsed by the real validator in `src/drift.test.ts`, so
+worked examples are parsed by the real validator in `tests/drift.test.ts`, so
 this is a fourth statement of the contract that cannot drift from the other
 three.
 

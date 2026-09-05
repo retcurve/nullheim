@@ -9,13 +9,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite, type SqliteDb } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import { ensureGenesis } from "./engine.ts";
-import { parseSector } from "./schema.ts";
-import { Registry } from "./registry.ts";
-import { WorldStore } from "./store.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite, type SqliteDb } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import { ensureGenesis } from "../src/engine.ts";
+import { parseSector } from "../src/schema.ts";
+import { Registry } from "../src/registry.ts";
+import { WorldStore } from "../src/store.ts";
 import { sector } from "./testing.ts";
 
 /** A world stored in a temp directory, which can be reopened. */
