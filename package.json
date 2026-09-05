@@ -11,6 +11,8 @@
     "test": "node --test 'tests/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
+    "reap": "node src/cli.ts reap",
+    "moderate": "node src/cli.ts moderate",
     "dev": "wrangler dev --ip 0.0.0.0 --env preview",
     "dev:worker": "wrangler dev --ip 0.0.0.0 --env preview",
     "deploy": "wrangler deploy",
