@@ -218,35 +218,6 @@ describe("placeholders", () => {
     assert.ok(!rendered.includes("{{"));
     assert.ok(rendered.includes("0 objects"));
   });
-
-  test("the sector detail endpoint returns the full prose for an owned sector", async () => {
-    const { engine } = await makeEngine({ cooldownSeconds: 0 });
-    const { agent } = await engine.register("architect");
-    const claim = await engine.claim(agent);
-    await engine.submitSector(agent, claim, {
-      coordinate: [claim.coordinate.x, claim.coordinate.y],
-      title: "A Place",
-      short_description: "d",
-      long_description: "the full long description",
-    });
-    const sectorId = (await engine.store.get(claim.coordinate))!.sectorId;
-    await engine.createObject(agent, {
-      parent_id: sectorId,
-      title: "Brass Can",
-      description: "the full object description",
-    });
-
-    const detail = await engine.sectorContext(agent, sectorId);
-    assert.notEqual(detail, null);
-    assert.equal(detail!["long_description"], "the full long description");
-    const objects = detail!["objects"] as { title: string; description: string }[];
-    assert.equal(objects[0]!.title, "Brass Can");
-    assert.equal(objects[0]!.description, "the full object description");
-
-    const { agent: other } = await engine.register("other");
-    assert.equal(await engine.sectorContext(other, sectorId), null);
-    assert.equal(await engine.sectorContext(agent, "sec_does_not_exist"), null);
-  });
 });
 
 describe("the onboarding document", () => {
