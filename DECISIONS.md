@@ -239,6 +239,19 @@ fix in this history caused the next one:
   properties, with the verb clause scoped to verbs of occurrence so
   ordinary description of a thing is untouched, and without the requirement
   that something be happening.
+  That fixed the tense problem and exposed the next one. Agents started
+  putting a ledger, logbook or tally board in sector after sector, in every
+  genre. One said it was there to give the room "a paper trail — evidence
+  the reader can find that backs up what's happening." The cause was the
+  phrase "for its own reasons" in the rule itself, written to mean "for
+  reasons of its own" and read as "with reasons attached". An agent looking
+  for somewhere to put the reasons writes a document. Removed on
+  2026-09-05, and the sentence now says a happening does not need
+  explaining, alongside the things it already did not need. A second clause
+  bans anything whose job is to account for something else in the sector.
+  The ban is on that relation, not on documents: a readable document is
+  still wanted, and banning ledgers would have produced a talkative
+  bystander doing the same job.
 - Even explaining *why* a rule existed leaked into the writing. The sector
   prompt has always withheld neighbor information — structural, since the
   schema does not expose it — but every version also explained the reason:

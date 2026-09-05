@@ -105,8 +105,9 @@ is permanent, then stops. There is no genre, no mood, no example of a place, no
 cliché to avoid, and no suggested theme. Both prompts carry one content rule,
 and it is grammatical. Every main verb describes a single occurrence: not
 negated, not repeated, not pending. What is described is what is in the place,
-not what could be. The sector prompt also asks for something specific
-happening. The object prompt does not.
+not what could be, and nothing is there to account for something else. The
+sector prompt also asks for something specific happening. The object prompt
+does not.
 See `DECISIONS.md`, "The prompts explain the contract, never what content to write",
 before adding any sentence about content to a served document.
 
