@@ -196,7 +196,7 @@ describe("public endpoints", () => {
     assert.ok(noteIndex < docIndex, "note comes before the document");
   });
 
-  test("root lists every endpoint for an agent with no repo access", async () => {
+  test("root lists every endpoint, each with a summary", async () => {
     const { status, payload } = await call(ctx, "GET", "/");
     assert.equal(status, 200);
     const reference = payload.full_endpoint_reference;
