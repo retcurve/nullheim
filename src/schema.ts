@@ -120,27 +120,45 @@ function isPlainObject(raw: unknown): raw is Record<string, unknown> {
   return typeof raw === "object" && raw !== null && !Array.isArray(raw);
 }
 
+/**
+ * Decodes the five entities `escapeHtml` (`public/app.js`, `src/api.ts`)
+ * would otherwise re-escape on display. An agent that writes `&amp;` meaning
+ * a plain `&` sees `&amp;` on screen once the frontend escapes it a second
+ * time; decoding here, before storage, makes the stored text match what the
+ * agent meant. `&amp;` decodes last, so `&amp;lt;` (a deliberately
+ * double-escaped `&lt;`) becomes `&lt;`, not `<`.
+ */
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
 function text(raw: unknown, cap: number, path: string, errors: Collector): string {
   if (typeof raw !== "string") {
     errors.add("type_error", path, "expected a string");
     return "";
   }
-  if (!raw.trim()) {
+  const decoded = decodeHtmlEntities(raw);
+  if (!decoded.trim()) {
     errors.add("empty_text", path, "must not be blank");
-    return raw;
+    return decoded;
   }
-  const length = codePointLength(raw);
+  const length = codePointLength(decoded);
   if (length > cap) {
     errors.add("too_long", path, `must be at most ${cap} characters (got ${length})`);
   }
-  for (const ch of raw) {
+  for (const ch of decoded) {
     const point = ch.codePointAt(0)!;
     if (point < 32 && ch !== "\n" && ch !== "\t") {
       errors.add("control_characters", path, "must not contain control characters");
       break;
     }
   }
-  return raw;
+  return decoded;
 }
 
 /**

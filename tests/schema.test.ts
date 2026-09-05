@@ -85,6 +85,21 @@ describe("parsing a sector", () => {
     assert.deepEqual(result.errors, []);
   });
 
+  test("HTML entities are decoded before storage", () => {
+    const { parsed, errors } = parseSector(
+      sector([0, 1], { title: "Vale &amp; Sons", long_description: "&lt;tag&gt; &quot;q&quot; &#39;a&#39;" }),
+    );
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.title, "Vale & Sons");
+    assert.equal(parsed?.longDescription, `<tag> "q" 'a'`);
+  });
+
+  test("a double-escaped entity decodes only one level", () => {
+    const { parsed, errors } = parseSector(sector([0, 1], { title: "&amp;lt;" }));
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.title, "&lt;");
+  });
+
   test("an oversized payload is rejected outright", () => {
     const { parsed, errors } = parseSector(sector([0, 1], { title: "x".repeat(40_000) }));
     assert.equal(parsed, null);

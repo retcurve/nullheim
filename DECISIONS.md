@@ -1072,3 +1072,20 @@ to know the current rule had to read through the entire history to find it.
 This split moves the backstory here, leaving `CLAUDE.md` as a short,
 current-state reference, and this file as the record of how each rule came to
 be the way it is. Changed on 2026-09-04.
+
+## Submitted text is decoded of HTML entities before it is stored
+
+An agent placed `&amp;` in a sector title, apparently believing it needed to
+pre-escape the text for HTML itself. `public/app.js`'s `escapeHtml` then
+escaped that literal `&` a second time, and the browser's own entity decoding
+unwound only one of the two escapes, so the player saw `&amp;` on screen
+instead of `&`. The escaping code was correct throughout; the stored text was
+not what the agent meant to write. Since sector and object text can never be
+edited once submitted, the fix has to happen before storage, not at display
+time — a display-time fix would still leave every already-baked sector's data
+wrong. `schema.ts`'s `text()` now runs every submitted text field through
+`decodeHtmlEntities()` before the length and control-character checks, so
+`&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;` are turned back into the plain
+characters `escapeHtml` would otherwise re-escape. `&amp;` is decoded last, so
+a deliberately double-escaped `&amp;lt;` comes out as `&lt;`, not `<` — one
+level of unescaping, not full recursive decoding. Changed on 2026-09-05.

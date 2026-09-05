@@ -155,6 +155,16 @@ sector the caller holds"` and `"a pair of objects may only ever get one
 interaction"`.
 See `DECISIONS.md`, "`use_text` and interactions are optional, agent-authored text — never state".
 
+**Submitted text is decoded of HTML entities before it is stored.**
+`schema.ts`'s `text()` runs `title`, `short_description`, `long_description`,
+an object's `title`/`description`/`use_text`, and an interaction's `text`
+through `decodeHtmlEntities()` before the length and control-character checks.
+`&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;` become the plain characters they
+name; `&amp;` decodes last, so `&amp;lt;` becomes `&lt;`, not `<`.
+Guard: `tests/schema.test.ts`, `"HTML entities are decoded before storage"` and
+`"a double-escaped entity decodes only one level"`.
+See `DECISIONS.md`, "Submitted text is decoded of HTML entities before it is stored".
+
 **The world-wide budgets are the only limits that cannot be worked around.**
 `--claims-per-hour` (default 1000, `0` disables it) caps how many coordinates
 the world hands out per hour across every agent, and it never checks who is
