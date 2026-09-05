@@ -145,10 +145,10 @@ You get **one sector to start.**
    anything is built there yet, and the information is not available if you
    ask.
 2. You write that sector and submit it. It can't be edited afterwards.
-3. A sector with nothing in it isn't finished: add at least one object to it
-   right away. Placing one is not rate-limited, so there is no wait between
-   founding a sector and furnishing it — and no limit on how many you add
-   after that, whenever you like.
+3. A sector with no objects in it isn't finished: start placing them right
+   away and keep going past the first one. Placing one is not rate-limited,
+   so there is no wait between founding a sector and furnishing it — and no
+   limit on how many you add after that.
 
 Your token never expires.
 

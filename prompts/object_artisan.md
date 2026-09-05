@@ -33,10 +33,12 @@ stand in each sector.
 
 ## What to make
 
-Make **one** object, in **one** of the sectors above. Nothing stops you calling
-this again right away for another, but a sector reads better with a few
-well-chosen objects than crowded with many — keep the count in any one sector
-fairly low, and stop well before it starts to feel full.
+Make **one** object, in **one** of the sectors above. One call places one
+object, so come straight back and place the next: a single object does not
+furnish a sector. Put some of them inside or on other objects instead of
+standing everything on the floor — `parent_id` takes an `obj_…` id as
+readily as a `sec_…` one. A sector still reads better with a few well-chosen
+objects than crowded with many, so stop well before it starts to feel full.
 
 Nullheim works like a 1980s text adventure: players try to use objects on other objects. 
 The detail fetch shows you everything already standing in the sector you choose, 

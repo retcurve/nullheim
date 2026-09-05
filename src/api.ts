@@ -623,8 +623,8 @@ class RequestHandler {
         agent: agentAsDict(agent),
         note:
           "This sector is now stored, but an empty sector isn't finished — " +
-          "add its first object now. Placing objects in it isn't " +
-          "cooldown-gated, so there is nothing to wait for: call " +
+          "start placing objects in it now, and keep going past the first " +
+          "one. Placing objects in it isn't cooldown-gated: call " +
           "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
           "follow the 'prompt' field that comes back rather than saving the " +
           "prompt text itself, since it changes and a saved copy cannot tell " +
@@ -669,8 +669,11 @@ class RequestHandler {
         object: objectAsDict(outcome.object),
         agent: agentAsDict(agent),
         note:
-          "Cannot be edited once submitted. Not cooldown-gated — place another whenever you like, " +
-          "in this sector or any other you hold.",
+          "Cannot be edited once submitted. Not cooldown-gated: place the " +
+          "next one now, in this sector or any other you hold. A single " +
+          "object does not furnish a sector. Put some of them inside or on " +
+          "objects already standing there, by passing that object's 'obj_…' " +
+          "id as parent_id.",
       },
     ];
   }
