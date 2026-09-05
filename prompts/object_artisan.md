@@ -112,10 +112,9 @@ be in the same sector.
 
 ## Hard rules
 
-1. Avoid abeyance and perpetuity. Avoid absence dressed up as atmosphere. If
-   you write about something happening, use the present tense.
-   Don't make 'this has always happened' the reason something matters. 
-   Show one specific thing happening right now that makes it matter.
+1. Every room needs something changing, not just something happening.
+   Present tense isn't the test — whether it actually moves toward a change
+   or resolution is.
 2. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
 3. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).
