@@ -106,20 +106,52 @@
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+  /** Handle of the in-flight scroll animation, so a new one can replace it. */
+  let scrollAnim = null;
+
+  function cancelScrollAnim() {
+    if (scrollAnim !== null) {
+      cancelAnimationFrame(scrollAnim);
+      scrollAnim = null;
+    }
+  }
+
   /**
-   * `scrollTo({behavior: "smooth"})` handles the animation itself, including
-   * being interrupted cleanly by a wheel or touch scroll mid-flight. The
-   * shortest real scroll is still three lines (a failed command: its echo,
-   * a blank line, the error), and a successful command's own result text
-   * keeps extending the same scroll before the eye can register where it
-   * stopped, so there is no small-distance case here that needs a hand-built
-   * animation to stay visible.
+   * Animated by hand rather than with `scrollTo({behavior: "smooth"})`.
+   * Tried that: native smooth scales its duration with distance travelled,
+   * and browsers differ sharply on what that duration actually comes out
+   * to — measured well under budget for a comfortable glide in some,
+   * effectively instant in others for the same short real distance (a
+   * command's response typically moves the view well under a screen's
+   * worth of pixels). A floor on the duration is what makes the glide
+   * reliably visible everywhere, not just in whichever browser happens to
+   * be generous about it.
    */
   function scrollOutputTo(top) {
     const target = Math.min(Math.max(0, top), maxScroll());
     scrollTarget = target;
-    output.scrollTo({ top: target, behavior: reduceMotion.matches ? "instant" : "smooth" });
-    updateMoreIndicator();
+    cancelScrollAnim();
+
+    const start = output.scrollTop;
+    const distance = target - start;
+    if (reduceMotion.matches || Math.abs(distance) < 1) {
+      output.scrollTop = target;
+      updateMoreIndicator();
+      return;
+    }
+
+    const duration = Math.min(600, Math.max(220, Math.abs(distance) * 1.6));
+    const startedAt = performance.now();
+
+    const step = (now) => {
+      const p = Math.min(1, (now - startedAt) / duration);
+      // easeInOutQuad — starts and stops gently, like a terminal catching up.
+      const eased = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+      output.scrollTop = start + distance * eased;
+      updateMoreIndicator();
+      scrollAnim = p < 1 ? requestAnimationFrame(step) : null;
+    };
+    scrollAnim = requestAnimationFrame(step);
   }
 
   function effectiveScrollTop() {
@@ -141,6 +173,7 @@
    * intercepts it.
    */
   function scrollOutputBy(amount) {
+    cancelScrollAnim();
     scrollTarget = null;
     output.scrollTop = Math.min(Math.max(0, output.scrollTop + amount), maxScroll());
     updateMoreIndicator();
@@ -1445,11 +1478,18 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
     }
   });
 
-  // A wheel or touch drag interrupts the browser's own smooth-scroll and
-  // hands control back to the live scroll position — whatever the last
-  // scrollTo() was aiming at is no longer where the reader wants to be.
+  // A wheel or touch drag hands control back to the live scroll position —
+  // whatever the last animation was aiming at is no longer where the reader
+  // wants to be.
   for (const name of ["wheel", "touchmove"]) {
-    output.addEventListener(name, () => (scrollTarget = null), { passive: true });
+    output.addEventListener(
+      name,
+      () => {
+        cancelScrollAnim();
+        scrollTarget = null;
+      },
+      { passive: true },
+    );
   }
 
   output.addEventListener("scroll", updateMoreIndicator);
