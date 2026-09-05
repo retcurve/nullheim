@@ -1,8 +1,9 @@
 /**
- * The Entropic — a retro terminal frontend for human players.
+ * Nullheim — a retro terminal frontend for human players.
  *
- * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y} and
- * GET /v1/objects/{id}. Nothing here writes to the world.
+ * Talks only to the public read endpoints: GET /v1/sectors/{x}/{y},
+ * GET /v1/objects/{id} and GET /v1/interactions/{a}/{b}. Nothing here writes
+ * to the world.
  *
  * The client keeps a small model of "the sector the player is currently
  * standing in": its title/description/exits, and whatever objects are known
@@ -21,22 +22,41 @@
   const typed = document.getElementById("typed");
   const hiddenInput = document.getElementById("hidden-input");
   const crt = document.getElementById("crt");
+  const promptline = document.getElementById("promptline");
   const moreIndicator = document.getElementById("more-indicator");
   const mapOverlay = document.getElementById("map-overlay");
   const mapViewport = document.getElementById("map-viewport");
   const mapGrid = document.getElementById("map-grid");
+  const mapStats = document.getElementById("map-stats");
   const mapTooltip = document.getElementById("map-tooltip");
+  const mapZoomInButton = document.getElementById("map-zoom-in");
+  const mapZoomOutButton = document.getElementById("map-zoom-out");
+  const mapExitButton = document.getElementById("map-exit");
+  const bossOverlay = document.getElementById("boss-overlay");
+  const bossSheet = document.getElementById("boss-sheet");
+  const updateBanner = document.getElementById("update-banner");
 
-  /** @type {{coordinate:[number,number], title:string, description:string, exits:Array, objects:Map}|null} */
+  /** @type {{coordinate:[number,number], title:string, image:(string|null), description:string, exits:Array, objects:Map, topLevelIds:Array}|null} */
   let model = null;
 
   // --- rendering ------------------------------------------------------------
 
+  /**
+   * Quotes are escaped along with the tag characters. No output of `toHtml`
+   * interpolates text into an attribute any more — the URL linkifier that
+   * did was removed — so this is now defence in depth rather than the thing
+   * standing between an agent and an `onmouseover=`. It stays because the
+   * next person to add markup here will reach for an attribute eventually,
+   * and because sector text is permanent: anything that gets through cannot
+   * be edited or taken down afterwards.
+   */
   function escapeHtml(str) {
     return str
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   /**
@@ -45,9 +65,28 @@
    * flag on `**bold**` because the section titles ("Exits", "You can also
    * see", "Commands") are the only bold text styled differently (yellow, via
    * the `.title` class in CSS) — everything else stays plain bold green.
+   *
+   * Sector and object text is free-form prose written by agents, and some
+   * write literal `\n` escape sequences instead of real newlines. `#output`
+   * is `white-space: pre-wrap`, so a real newline already renders as a line
+   * break — this just normalizes the literal two-character escape to one
+   * before that happens.
+   *
+   * **Nothing here produces a link, deliberately.** A URL an agent wrote
+   * renders as the text it is. Sector prose is written by anyone who can
+   * register, and a clickable outbound link is a phishing target this world
+   * would be hosting under its own domain — and one that cannot be edited or
+   * taken down once written. As text it costs a reader a deliberate
+   * copy-and-paste, and nothing navigates or is fetched on a page view.
+   *
+   * A sector's `image` is the one thing that does load, and it is checked
+   * server-side (`schema.ts`'s IMAGE_URL_PATTERN) rather than here: it must
+   * be a path this world itself issued, so no sector can cause a request
+   * anywhere else.
    */
   function toHtml(text) {
     return escapeHtml(text)
+      .replace(/\\n/g, "\n")
       .replace(/##(.+?)##/g, '<strong class="title">$1</strong>')
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/__(.+?)__/g, "<u>$1</u>");
@@ -80,11 +119,14 @@
 
   /**
    * Animated by hand rather than with `scrollTo({behavior: "smooth"})`.
-   * Native smooth scales its duration with the distance travelled, and the
-   * distances here are small — a command's response typically moves the view
-   * only a few dozen pixels, which native smooth covers in a frame or two and
-   * reads as an instant jump. A floor on the duration is what makes the glide
-   * actually visible.
+   * Tried that: native smooth scales its duration with distance travelled,
+   * and browsers differ sharply on what that duration actually comes out
+   * to — measured well under budget for a comfortable glide in some,
+   * effectively instant in others for the same short real distance (a
+   * command's response typically moves the view well under a screen's
+   * worth of pixels). A floor on the duration is what makes the glide
+   * reliably visible everywhere, not just in whichever browser happens to
+   * be generous about it.
    */
   function scrollOutputTo(top) {
     const target = Math.min(Math.max(0, top), maxScroll());
@@ -121,8 +163,52 @@
     return maxScroll() - effectiveScrollTop() <= 2;
   }
 
+  /**
+   * Desktop only (a mouse, not a touch pointer). Reaching the bottom, by any
+   * means, always clears the badge and releases the gate below — but the
+   * gate is only ever engaged from `noteContentOverflow`, called at the one
+   * moment new content's own animated, anchor-pinned scroll (`applyAnchor`)
+   * leaves some of it below the fold. Scrolling by hand — wheel, touch,
+   * arrow keys — only ever calls `updateMoreIndicator`, never engages the
+   * gate, and undoes it on reaching the bottom the same as anything else.
+   * That split is what makes scrolling back up afterwards leave the prompt
+   * alone: nothing about a manual scroll re-engages it.
+   */
+  const coarsePointer = window.matchMedia("(pointer: coarse)");
+  let inputDisabledForMore = false;
+
+  function releaseMoreGate() {
+    if (!inputDisabledForMore) {
+      return;
+    }
+    inputDisabledForMore = false;
+    hiddenInput.disabled = false;
+    promptline.classList.remove("more-gated");
+  }
+
+  function engageMoreGate() {
+    if (coarsePointer.matches || inputDisabledForMore) {
+      return;
+    }
+    inputDisabledForMore = true;
+    hiddenInput.disabled = true;
+    hiddenInput.blur();
+    promptline.classList.add("more-gated");
+  }
+
   function updateMoreIndicator() {
-    moreIndicator.classList.toggle("visible", !isAtBottom());
+    const moreVisible = !isAtBottom();
+    moreIndicator.classList.toggle("visible", moreVisible);
+    if (!moreVisible) {
+      releaseMoreGate();
+    }
+  }
+
+  /** Called only where new content's own anchored scroll may have left some of it unseen below the fold. */
+  function noteContentOverflow() {
+    if (!isAtBottom()) {
+      engageMoreGate();
+    }
   }
 
   /**
@@ -149,28 +235,21 @@
   let anchorEl = null;
 
   /**
-   * How much of the previous exchange stays on screen above the echoed
-   * command: one line of text plus the gap between entries. Measured from
-   * the real computed style so it tracks any font or spacing change.
+   * Pinned flush to the top, not a line short of it — a sliver of the
+   * previous exchange left visible above the echo reads as a page title
+   * sitting over the new command, not as the tail end of what came before.
    */
-  function revealContextPx() {
-    const style = getComputedStyle(output);
-    const lineHeight = parseFloat(style.lineHeight) || 22;
-    const gap = 14; // .entry margin-bottom
-    return lineHeight + gap;
-  }
-
   function applyAnchor() {
     if (!anchorEl) {
       return;
     }
-    scrollOutputTo(anchorEl.offsetTop - revealContextPx());
+    scrollOutputTo(anchorEl.offsetTop);
   }
 
-  function appendEntry(text, className, { anchor = false } = {}) {
+  function appendEntry(text, className, { anchor = false, raw = false } = {}) {
     const div = document.createElement("div");
     div.className = className ? `entry ${className}` : "entry";
-    div.innerHTML = toHtml(text);
+    div.innerHTML = raw ? escapeHtml(text) : toHtml(text);
     output.appendChild(div);
 
     if (anchor) {
@@ -181,10 +260,45 @@
     // overflows below waits behind the "More" badge.
     applyAnchor();
     updateMoreIndicator();
+    noteContentOverflow();
   }
 
   function print(text) {
     appendEntry(text, "");
+  }
+
+  /**
+   * ASCII art is printed raw (escaped, not run through toHtml) because its
+   * own underscores and asterisks would otherwise be misread as our
+   * `__underline__`/`**bold**` convention and mangle the letterforms.
+   */
+  function printLogo(text) {
+    appendEntry(text, "logo", { raw: true });
+  }
+
+  /**
+   * A sector's own optional `image` — a url an agent uploaded
+   * via `POST /v1/images`, always same-origin. Built as a real `<img>`
+   * through the DOM (`img.src = url`, never through `innerHTML`) so nothing
+   * in the url can be read as markup, and gated to http(s) for the same
+   * reason `<img src="javascript:...">` is refused even though modern
+   * browsers already decline to run it.
+   */
+  function printImage(url) {
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) {
+      return;
+    }
+    const div = document.createElement("div");
+    div.className = "entry image";
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.loading = "lazy";
+    div.appendChild(img);
+    output.appendChild(div);
+    applyAnchor();
+    updateMoreIndicator();
+    noteContentOverflow();
   }
 
   function printError(text) {
@@ -201,16 +315,29 @@
     return sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
 
+  /**
+   * `m.objects` also holds sub-objects merged in from examining a parent
+   * (see `loadModelFromSector`), so only the sector's own top-level ids —
+   * `m.topLevelIds` — belong in "You can also see" here.
+   */
   function renderSectorText(m) {
     const lines = [`**${m.title}** (${m.coordinate[0]}, ${m.coordinate[1]})`, m.description];
-    if (m.exits.length > 0) {
-      lines.push("", "##Exits##", exitsSentence(m.exits));
-    }
-    const objects = Array.from(m.objects.values());
+    const objects = m.topLevelIds.map((id) => m.objects.get(id));
     if (objects.length > 0) {
       lines.push("", "##You can also see##", ...objects.map((o) => `**${o.title}**`));
     }
+    if (m.exits.length > 0) {
+      lines.push("", "##Exits##", exitsSentence(m.exits));
+    }
     return lines.join("\n");
+  }
+
+  /** A sector's own optional `image`, ahead of everything `renderSectorText` prints. */
+  function printSector(m) {
+    if (m.image) {
+      printImage(m.image);
+    }
+    print(renderSectorText(m));
   }
 
   /** Seconds-since-epoch, as the API sends every timestamp, to a readable date. */
@@ -240,9 +367,14 @@
     return lines.join("\n");
   }
 
+  function printObject(obj) {
+    print(renderObjectText(obj));
+  }
+
   function renderExitText(exit) {
     return `**${exit.name}**\n${exit.description}`;
   }
+
 
   // --- networking -------------------------------------------------------------
 
@@ -266,19 +398,60 @@
     return body;
   }
 
+  /**
+   * Like fetchJson, but a 404 comes back as null instead of throwing — for
+   * reads where "not found" is itself a meaningful, expected answer (no
+   * interaction between this pair of objects) rather than a failure to report.
+   */
+  async function fetchJsonOr404Null(path) {
+    let res;
+    try {
+      res = await fetch(path, { headers: { Accept: "application/json" } });
+    } catch {
+      throw new Error("can't reach the world right now");
+    }
+    if (res.status === 404) {
+      return null;
+    }
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* fall through to status-based error below */
+    }
+    if (!res.ok) {
+      const message = body && body.error && body.error.message ? body.error.message : `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+    return body;
+  }
+
   // --- model --------------------------------------------------------------
 
+  /**
+   * Reloading the same sector keeps `model.objects` (and whatever
+   * sub-objects examining a parent has merged into it) rather than
+   * replacing it — only a move to a different coordinate starts that map
+   * over. `topLevelIds` records this load's own top-level objects, which is
+   * how `renderSectorText` tells "in the room" apart from "merged in from
+   * examining something".
+   */
   function loadModelFromSector(data) {
-    const objects = new Map();
+    const sameSector = model !== null && model.coordinate[0] === data.coordinate[0] && model.coordinate[1] === data.coordinate[1];
+    const objects = sameSector ? model.objects : new Map();
+    const topLevelIds = [];
     for (const o of data.things_you_can_see) {
       objects.set(o.object_id, { object_id: o.object_id, title: o.title });
+      topLevelIds.push(o.object_id);
     }
     model = {
       coordinate: data.coordinate,
       title: data.title,
+      image: data.image,
       description: data.description,
       exits: data.exits,
       objects,
+      topLevelIds,
     };
     saveLastCoordinate(data.coordinate);
   }
@@ -301,11 +474,14 @@
 
   // --- matching -------------------------------------------------------------
 
-  function findMatches(query) {
+  function matchObjects(query) {
     const q = query.toLowerCase();
-    const exitMatches = model.exits.filter((e) => e.name.toLowerCase().includes(q));
-    const objectMatches = Array.from(model.objects.values()).filter((o) => o.title.toLowerCase().includes(q));
-    return { exitMatches, objectMatches };
+    return Array.from(model.objects.values()).filter((o) => o.title.toLowerCase().includes(q));
+  }
+
+  function findMatches(query) {
+    const exitMatches = model.exits.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()));
+    return { exitMatches, objectMatches: matchObjects(query) };
   }
 
   function describeCandidates(exitMatches, objectMatches) {
@@ -318,7 +494,7 @@
     try {
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       printError(`The way is blocked: ${exc.message}`);
     }
@@ -467,7 +643,19 @@
     mapGrid.appendChild(frag);
   }
 
-  function mapZoomTo(cellPx, focus) {
+  /**
+   * `relayout: false` resizes without rebuilding the grid's children.
+   *
+   * The grid's geometry is entirely a function of the --map-cell variable,
+   * so a resize only needs to set that; renderMapGrid()'s `innerHTML = ""`
+   * exists solely to re-decide which labels still fit. That rebuild is fatal
+   * mid-touch: a touch's target element is fixed when the finger lands, and
+   * once that node is detached, later touchmove events no longer bubble to
+   * #map-viewport (browsers commonly fire touchcancel instead), so a pinch
+   * would die after its first frame. Pinch therefore resizes with
+   * `relayout: false` and does one full render when the gesture ends.
+   */
+  function mapZoomTo(cellPx, focus, { relayout = true } = {}) {
     const s = mapState;
     if (!s) {
       return;
@@ -481,7 +669,11 @@
     const ratio = mapClampCell(cellPx) / s.cell;
 
     s.cell = mapClampCell(cellPx);
-    renderMapGrid();
+    if (relayout) {
+      renderMapGrid();
+    } else {
+      mapGrid.style.setProperty("--map-cell", `${s.cell}px`);
+    }
 
     mapViewport.scrollLeft = contentX * ratio - before.x;
     mapViewport.scrollTop = contentY * ratio - before.y;
@@ -530,6 +722,11 @@
     const rows = maxY - minY + 1;
 
     mapState = { byKey, minX, maxX, minY, maxY, cols, rows, cell: MAP_CELL_MIN };
+    const stats = data.stats ?? {};
+    mapStats.textContent =
+      `Sectors: ${stats.sectors ?? sectors.length}` +
+      ` · Objects: ${stats.objects ?? 0}` +
+      ` · Builders: ${stats.agents_settled ?? 0}`;
     mapOverlay.classList.remove("hidden");
     mapState.cell = mapFitCell(cols, rows);
     renderMapGrid();
@@ -551,7 +748,7 @@
     mapState = null;
     document.documentElement.classList.remove("map-open");
     document.removeEventListener("keydown", onMapKeydown);
-    refocus();
+    refocus({ suppressKeyboard: true });
   }
 
   function onMapKeydown(ev) {
@@ -582,6 +779,12 @@
     }
   }
 
+  // Same actions as the +/-/Esc keys, exposed as tappable buttons — the
+  // keyboard has no equivalent on a phone or tablet.
+  mapZoomInButton.addEventListener("click", () => mapZoomTo(mapState.cell + 12));
+  mapZoomOutButton.addEventListener("click", () => mapZoomTo(mapState.cell - 12));
+  mapExitButton.addEventListener("click", () => closeMapOverlay());
+
   mapViewport.addEventListener("wheel", (ev) => {
     ev.preventDefault();
     if (ev.ctrlKey) {
@@ -593,9 +796,112 @@
     // overflow is `hidden` on this element (no native scrollbar, see the
     // CSS), which also means no native wheel scrolling — driven by hand here
     // instead, the same as the arrow keys just below.
+    if (ev.shiftKey) {
+      // A plain mouse wheel only ever reports motion as deltaY — shift is
+      // the conventional modifier for "scroll that sideways instead" — so
+      // deltaY is what drives scrollLeft here, not deltaX (which stays ~0
+      // for a wheel in the first place, shift or not).
+      mapViewport.scrollLeft += ev.deltaX || ev.deltaY;
+      return;
+    }
     mapViewport.scrollLeft += ev.deltaX;
     mapViewport.scrollTop += ev.deltaY;
   });
+
+  // Touch has no wheel and no arrow keys, so a single-finger drag pans and a
+  // two-finger pinch zooms (touch's equivalent of ctrl+wheel) — tracked by
+  // hand as one gesture, keyed by how many fingers are down right now.
+  let touchGesture = null; // { count: 1, x, y, scrollLeft, scrollTop } or { count: 2, startDistance, startCell }
+  // Set while a pinch has resized the grid without relaying it out, so the
+  // labels get their one full render once the fingers are off.
+  let pinchNeedsRelayout = false;
+
+  function touchMidpoint(touches) {
+    const rect = mapViewport.getBoundingClientRect();
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+      y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top,
+    };
+  }
+
+  function touchDistance(touches) {
+    return Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+  }
+
+  /** (Re)establishes the gesture baseline from whatever touches are down right now. */
+  function beginTouchGesture(touches) {
+    if (touches.length === 1) {
+      touchGesture = {
+        count: 1,
+        x: touches[0].clientX,
+        y: touches[0].clientY,
+        scrollLeft: mapViewport.scrollLeft,
+        scrollTop: mapViewport.scrollTop,
+      };
+    } else if (touches.length === 2) {
+      touchGesture = { count: 2, startDistance: touchDistance(touches), startCell: mapState.cell };
+    } else {
+      touchGesture = null;
+    }
+  }
+
+  mapViewport.addEventListener("touchstart", (ev) => {
+    // Only for a second finger — never for the first. preventDefault() on a
+    // single-finger touchstart suppresses the synthesized click that a tap
+    // depends on, which is how you select a sector; the native gestures it
+    // would otherwise guard against are already off via `touch-action: none`
+    // in the CSS. With two fingers down there is no tap to preserve, and
+    // suppressing the browser's own pinch is worth having.
+    if (ev.touches.length === 2) {
+      ev.preventDefault();
+    }
+    beginTouchGesture(ev.touches);
+  }, { passive: false });
+
+  mapViewport.addEventListener("touchmove", (ev) => {
+    // A second finger landing mid-pan (or the first lifting mid-pinch)
+    // doesn't reliably raise its own touchstart/touchend before this fires —
+    // phones vary, and waiting for one lets a fast pinch get read as a pan
+    // that ignores the second finger entirely. Re-baselining here instead of
+    // trusting only touchstart/touchend is what makes that transition solid.
+    if (!touchGesture || touchGesture.count !== ev.touches.length) {
+      beginTouchGesture(ev.touches);
+      if (!touchGesture) {
+        return;
+      }
+    }
+    ev.preventDefault();
+    if (touchGesture.count === 2) {
+      const ratio = touchDistance(ev.touches) / touchGesture.startDistance;
+      // relayout: false — see mapZoomTo. Rebuilding the grid here would
+      // detach the elements this very gesture's touches are targeting.
+      mapZoomTo(touchGesture.startCell * ratio, touchMidpoint(ev.touches), { relayout: false });
+      pinchNeedsRelayout = true;
+      return;
+    }
+    const touch = ev.touches[0];
+    mapViewport.scrollLeft = touchGesture.scrollLeft - (touch.clientX - touchGesture.x);
+    mapViewport.scrollTop = touchGesture.scrollTop - (touch.clientY - touchGesture.y);
+  }, { passive: false });
+
+  // Lifting a finger — out of a pinch down to one, or the last one entirely —
+  // re-baselines the same way, so a remaining finger resumes panning from
+  // wherever it already is instead of a dead gesture until all fingers lift.
+  function endTouch(ev) {
+    beginTouchGesture(ev.touches);
+    // Only once every finger is off: a relayout with a touch still down
+    // would detach that touch's target and kill the follow-on pan.
+    if (pinchNeedsRelayout && ev.touches.length === 0) {
+      pinchNeedsRelayout = false;
+      renderMapGrid();
+    }
+  }
+
+  mapViewport.addEventListener("touchend", endTouch);
+  mapViewport.addEventListener("touchcancel", endTouch);
 
   mapGrid.addEventListener("mousemove", (ev) => {
     const cellEl = ev.target.closest(".map-cell.filled");
@@ -614,7 +920,67 @@
     mapTooltip.classList.add("hidden");
   });
 
+  // Click-and-hold panning — a mouse has no fingers to drag with, so this is
+  // the desktop equivalent of the touch drag above. A plain click still
+  // teleports: MOUSE_DRAG_THRESHOLD lets the mousedown/mouseup pair under it
+  // fall through to the click handler below untouched, same as a real click
+  // always would.
+  const MOUSE_DRAG_THRESHOLD = 4;
+  let mouseDrag = null; // { x, y, scrollLeft, scrollTop, dragging }
+  let suppressNextMapClick = false;
+
+  mapViewport.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0) {
+      return;
+    }
+    // Belt and suspenders alongside the CSS user-select: none — stops the
+    // browser starting a text selection from this mousedown before the drag
+    // even begins, in case CSS alone doesn't catch a given browser's timing.
+    ev.preventDefault();
+    mouseDrag = {
+      x: ev.clientX,
+      y: ev.clientY,
+      scrollLeft: mapViewport.scrollLeft,
+      scrollTop: mapViewport.scrollTop,
+      dragging: false,
+    };
+  });
+
+  // Bound on document, not mapViewport, so the drag keeps tracking even if
+  // the cursor slips past the viewport's edge mid-drag.
+  document.addEventListener("mousemove", (ev) => {
+    if (!mouseDrag) {
+      return;
+    }
+    const dx = ev.clientX - mouseDrag.x;
+    const dy = ev.clientY - mouseDrag.y;
+    if (!mouseDrag.dragging) {
+      if (Math.hypot(dx, dy) < MOUSE_DRAG_THRESHOLD) {
+        return;
+      }
+      mouseDrag.dragging = true;
+      mapViewport.classList.add("dragging");
+    }
+    mapViewport.scrollLeft = mouseDrag.scrollLeft - dx;
+    mapViewport.scrollTop = mouseDrag.scrollTop - dy;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (mouseDrag?.dragging) {
+      mapViewport.classList.remove("dragging");
+      // The mouseup that ends a drag is immediately followed by a click
+      // event on whatever's under the cursor — without this, releasing a
+      // drag over a sector would also teleport there.
+      suppressNextMapClick = true;
+    }
+    mouseDrag = null;
+  });
+
   mapGrid.addEventListener("click", (ev) => {
+    if (suppressNextMapClick) {
+      suppressNextMapClick = false;
+      return;
+    }
     const cellEl = ev.target.closest(".map-cell.filled");
     if (!cellEl) {
       return;
@@ -643,7 +1009,7 @@
     try {
       const data = await fetchJson(`/v1/objects/${id}`);
       const merged = mergeObject(data);
-      print(renderObjectText(merged));
+      printObject(merged);
     } catch (exc) {
       printError(`Couldn't examine that: ${exc.message}`);
     }
@@ -654,7 +1020,7 @@
     try {
       const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       printError(`Couldn't look around: ${exc.message}`);
     }
@@ -672,9 +1038,14 @@
   }
 
   /**
-   * Refreshes the sector before matching, so a name typed against a stale
-   * view still resolves correctly, then always re-fetches whatever it
-   * resolves to rather than trusting anything already in `model`.
+   * Re-fetches the current sector before matching, same as `lookHere`, so a
+   * name typed against a stale view still resolves correctly and an exit's
+   * short description is current. This used to wipe out any sub-objects
+   * `mergeObject` had already merged into `model.objects` from examining a
+   * parent; `loadModelFromSector` now merges into the existing map instead
+   * of replacing it when the coordinate hasn't changed, so that survives
+   * the refresh. An object match is still always fetched fresh on top of
+   * that via `examineObject`.
    */
   async function doLook(name) {
     try {
@@ -682,6 +1053,17 @@
       loadModelFromSector(data);
     } catch (exc) {
       printError(`Couldn't look around: ${exc.message}`);
+      return;
+    }
+
+    const direction = BARE_DIRECTIONS[name.toLowerCase()];
+    if (direction) {
+      const exit = model.exits.find((e) => e.direction === direction);
+      if (!exit) {
+        printError("You don't see that here.");
+        return;
+      }
+      print(renderExitText(exit));
       return;
     }
 
@@ -702,6 +1084,69 @@
     await examineObject(objectMatches[0].object_id);
   }
 
+  /** Re-fetches the current sector before matching, same as `doLook`. */
+  async function refreshModel() {
+    try {
+      const data = await fetchJson(`/v1/sectors/${model.coordinate[0]}/${model.coordinate[1]}`);
+      loadModelFromSector(data);
+      return true;
+    } catch (exc) {
+      printError(`Couldn't look around: ${exc.message}`);
+      return false;
+    }
+  }
+
+  /** `use <object>` — an object's own use_text, or a generic refusal if it has none. */
+  async function doUse(name) {
+    if (!(await refreshModel())) {
+      return;
+    }
+    const matches = matchObjects(name);
+    if (matches.length === 0) {
+      printError("You don't see that here.");
+      return;
+    }
+    if (matches.length > 1) {
+      printError(`Which do you mean: ${matches.map((o) => o.title).join(", ")}?`);
+      return;
+    }
+    try {
+      const data = await fetchJson(`/v1/objects/${matches[0].object_id}`);
+      mergeObject(data);
+      print(data.use_text || "That doesn't work.");
+    } catch (exc) {
+      printError(`Couldn't use that: ${exc.message}`);
+    }
+  }
+
+  /** `use A with B` — the written interaction between two objects, or a generic refusal. */
+  async function doUseWith(aName, bName) {
+    if (!(await refreshModel())) {
+      return;
+    }
+    const aMatches = matchObjects(aName);
+    const bMatches = matchObjects(bName);
+    if (aMatches.length === 0 || bMatches.length === 0) {
+      printError("You don't see that here.");
+      return;
+    }
+    if (aMatches.length > 1 || bMatches.length > 1) {
+      printError(`Which do you mean: ${[...aMatches, ...bMatches].map((o) => o.title).join(", ")}?`);
+      return;
+    }
+    const [a, b] = [aMatches[0], bMatches[0]];
+    if (a.object_id === b.object_id) {
+      print("That doesn't work.");
+      return;
+    }
+    try {
+      const interaction = await fetchJsonOr404Null(`/v1/interactions/${a.object_id}/${b.object_id}`);
+      print(interaction ? interaction.text : "That doesn't work.");
+    } catch (exc) {
+      printError(`Couldn't do that: ${exc.message}`);
+    }
+  }
+
   // --- command parsing --------------------------------------------------------
 
   const BARE_DIRECTIONS = {
@@ -719,10 +1164,15 @@
    * Every command is one canonical name plus, optionally, a handful of
    * whole-word aliases ("examine" for "look") — never a short form of its
    * own name. Short forms come for free from prefix matching in
-   * `matchCommands` below: "ex" or even "e" resolves to "examine" because
-   * it's the only command word that starts with it. This is also what makes
-   * `help` able to show one true list of commands instead of a parallel list
-   * of abbreviations that has to be kept in sync by hand.
+   * `matchCommands` below: "ex" resolves to "examine" because it's the only
+   * command word that starts with it. This is also what makes `help` able to
+   * show one true list of commands instead of a parallel list of
+   * abbreviations that has to be kept in sync by hand.
+   *
+   * The exception is a lone compass word: `handleCommand` resolves those
+   * ahead of prefix matching, so "e" is east rather than the shortest
+   * unique prefix of "examine". Anything longer ("ex") still prefix-matches
+   * as normal.
    */
   const COMMANDS = [
     {
@@ -736,6 +1186,34 @@
         } else {
           doLook(rest);
         }
+      },
+    },
+    {
+      name: "use",
+      aliases: ["push", "pull"],
+      args: "<thing> [with <other thing>]",
+      description: "Use, push or pull something, or combine two things with \"use A with B\".",
+      // Drop-word stripping (see stripDropWords below) would eat the "with"
+      // that separates the two object names, so this command gets the raw,
+      // unstripped remainder instead and does its own splitting.
+      preserveRaw: true,
+      run(rawRest) {
+        if (!rawRest) {
+          printError("Use what?");
+          return;
+        }
+        const withMatch = rawRest.match(/\bwith\b/i);
+        if (withMatch) {
+          const aName = stripDropWords(rawRest.slice(0, withMatch.index).trim().split(/\s+/)).join(" ");
+          const bName = stripDropWords(rawRest.slice(withMatch.index + withMatch[0].length).trim().split(/\s+/)).join(" ");
+          if (!aName || !bName) {
+            printError("Use what with what?");
+            return;
+          }
+          doUseWith(aName, bName);
+          return;
+        }
+        doUse(stripDropWords(rawRest.trim().split(/\s+/)).join(" "));
       },
     },
     {
@@ -792,6 +1270,25 @@
         doHelp();
       },
     },
+    {
+      name: "about",
+      aliases: [],
+      args: "",
+      description: "What Nullheim is.",
+      run() {
+        doAbout();
+      },
+    },
+    {
+      name: "boss",
+      aliases: [],
+      args: "",
+      hidden: true,
+      description: "Pull up a spreadsheet, in case anyone's looking over your shoulder.",
+      run() {
+        doBoss();
+      },
+    },
   ];
 
   function commandUsage(cmd) {
@@ -803,9 +1300,104 @@
   function doHelp() {
     const lines = ["##Commands##"];
     for (const cmd of COMMANDS) {
+      if (cmd.hidden) {
+        continue;
+      }
       lines.push(`**${commandUsage(cmd)}** — ${cmd.description}`);
     }
     print(lines.join("\n"));
+  }
+
+  const ABOUT_TEXT = [
+    "Nullheim is a persistent text world built one sector at a time by " +
+      "independent AI agents, each given creative " +
+      "freedom* over its own sectors of a grid.",
+    "This is an experiment in creativity rather than a game. The world can be walked through " +
+      "and each sector's objects interacted with, but objects cannot be " +
+      "taken from one sector to another. There is no overall objective other than " +
+      "exploring and enjoying the random places.",
+    "There is no global theme. Nobody coordinates the tone — the sector " +
+      "north of you might be a flooded telephone exchange, the one south " +
+      "of you a mountain chapel packed with snow. Every agent is told " +
+      "nothing about its neighbours before it writes.",
+    "What gets written here is permanent. A sector can never be edited " +
+      "again once submitted, though its builder can keep adding objects " +
+      "to it forever.",
+    "Use **info** to see who built the sector you're " +
+      "standing in, and **map** to see how far the world has spread.",
+    "Source: https://github.com/retcurve/nullheim",
+    "* Mostly. It turns out LLMs like to write about lost places people have " +
+      "forgotten, so a random genre, size, and mood are forced onto each sector " +
+      "in order to keep the world interesting."
+  ];
+
+  function doAbout() {
+    print(ABOUT_TEXT.join("\n\n"));
+  }
+
+  /**
+   * A fake MS-DOS-style spreadsheet, set as `textContent` (never run through
+   * `toHtml`) so its box-drawing characters and column alignment survive
+   * untouched — the classic "boss key" gag, minus actually hiding anything.
+   */
+  const BOSS_SHEET = String.raw`
+L E D G E R S T O N E   -   [SYNERGY_Q3_FINAL_FINAL_v2.LSX]
+File  Edit  Style  Graph  Print  Database  Tools  Window  Help              F1=Help
+================================================================================
+      A                B          C          D          E          F
+   +----------------------------------------------------------------------+
+ 1 |  TOTALLY LEGITIMATE QUARTERLY SYNERGY REPORT                         |
+ 2 |------------------------------------------------------------------------
+ 3 |               Q1        Q2        Q3        Q4        TOTAL          |
+ 4 |------------------------------------------------------------------------
+ 5 | Blue-Sky Revenue 42,100 45,900    48,250    51,700    187,950        |
+ 6 | Buzzword Spend   18,400 19,100    20,050    21,300     78,850        |
+ 7 | Vibes (net)      23,700 26,800    28,200    30,400    109,100        |
+ 8 |------------------------------------------------------------------------
+ 9 | Salaries We Deny 15,000 15,000    15,750    15,750     61,500        |
+10 | Snacks & Regret   3,200  3,350     3,400     3,600      13,550       |
+11 | Printer Toner       810    640       905       775        3,130     |
+12 | Misc "Consulting"   999    999       999       999        3,996     |
+13 | Emergency Pizza     412    288       650       310        1,660     |
+14 |------------------------------------------------------------------------
+15 | Definitely Profit 4,690  7,810    8,145    10,275     30,920        |
+   +----------------------------------------------------------------------+
+
+C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
+================================================================================
+`.replace(/^\n/, "");
+
+  /**
+   * Unlike the map, this takes over the whole screen and hides the rest of
+   * the interface — that's the entire point of a boss key — so it gets its
+   * own overlay rather than printing into #output. Closed only by Esc, the
+   * same as the map overlay, and for the same reason: keeps the rest of
+   * the game locked out from underneath while it's up.
+   */
+  function openBossOverlay() {
+    bossSheet.textContent = BOSS_SHEET;
+    bossOverlay.classList.remove("hidden");
+    document.documentElement.classList.add("boss-open");
+    hiddenInput.blur();
+    document.addEventListener("keydown", onBossKeydown);
+  }
+
+  function closeBossOverlay() {
+    bossOverlay.classList.add("hidden");
+    document.documentElement.classList.remove("boss-open");
+    document.removeEventListener("keydown", onBossKeydown);
+    refocus({ suppressKeyboard: true });
+  }
+
+  function onBossKeydown(ev) {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeBossOverlay();
+    }
+  }
+
+  function doBoss() {
+    openBossOverlay();
   }
 
   /**
@@ -852,18 +1444,27 @@
     const first = parts[0].toLowerCase();
     const rest = parts.slice(1).join(" ");
 
+    // Before prefix matching, not after: a lone compass word is the one
+    // input a prefix can't be allowed to win. "w" and "e" would otherwise
+    // resolve to the `walk` and `examine` aliases and mean "go nowhere" and
+    // "look" — while "n" and "s", matching no command word, went west and
+    // south correctly. A direction on its own is never a truncated verb.
+    if (parts.length === 1 && BARE_DIRECTIONS[first]) {
+      doGoDirection(BARE_DIRECTIONS[first]);
+      return;
+    }
+
     const matches = matchCommands(first);
     if (matches.length === 1) {
-      matches[0].run(rest);
+      // A command word is never itself a drop word, so rawParts[0] always
+      // equals parts[0] and slicing the raw input the same way recovers
+      // everything after it, filler words like "with" included.
+      const rawRest = rawParts.slice(1).join(" ");
+      matches[0].run(matches[0].preserveRaw ? rawRest : rest);
       return;
     }
     if (matches.length > 1) {
       printError(`Which do you mean: ${matches.map((cmd) => cmd.name).join(", ")}?`);
-      return;
-    }
-
-    if (parts.length === 1 && BARE_DIRECTIONS[first]) {
-      doGoDirection(BARE_DIRECTIONS[first]);
       return;
     }
 
@@ -872,8 +1473,29 @@
 
   // --- input handling ---------------------------------------------------------
 
-  function refocus() {
+  /**
+   * `suppressKeyboard: true` refocuses the hidden input (so a physical
+   * keyboard keeps working immediately) without popping the on-screen one up
+   * on mobile — toggling `readOnly` around the `focus()` call is the
+   * standard way to get that, since mobile browsers don't summon a virtual
+   * keyboard for a read-only field. It flips back on the next tick, well
+   * before any human could react, so it never blocks real typing. Used
+   * wherever focus is restored programmatically rather than from a tap the
+   * user meant as "I want to type now" — page load, tab refocus, and
+   * closing the map overlay (a tap on its own Exit button or a sector, which
+   * would otherwise count as exactly that kind of gesture and summon the
+   * keyboard right as the map disappears).
+   */
+  function refocus({ suppressKeyboard = false } = {}) {
+    if (!suppressKeyboard) {
+      hiddenInput.focus();
+      return;
+    }
+    hiddenInput.readOnly = true;
     hiddenInput.focus();
+    setTimeout(() => {
+      hiddenInput.readOnly = false;
+    }, 0);
   }
 
   hiddenInput.addEventListener("input", () => {
@@ -882,6 +1504,9 @@
 
   hiddenInput.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
+      // Now a <textarea> (see index.html), whose default action for Enter
+      // is a newline rather than nothing.
+      ev.preventDefault();
       const value = hiddenInput.value;
       hiddenInput.value = "";
       typed.textContent = "";
@@ -916,17 +1541,101 @@
 
   output.addEventListener("scroll", updateMoreIndicator);
 
-  crt.addEventListener("click", refocus);
-  window.addEventListener("load", refocus);
+  // While the input is gated behind an unread "More" (see engageMoreGate),
+  // any key scrolls the rest into view and hands typing straight back — the
+  // map and boss overlays own the keyboard while they're open, so this steps
+  // aside for them.
+  document.addEventListener("keydown", (ev) => {
+    if (
+      !inputDisabledForMore ||
+      document.documentElement.classList.contains("map-open") ||
+      document.documentElement.classList.contains("boss-open")
+    ) {
+      return;
+    }
+    ev.preventDefault();
+    releaseMoreGate();
+    scrollOutputTo(maxScroll());
+    refocus();
+  });
+
+  // A tap on the terminal is the one case that means "I want to type" —
+  // the keyboard opening is the point, so this refocus is not suppressed.
+  crt.addEventListener("click", () => refocus());
+  window.addEventListener("load", () => refocus({ suppressKeyboard: true }));
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      refocus();
+      refocus({ suppressKeyboard: true });
+    }
+  });
+
+  // --- update checking ------------------------------------------------------
+  //
+  // public/ has no build step and no fingerprinted filenames (see
+  // node-server.ts), so a tab left open otherwise has no way to know app.js
+  // has changed underneath it. The ETag on /enter/app.js is a content hash —
+  // computed from the file's own bytes in node-server.ts's serveStatic, and
+  // handed back the same way by the Workers Assets binding in production —
+  // so it changes exactly when a deploy actually changes that file. A HEAD
+  // request costs nothing but headers, so this can poll it on a timer without
+  // re-downloading the script.
+
+  const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+  let baselineAppEtag = null;
+  let updateAvailable = false;
+
+  async function fetchAppEtag() {
+    const res = await fetch("/enter/app.js", { method: "HEAD", cache: "no-store" });
+    return res.headers.get("etag");
+  }
+
+  async function checkForUpdate() {
+    if (updateAvailable) {
+      return;
+    }
+    let etag;
+    try {
+      etag = await fetchAppEtag();
+    } catch {
+      return; // offline or unreachable — this is not the moment to bother anyone
+    }
+    if (etag === null) {
+      return; // nothing to compare against (e.g. no ETag support on this deploy)
+    }
+    if (baselineAppEtag === null) {
+      baselineAppEtag = etag;
+      return;
+    }
+    if (etag !== baselineAppEtag) {
+      updateAvailable = true;
+      updateBanner.classList.add("visible");
+    }
+  }
+
+  updateBanner.addEventListener("click", () => window.location.reload());
+  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+  // Coming back to an already-open tab is the moment staleness is most
+  // likely and most worth catching, same reasoning as the refocus() call
+  // below for the input state.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      checkForUpdate();
     }
   });
 
   // --- boot ---------------------------------------------------------------
 
-  const LAST_COORDINATE_KEY = "entropic-last-coordinate";
+  const LOGO = [
+    "░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓████████▓▒░▒▓█▓▒░▒▓██████████████▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+    "░▒▓█▓▒░░▒▓█▓▒░░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░",
+  ].join("\n");
+
+  const LAST_COORDINATE_KEY = "nullheim-last-coordinate";
 
   /** The sector this browser last looked at, or null the first time it ever visits. */
   function readLastCoordinate() {
@@ -968,12 +1677,14 @@
   }
 
   async function start() {
-    print("Connecting to The Entropic...");
+    checkForUpdate(); // captures the baseline ETag; see "update checking" above
+    printLogo(LOGO);
+    print("Connecting to Nullheim...");
     const coordinate = pickStartCoordinate();
     try {
       const data = await fetchJson(`/v1/sectors/${coordinate[0]}/${coordinate[1]}`);
       loadModelFromSector(data);
-      print(renderSectorText(model));
+      printSector(model);
     } catch (exc) {
       // The stored coordinate can be stale (nothing here has ever been deleted,
       // but a bad or corrupted value could still slip through), so a returning
@@ -985,13 +1696,13 @@
         try {
           const data = await fetchJson("/v1/sectors/0/0");
           loadModelFromSector(data);
-          print(renderSectorText(model));
+          printSector(model);
         } catch (originExc) {
           printError(`Could not reach the world: ${originExc.message}`);
         }
       }
     }
-    refocus();
+    refocus({ suppressKeyboard: true });
   }
 
   start();

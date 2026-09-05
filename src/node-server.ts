@@ -1,28 +1,24 @@
 /**
  * The Node transport: a `node:http` server in front of `handleFetchRequest`.
  *
- * Everything agent-facing is handled by the shared, runtime-agnostic core in
- * `api.ts` — this file's only job is bridging `IncomingMessage`/
- * `ServerResponse` to `Request`/`Response`, and serving `public/` under
- * `/enter/*`, which is a Node-only (node:fs) concern with no Workers
- * equivalent in this module (Cloudflare serves it from the Assets binding
- * instead — see `worker.ts`).
+ * Agent-facing requests are handled by the shared core in `api.ts`. This file
+ * bridges `IncomingMessage`/`ServerResponse` to `Request`/`Response`, and
+ * serves `public/` under `/enter/*` from disk.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { handleFetchRequest, MAX_BODY_BYTES } from "./api.ts";
+import { ENTER_CSP, handleFetchRequest, maxBodyBytesFor } from "./api.ts";
 import type { Engine } from "./engine.ts";
 
 // --- the human player frontend ----------------------------------------------
 //
-// `public/` is plain static HTML/CSS/JS — no build step, no framework, no new
-// dependency — served under `/enter/*` and touching nothing that agents talk
-// to. It reads the world exclusively through `GET /v1/sectors/{x}/{y}` and
-// `GET /v1/objects/{id}`, the same public reads any other client can make.
+// `public/` is plain static HTML/CSS/JS, served under `/enter/*`. It reads
+// the world through `GET /v1/sectors/{x}/{y}` and `GET /v1/objects/{id}`.
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const ENTER_PREFIX = "/enter";
@@ -31,15 +27,20 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".webmanifest": "application/manifest+json",
+  ".png": "image/png",
 };
 
-/** Serves one file from `public/` under `/enter/*`. Returns false on any miss. */
-async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
+/**
+ * Serves one file from `public/` under `/enter/*`. Returns false on any miss.
+ * A `HEAD` request skips the body but still computes and sends the ETag.
+ */
+async function serveStatic(pathname: string, res: ServerResponse, method: string): Promise<boolean> {
   let rel = pathname.slice(ENTER_PREFIX.length);
   if (rel === "" || rel === "/") {
     rel = "/index.html";
   }
-  // Collapse any ".." before joining, so a crafted path can't escape PUBLIC_DIR.
+  // Collapse any ".." segments before joining onto PUBLIC_DIR.
   const segments = rel.split("/").filter((s) => s !== "" && s !== ".");
   const cleaned: string[] = [];
   for (const segment of segments) {
@@ -59,13 +60,16 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<boole
     res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": data.length,
-      // Without this a browser heuristically caches these — there is no ETag
-      // or Last-Modified to revalidate against — and an edited app.js keeps
-      // serving stale on refresh. There is no build step and no fingerprinted
-      // filename to fall back on, so say it explicitly.
+      // Security headers, matching the set api.ts puts on every response.
+      "Content-Security-Policy": ENTER_CSP,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
       "Cache-Control": "no-cache, no-store, must-revalidate",
+      // A hash of the file's contents, used by the frontend to detect changes.
+      ETag: `"${createHash("sha1").update(data).digest("hex")}"`,
     });
-    res.end(data);
+    res.end(method === "HEAD" ? undefined : data);
     return true;
   } catch {
     return false;
@@ -75,13 +79,12 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<boole
 // --- the IncomingMessage <-> Request/Response bridge -------------------------
 
 /**
- * Read the body eagerly, up to `MAX_BODY_BYTES`, and refuse (closing the
- * connection) anything declared larger without reading it — the request is
- * on a keep-alive socket, and a body left unread would desync the next
- * request parsed off the same connection.
+ * Reads the request body, up to `maxBytes`. A body declared larger is
+ * refused without being read, and the connection is closed.
  */
 function readNodeBody(
   req: IncomingMessage,
+  maxBytes: number,
 ): Promise<{ raw: Uint8Array; tooLarge: boolean; badHeader: boolean }> {
   return new Promise((resolve, reject) => {
     const declared = req.headers["content-length"];
@@ -92,18 +95,35 @@ function readNodeBody(
       return;
     }
     const length = declared === undefined ? 0 : Number(declared);
-    if (length > MAX_BODY_BYTES) {
+    if (length > maxBytes) {
       resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
       req.resume();
       return;
     }
     if (length === 0) {
+      let received = 0;
+      req.on("data", (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > maxBytes) {
+          req.removeAllListeners();
+          req.resume();
+        }
+      });
       resolve({ raw: new Uint8Array(0), tooLarge: false, badHeader: false });
-      req.resume();
       return;
     }
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let received = 0;
+    req.on("data", (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > maxBytes) {
+        req.removeAllListeners();
+        req.resume();
+        resolve({ raw: new Uint8Array(0), tooLarge: true, badHeader: false });
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () =>
       resolve({ raw: Buffer.concat(chunks), tooLarge: false, badHeader: false }),
     );
@@ -132,10 +152,9 @@ async function sendWebResponse(res: ServerResponse, response: Response): Promise
 }
 
 /**
- * The body is read up front — a raw error (bad Content-Length, or a body too
- * large to accept) is answered directly here, closing the connection, before
- * a `Request` is even built. Everything else becomes one `Request` and is
- * handed to the shared, transport-agnostic core.
+ * Reads the body first. A bad Content-Length or an over-large body is
+ * answered directly, closing the connection, before a `Request` is built.
+ * Everything else is turned into a `Request` and handed to the shared core.
  */
 async function handleNodeRequest(
   engine: Engine,
@@ -143,12 +162,14 @@ async function handleNodeRequest(
   res: ServerResponse,
 ): Promise<void> {
   const method = req.method ?? "GET";
-  const { raw, tooLarge, badHeader } = await readNodeBody(req);
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const maxBytes = maxBodyBytesFor(method, url.pathname);
+  const { raw, tooLarge, badHeader } = await readNodeBody(req, maxBytes);
   if (tooLarge || badHeader) {
     res.setHeader("Connection", "close");
     const payload = badHeader
       ? { error: { code: "bad_header", message: "Content-Length is not a number" } }
-      : { error: { code: "payload_too_large", message: `body exceeds ${MAX_BODY_BYTES} bytes` } };
+      : { error: { code: "payload_too_large", message: `body exceeds ${maxBytes} bytes` } };
     const body = Buffer.from(JSON.stringify(payload));
     res.writeHead(badHeader ? 400 : 413, {
       "Content-Type": "application/json",
@@ -158,9 +179,11 @@ async function handleNodeRequest(
     return;
   }
 
-  const url = new URL(req.url ?? "/", "http://localhost");
-  if (method === "GET" && (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))) {
-    if (await serveStatic(url.pathname, res)) {
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))
+  ) {
+    if (await serveStatic(url.pathname, res, method)) {
       return;
     }
     const body = Buffer.from(
@@ -195,7 +218,7 @@ export function makeServer(engine: Engine, options: MakeServerOptions = {}): Ser
         console.error(exc);
       }
       if (!res.headersSent) {
-        const body = Buffer.from(JSON.stringify({ error: { code: "internal", message: String(exc) } }));
+        const body = Buffer.from(JSON.stringify({ error: { code: "internal", message: "internal server error" } }));
         res.writeHead(500, { "Content-Type": "application/json", "Content-Length": body.length });
         res.end(body);
       }

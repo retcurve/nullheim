@@ -3,19 +3,19 @@
 
 This script is **not** part of the application. It stands in for the independent
 AI agents that connect from outside, and it only ever touches the world through
-the public HTTP API — register, claim, author a sector, then return on the
-cooldown to add objects.
+the public HTTP API — register, claim, author a sector, then return to add
+objects, which is never rate-limited.
 
 Real agents would put the rendered prompt (returned on the claim) in front of a
 language model and post whatever JSON came back. These ones draw from a bank of
 canned sectors in deliberately clashing genres, which is enough to prove the
 pipeline and keeps the demo deterministic.
 
-    python -m entropic serve --port 8765 --cooldown-seconds 0
+    python -m nullheim serve --port 8765 --claims-per-hour 0
     python scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 
-The default 15-minute cooldown makes the object loop unobservable in a demo, so
-run the server with --cooldown-seconds 0 to watch it work.
+--claims-per-hour 0 only matters if you push --agents past the default hourly
+sector budget; objects themselves have no cooldown to work around.
 """
 
 from __future__ import annotations
@@ -155,13 +155,6 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
         "long_description": palette["long_description"],
     }
 
-    # Real agents should dry-run before committing — the lease survives a
-    # rejection, but the sector is permanent the instant it bakes.
-    status, dry = client.call("POST", f"/v1/claims/{claim_id}/validate", submission)
-    if not dry.get("ok"):
-        print(f"  {label}: dry run rejected — {dry['errors']}")
-        return None
-
     status, result = client.call("POST", f"/v1/claims/{claim_id}/sector", submission)
     if status != 201:
         print(f"  {label}: rejected — {result['errors']}")
@@ -172,23 +165,22 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
 
 
 def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
-    """A return visit: add one object, if the cooldown has elapsed."""
+    """A return visit: add one object. Never cooldown-gated."""
     status, me = client.call("GET", "/v1/agents/me")
     if status != 200:
         return False
 
-    if not me["can_create_object"]:
-        remaining = me["agent"]["cooldown_remaining"]
-        print(f"  {label}: cooldown, {remaining}s to go")
-        return False
-
     title, description = palette["objects"][index % len(palette["objects"])]
 
+    # /v1/agents/me only gives an id, a coordinate, and an object_count per
+    # sector — the full tree comes from the per-sector detail fetch, which an
+    # agent is expected to make before deciding what to place and where.
+    sector = me["sectors"][-1]
+    _, detail = client.call("GET", f"/v1/agents/sector/{sector['sector_id']}")
+    existing = detail["objects"]
     # Hang it on the sector, or on the last thing placed — deepening rather than
     # spreading, which is what the object tree is for. An agent that has earned
     # more ground furnishes the newest sector it holds.
-    sector = me["sectors"][-1]
-    existing = sector["objects"]
     # parent_id is required and has no null form: the sector's own id is how you
     # say "stand it in the room itself".
     parent_id = existing[-1]["object_id"] if existing and index % 2 else sector["sector_id"]
@@ -197,9 +189,6 @@ def furnish(client: Client, label: str, palette: dict, index: int) -> bool:
         "POST", "/v1/objects",
         {"parent_id": parent_id, "title": title, "description": description},
     )
-    if status == 429:
-        print(f"  {label}: cooldown — {result['error']['message']}")
-        return False
     if status != 201:
         print(f"  {label}: rejected — {result.get('errors', result)}")
         return False
@@ -250,10 +239,22 @@ def run_rogue(base: str) -> None:
     print(f"  rogue: object attempt → HTTP {status} {result['error']['code']}")
 
 
+def frontier_of(built: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    """Unbaked coordinates touching at least one built one — computed here
+    because /v1/map no longer carries a server-side frontier field; nothing
+    in this script needed more than the adjacency rule itself."""
+    return {
+        neighbour
+        for (x, y) in built
+        for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y))
+        if neighbour not in built
+    }
+
+
 def render_map(world: dict) -> str:
     """ASCII plan. '#' is a built sector, '.' is an open frontier slot."""
     built = {(s["coordinate"][0], s["coordinate"][1]) for s in world["sectors"]}
-    frontier = {(c[0], c[1]) for c in world["frontier"]}
+    frontier = frontier_of(built)
     cells = built | frontier
     if not cells:
         return "(empty)"
@@ -307,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _, health = Client(base).call("GET", "/v1/health")
     except OSError as exc:
-        print(f"cannot reach {base}: {exc}\nStart the server with: python -m entropic serve")
+        print(f"cannot reach {base}: {exc}\nStart the server with: python -m nullheim serve")
         return 1
     print(f"Connected to {base} — {health['sectors']} sector(s) already built\n")
 
@@ -327,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             if furnish(client, label, palette, round_index):
                 placed += 1
         if not placed:
-            print("  (nobody was off cooldown — run the server with --cooldown-seconds 0)")
+            print("  (every placement failed — is the server still up?)")
             break
 
     if not args.skip_rogue:
@@ -345,7 +346,11 @@ def main(argv: list[str] | None = None) -> int:
         walk(base, world["sectors"][len(world["sectors"]) // 2]["coordinate"])
 
     # Every adjacency is an exit in both directions, because neither side
-    # declared it. There is nothing here that could disagree.
+    # declared it. Cross-check the server's own per-sector view (the only
+    # place exits are still exposed, since /v1/map dropped them) against an
+    # independent count from the coordinates alone — there is nothing here
+    # that could disagree.
+    client = Client(base)
     coordinates = {tuple(s["coordinate"]) for s in world["sectors"]}
     expected = sum(
         1
@@ -353,8 +358,12 @@ def main(argv: list[str] | None = None) -> int:
         for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y))
         if neighbour in coordinates
     )
-    print(f"\nDerived exits: {len(world['edges'])} (expected {expected})")
-    return 0 if len(world["edges"]) == expected else 1
+    actual = 0
+    for x, y in coordinates:
+        _, view = client.call("GET", f"/v1/sectors/{x}/{y}")
+        actual += len(view["exits"])
+    print(f"\nDerived exits: {actual} (expected {expected})")
+    return 0 if actual == expected else 1
 
 
 if __name__ == "__main__":

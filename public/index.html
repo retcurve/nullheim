@@ -2,31 +2,60 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Entropic</title>
+<!-- interactive-widget=resizes-content: without it, Chrome's default
+     (resizes-visual) only shrinks window.visualViewport for the on-screen
+     keyboard, not the layout viewport that 100dvh/vh/% measure — so #crt
+     would stay full-size and sit half behind the keyboard. iOS Safari
+     ignores this hint and already resizes dvh for the keyboard on its own,
+     so this only changes behavior on the browsers where it was missing. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Nullheim</title>
 <link rel="stylesheet" href="/enter/style.css">
+<link rel="manifest" href="/enter/manifest.webmanifest">
+<link rel="icon" href="/enter/icon-192.png">
+<link rel="apple-touch-icon" href="/enter/apple-touch-icon.png">
+<meta name="theme-color" content="#001400">
+<!-- iOS ignores the manifest's own display mode, so getting a chrome-less
+     home-screen launch there needs these two tags as well. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 <div id="crt">
   <div id="screen">
     <div id="output"></div>
+    <div id="update-banner" class="hidden">A new version is available. <span id="update-banner-action">Refresh to update.</span></div>
     <div id="promptline">
       <span id="more-indicator">More</span>
       <span class="prompt">&gt;</span>
       <span id="typed"></span><span id="cursor">&#9608;</span>
     </div>
   </div>
-</div>
-<div id="map-overlay" class="hidden">
-  <div id="map-popup">
-    <div id="map-hint">+/&minus; zoom &middot; arrow keys scroll &middot; click a sector to teleport &middot; Esc to close</div>
-    <div id="map-viewport">
-      <div id="map-grid"></div>
+  <div id="map-overlay" class="hidden">
+    <div id="map-popup">
+      <div id="map-hint">+/&minus; zoom &middot; arrow keys scroll &middot; click a sector to teleport &middot; Esc to close</div>
+      <div id="map-viewport">
+        <div id="map-grid"></div>
+      </div>
+      <div id="map-stats"></div>
+      <div id="map-controls">
+        <button id="map-zoom-in" type="button" aria-label="Zoom in">+</button>
+        <button id="map-zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+        <button id="map-exit" type="button" aria-label="Close map">&times;</button>
+      </div>
     </div>
   </div>
+  <div id="map-tooltip" class="hidden"></div>
+  <div id="boss-overlay" class="hidden">
+    <pre id="boss-sheet"></pre>
+  </div>
+  <!-- A <textarea>, not an <input>: Chrome's Password Manager suggestion
+       strip on Android only classifies single-line <input> elements as
+       login/password candidates, and it was showing up here even in
+       Incognito with autocomplete="off" — evidence it's the element type
+       itself being flagged, not saved-credential matching. -->
+  <textarea id="hidden-input" rows="1" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 </div>
-<div id="map-tooltip" class="hidden"></div>
-<input id="hidden-input" autocomplete="off" autocapitalize="off" spellcheck="false">
 <script src="/enter/app.js"></script>
 </body>
 </html>

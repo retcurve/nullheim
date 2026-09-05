@@ -4,10 +4,11 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 
-import type { SqliteDb } from "./db/sqlite.ts";
-import type { Engine } from "./engine.ts";
-import { listen, makeServer } from "./node-server.ts";
-import { makeEngine, sector } from "./testing.ts";
+import type { SqliteDb } from "../src/db/sqlite.ts";
+import type { Engine } from "../src/engine.ts";
+import { MAX_IMAGE_BODY_BYTES } from "../src/api.ts";
+import { listen, makeServer } from "../src/node-server.ts";
+import { makeEngine, makePng, sector } from "./testing.ts";
 
 interface Ctx {
   base: string;
@@ -38,7 +39,7 @@ async function callTool(ctx: Ctx, name: string, args: Record<string, unknown> = 
   return payload.result;
 }
 
-/** Every tool result carries `{status, body}` as its one text content block, JSON-encoded. */
+/** Parses the JSON-encoded `{status, body}` out of a tool result's one text content block. */
 function unwrap(result: any): { status: number; body: any } {
   assert.equal(result.content.length, 1);
   assert.equal(result.content[0].type, "text");
@@ -81,6 +82,34 @@ function teardown(): Promise<void> {
     current = null;
   });
 }
+
+describe("the MCP body cap", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(teardown);
+
+  test("a body past the cap is refused, not buffered", async () => {
+    const response = await fetch(`${ctx.base}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: new Uint8Array(MAX_IMAGE_BODY_BYTES + 1),
+    });
+    assert.equal(response.status, 413);
+  });
+
+  test("a tool call carrying an image is still inside it", async () => {
+    const token = await registerAgent(ctx, "uploader");
+    assert.equal(unwrap(await callTool(ctx, "create_claim", { token })).status, 201);
+    const result = await callTool(ctx, "upload_image", {
+      token,
+      image_base64: Buffer.from(makePng(40, 40)).toString("base64"),
+    });
+    assert.equal(result.isError, false);
+    assert.equal(unwrap(result).status, 201);
+  });
+});
 
 describe("MCP protocol handshake", () => {
   let ctx: Ctx;
@@ -132,9 +161,10 @@ describe("MCP protocol handshake", () => {
     for (const expected of [
       "register_agent",
       "create_claim",
-      "validate_sector",
       "submit_sector",
       "create_object",
+      "create_interaction",
+      "get_interaction",
       "get_sector",
       "get_map",
     ]) {
@@ -164,7 +194,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
   });
   afterEach(teardown);
 
-  test("register, claim, validate and bake a sector end to end", async () => {
+  test("register, claim and bake a sector end to end", async () => {
     const token = await registerAgent(ctx);
 
     const claimResult = await callTool(ctx, "create_claim", { token });
@@ -174,8 +204,8 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
     const [x, y] = claim.coordinate;
 
     const draft = sector([x, y]);
-    const badValidate = unwrap(
-      await callTool(ctx, "validate_sector", {
+    const badSubmit = unwrap(
+      await callTool(ctx, "submit_sector", {
         token,
         claim_id: claimId,
         coordinate: [x, y],
@@ -184,7 +214,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
         long_description: draft.long_description,
       }),
     );
-    assert.equal(badValidate.body.ok, false);
+    assert.equal(badSubmit.body.ok, false);
 
     const goodSubmit = unwrap(
       await callTool(ctx, "submit_sector", {
@@ -202,6 +232,47 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
     const view = unwrap(await callTool(ctx, "get_sector", { x, y }));
     assert.equal(view.status, 200);
     assert.equal(view.body.title, draft.title);
+  });
+
+  test("create_object, create_interaction and get_interaction end to end", async () => {
+    const token = await registerAgent(ctx);
+    const claim = unwrap(await callTool(ctx, "create_claim", { token })).body;
+    const claimId = claim.claim.claim_id;
+    const [x, y] = claim.coordinate;
+    const draft = sector([x, y]);
+    await callTool(ctx, "submit_sector", {
+      token,
+      claim_id: claimId,
+      coordinate: [x, y],
+      title: draft.title,
+      short_description: draft.short_description,
+      long_description: draft.long_description,
+    });
+    const me = unwrap(await callTool(ctx, "get_my_status", { token })).body;
+    const sectorId = me.sectors[0].sector_id;
+
+    const a = unwrap(
+      await callTool(ctx, "create_object", { token, parent_id: sectorId, title: "Rope", description: "d" }),
+    ).body.object.object_id;
+    const b = unwrap(
+      await callTool(ctx, "create_object", { token, parent_id: sectorId, title: "Hook", description: "d" }),
+    ).body.object.object_id;
+
+    const made = unwrap(
+      await callTool(ctx, "create_interaction", {
+        token,
+        object_a_id: a,
+        object_b_id: b,
+        text: "Tied fast.",
+      }),
+    );
+    assert.equal(made.status, 201);
+
+    const fetched = unwrap(
+      await callTool(ctx, "get_interaction", { object_a_id: b, object_b_id: a }),
+    );
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.body.text, "Tied fast.");
   });
 
   test("a REST-level auth failure comes back as an MCP tool error, not a crash", async () => {

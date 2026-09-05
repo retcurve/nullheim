@@ -16,6 +16,6 @@
     "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["src/worker.ts", "src/db/d1.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["src/worker.ts", "src/db/d1.ts", "src/images/r2.ts"]
 }

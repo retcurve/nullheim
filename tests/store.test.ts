@@ -1,22 +1,18 @@
 /**
- * The frontier and object indexes are maintained on write, not computed on read.
- *
- * That is a performance change with a correctness risk: an index can silently
- * drift from the definition it replaced. So these tests keep a reference
- * implementation of the old full-scan behaviour and assert the index agrees with
- * it, rather than asserting the index matches itself.
+ * Compares the frontier and object indexes against a full-scan reference
+ * implementation.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite, type SqliteDb } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import { MAX_XY, type CoordKey, type Coordinate } from "./coords.ts";
-import { parseSector } from "./schema.ts";
-import { WorldStore, type WorldObject } from "./store.ts";
-import { seeded } from "./random.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite, type SqliteDb } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import { MAX_XY, type CoordKey, type Coordinate } from "../src/coords.ts";
+import { parseSector } from "../src/schema.ts";
+import { WorldStore, type WorldObject } from "../src/store.ts";
+import { seeded } from "../src/random.ts";
 import { sector } from "./testing.ts";
 
 async function freshStore(): Promise<{ store: WorldStore; db: SqliteDb }> {
@@ -25,7 +21,7 @@ async function freshStore(): Promise<{ store: WorldStore; db: SqliteDb }> {
   return { store: new WorldStore(db), db };
 }
 
-/** The pre-index definition: scan every sector, collect empty neighbours. */
+/** Scans every sector and collects the empty neighbours of each. */
 async function referenceFrontier(store: WorldStore): Promise<Set<CoordKey>> {
   const slots = new Set<CoordKey>();
   for (const baked of await store.sectors()) {
@@ -38,7 +34,7 @@ async function referenceFrontier(store: WorldStore): Promise<Set<CoordKey>> {
   return slots;
 }
 
-/** The pre-index definition: filter every object in the world. */
+/** Filters every object in the world down to the given coordinate. */
 async function referenceObjectsIn(
   store: WorldStore,
   coordinate: Coordinate,
@@ -51,12 +47,15 @@ async function referenceObjectsIn(
 async function bakeAt(store: WorldStore, x: number, y: number, agentId = "a"): Promise<void> {
   const { parsed, errors } = parseSector(sector([x, y]));
   assert.ok(parsed !== null && errors.length === 0, JSON.stringify(errors));
-  await store.bake({
-    sector: parsed,
-    sectorId: `sec_test_${x}_${y}`,
-    agentId,
-    bakedAt: 0.0,
-  });
+  await store.bake(
+    {
+      sector: parsed,
+      sectorId: `sec_test_${x}_${y}`,
+      agentId,
+      bakedAt: 0.0,
+    },
+    null,
+  );
 }
 
 describe("the frontier index", () => {
@@ -73,7 +72,6 @@ describe("the frontier index", () => {
   });
 
   test("the index matches the full scan at every step", async () => {
-    // The property that matters: the index never drifts from the definition.
     const rng = seeded(17);
     const { store } = await freshStore();
     await bakeAt(store, 0, 0);
@@ -91,7 +89,6 @@ describe("the frontier index", () => {
   });
 
   test("filling a hole removes it from the frontier", async () => {
-    // The discard half of the update — easy to omit and rarely noticed.
     const { store } = await freshStore();
     for (const [x, y] of [
       [0, 0],
@@ -136,6 +133,8 @@ describe("the object index", () => {
       parentId: null,
       title: "A Thing",
       description: "d",
+      image: null,
+      useText: null,
       agentId: "a",
       createdAt: 1,
     });
@@ -157,6 +156,8 @@ describe("the object index", () => {
         parentId: null,
         title,
         description: "d",
+        image: null,
+        useText: null,
         agentId: "a",
         createdAt: index + 1,
       });
@@ -166,6 +167,8 @@ describe("the object index", () => {
         parentId: null,
         title: `next-${title}`,
         description: "d",
+        image: null,
+        useText: null,
         agentId: "b",
         createdAt: index + 1,
       });
@@ -190,6 +193,8 @@ describe("the object index", () => {
         parentId,
         title: id,
         description: "d",
+        image: null,
+        useText: null,
         agentId: "a",
         createdAt,
       });
@@ -215,12 +220,15 @@ describe("derived exits", () => {
     const { parsed } = parseSector(
       sector([0, 1], { title: "The Moth Orangery", short_description: "Green glass." }),
     );
-    await store.bake({
-      sector: parsed!,
-      sectorId: "sec_north",
-      agentId: "b",
-      bakedAt: 0,
-    });
+    await store.bake(
+      {
+        sector: parsed!,
+        sectorId: "sec_north",
+        agentId: "b",
+        bakedAt: 0,
+      },
+      null,
+    );
 
     const exits = await store.exitsFrom(coords.ORIGIN);
     assert.equal(exits.length, 1);
@@ -263,6 +271,8 @@ describe("the static lock", () => {
       parentId: null,
       title: "t",
       description: "d",
+      image: null,
+      useText: null,
       agentId: "a",
       createdAt: 1,
     };

@@ -1,18 +1,12 @@
 /**
  * World persistence: sectors and objects, backed by SQL.
  *
- * Sectors are nodes on a flat lattice, keyed by coordinate rather than a
- * synthetic id — the schema comment in `db/schema.sql` says why. Exits are
- * *not* stored — they are derived from adjacency every time they are asked
- * for, which is why no two neighbouring agents can ever disagree about a
- * doorway. Objects hang off sectors and off each other in a tree.
+ * Sectors are keyed by coordinate. Exits are not stored; they are computed
+ * from adjacency whenever they are read. Objects form a tree, attached to
+ * sectors and to each other.
  *
- * Every method here is async: the same store runs against a local SQLite
- * file (node:sqlite, effectively synchronous under the hood) and against
- * Cloudflare D1 (a real network round trip), and nothing in this module may
- * assume which. See `db.ts` for what that buys and what it costs — in
- * particular, why `bake()` is one `batch()` call rather than a read followed
- * by a write.
+ * Every method here is async, so the same store works against a local
+ * SQLite file or Cloudflare D1.
  */
 
 import * as coords from "./coords.ts";
@@ -43,6 +37,8 @@ export interface WorldObject {
   readonly parentId: string | null;
   readonly title: string;
   readonly description: string;
+  readonly image: string | null;
+  readonly useText: string | null;
   readonly agentId: string;
   readonly createdAt: number;
 }
@@ -54,9 +50,40 @@ export function objectAsDict(o: WorldObject): Record<string, unknown> {
     parent_id: o.parentId,
     title: o.title,
     description: o.description,
+    image: o.image,
+    use_text: o.useText,
     agent_id: o.agentId,
     created_at: o.createdAt,
   };
+}
+
+/**
+ * A written `use A with B` interaction. `objectAId` and `objectBId` are
+ * always stored with the lexicographically smaller object id first.
+ */
+export interface Interaction {
+  readonly interactionId: string;
+  readonly objectAId: string;
+  readonly objectBId: string;
+  readonly text: string;
+  readonly agentId: string;
+  readonly createdAt: number;
+}
+
+export function interactionAsDict(i: Interaction): Record<string, unknown> {
+  return {
+    interaction_id: i.interactionId,
+    object_a_id: i.objectAId,
+    object_b_id: i.objectBId,
+    text: i.text,
+    agent_id: i.agentId,
+    created_at: i.createdAt,
+  };
+}
+
+/** Returns the two object ids in (smaller, larger) order. */
+export function pairKey(objectAId: string, objectBId: string): [string, string] {
+  return objectAId < objectBId ? [objectAId, objectBId] : [objectBId, objectAId];
 }
 
 export interface Exit {
@@ -80,6 +107,7 @@ interface SectorRow {
   title: string;
   short_description: string;
   long_description: string;
+  image: string | null;
   baked_at: number;
 }
 
@@ -90,6 +118,7 @@ function rowToBaked(row: SectorRow): BakedSector {
       title: row.title,
       shortDescription: row.short_description,
       longDescription: row.long_description,
+      image: row.image,
     },
     sectorId: row.sector_id,
     agentId: row.agent_id,
@@ -104,6 +133,8 @@ interface ObjectRow {
   parent_id: string | null;
   title: string;
   description: string;
+  image: string | null;
+  use_text: string | null;
   agent_id: string;
   created_at: number;
 }
@@ -115,12 +146,70 @@ function rowToObject(row: ObjectRow): WorldObject {
     parentId: row.parent_id,
     title: row.title,
     description: row.description,
+    image: row.image,
+    useText: row.use_text,
     agentId: row.agent_id,
     createdAt: row.created_at,
   };
 }
 
-/** SQL-backed world: sectors, objects, and the frontier index. */
+export type ImageModerationState = "published" | "pending" | "rejected";
+
+export interface ModeratedImage {
+  readonly imageKey: string;
+  readonly claimId: string;
+  readonly state: ImageModerationState;
+  readonly score: number | null;
+  readonly createdAt: number;
+  readonly reviewedAt: number | null;
+}
+
+interface ImageRow {
+  image_key: string;
+  claim_id: string;
+  state: ImageModerationState;
+  score: number | null;
+  created_at: number;
+  reviewed_at: number | null;
+}
+
+function rowToModeratedImage(row: ImageRow): ModeratedImage {
+  return {
+    imageKey: row.image_key,
+    claimId: row.claim_id,
+    state: row.state,
+    score: row.score,
+    createdAt: row.created_at,
+    reviewedAt: row.reviewed_at,
+  };
+}
+
+/** Extracts the bare key from a `/v1/images/{key}` url. */
+export function imageKeyFromUrl(url: string): string {
+  return url.slice(url.lastIndexOf("/") + 1);
+}
+
+interface InteractionRow {
+  interaction_id: string;
+  object_a_id: string;
+  object_b_id: string;
+  text: string;
+  agent_id: string;
+  created_at: number;
+}
+
+function rowToInteraction(row: InteractionRow): Interaction {
+  return {
+    interactionId: row.interaction_id,
+    objectAId: row.object_a_id,
+    objectBId: row.object_b_id,
+    text: row.text,
+    agentId: row.agent_id,
+    createdAt: row.created_at,
+  };
+}
+
+/** Stores sectors, objects, and the frontier index in SQL. */
 export class WorldStore {
   readonly #db: Db;
 
@@ -145,29 +234,102 @@ export class WorldStore {
     return row === null ? null : rowToBaked(row);
   }
 
+  /** Returns whether a sector references this image url. */
+  async imageIsReferenced(url: string): Promise<boolean> {
+    return (await this.#db.first("SELECT 1 FROM sectors WHERE image = ? LIMIT 1", [url])) !== null;
+  }
+
+  // --- image moderation -----------------------------------------------------
+
+  /** Records a freshly uploaded image's verdict: `published` or `pending`. */
+  async recordImage(
+    key: string,
+    claimId: string,
+    state: "published" | "pending",
+    score: number | null,
+  ): Promise<void> {
+    await this.#db.run(
+      "INSERT INTO images (image_key, claim_id, state, score, created_at) VALUES (?, ?, ?, ?, ?)",
+      [key, claimId, state, score, now()],
+    );
+  }
+
+  /** Returns whether a stored image may be served. A missing row counts as published. */
+  async imageIsPublished(key: string): Promise<boolean> {
+    const row = await this.#db.first<{ state: ImageModerationState }>(
+      "SELECT state FROM images WHERE image_key = ?",
+      [key],
+    );
+    return row === null || row.state === "published";
+  }
+
+  /** Returns images in the given state, oldest first, or every image if `state` is omitted. */
+  async listImages(state?: ImageModerationState): Promise<ModeratedImage[]> {
+    const rows =
+      state === undefined
+        ? await this.#db.all<ImageRow>("SELECT * FROM images ORDER BY created_at ASC")
+        : await this.#db.all<ImageRow>(
+            "SELECT * FROM images WHERE state = ? ORDER BY created_at ASC",
+            [state],
+          );
+    return rows.map(rowToModeratedImage);
+  }
+
+  /** Marks a `pending` image as published. Returns false if it was not pending. */
+  async approveImage(key: string): Promise<boolean> {
+    const result = await this.#db.run(
+      "UPDATE images SET state = 'published', reviewed_at = ? WHERE image_key = ? AND state = 'pending'",
+      [now(), key],
+    );
+    return result.changes > 0;
+  }
+
   /**
-   * Write a sector permanently and fold it into the frontier, atomically.
-   *
-   * The static lock and the frontier update ride in one `batch()`: the
-   * sector insert either succeeds or collides with the `(x, y)` primary key
-   * (a concurrent bake of the same coordinate, or a genuine rewrite attempt),
-   * and either way the frontier statements below it must not run on their
-   * own — a frontier update with no matching sector would corrupt the index.
-   *
-   * Exactly five coordinates can change: the one just filled, no longer a
-   * frontier slot, and its four neighbours, any of which may now touch the
-   * world for the first time. Each neighbour insert is itself conditional
-   * (`WHERE NOT EXISTS (… sectors …)`) so a neighbour that is already baked
-   * is never re-added — the read and the write are one statement, not two,
-   * which is what keeps this race-free under concurrent claims.
+   * Marks an image rejected and clears it from any sector showing it.
+   * Returns false if there was no such image.
    */
-  async bake(baked: BakedSector): Promise<void> {
+  async rejectImage(key: string): Promise<boolean> {
+    const url = `/v1/images/${key}`;
+    const results = await this.#db.batch([
+      {
+        sql: "UPDATE images SET state = 'rejected', reviewed_at = ? WHERE image_key = ?",
+        params: [now(), key],
+      },
+      { sql: "UPDATE sectors SET image = NULL WHERE image = ?", params: [url] },
+    ]);
+    return results[0]!.changes > 0;
+  }
+
+  /** Deletes the moderation record for each given key, in one statement. Used only by the reaper. */
+  async deleteImageRecords(keys: readonly string[]): Promise<void> {
+    if (keys.length === 0) {
+      return;
+    }
+    const holes = keys.map(() => "?").join(", ");
+    await this.#db.run(`DELETE FROM images WHERE image_key IN (${holes})`, [...keys]);
+  }
+
+  /**
+   * Writes a sector permanently and updates the frontier in one atomic
+   * batch: removes the sector's own coordinate from the frontier and adds
+   * any of its neighbours not already baked. If `claimId` is given, the
+   * insert only runs while that claim is still open and unexpired.
+   */
+  async bake(baked: BakedSector, claimId: string | null): Promise<void> {
     const { x, y } = baked.sector.coordinate;
     const statements: Statement[] = [
       {
+        // Only inserts while the named claim is still open and unexpired,
+        // when claimId is given.
         sql:
           "INSERT INTO sectors (x, y, sector_id, agent_id, title, short_description, " +
-          "long_description, baked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "long_description, image, baked_at) " +
+          "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?" +
+          (claimId === null
+            ? ""
+            : " WHERE EXISTS (" +
+              "  SELECT 1 FROM claims WHERE claim_id = ? AND status = 'open' AND expires_at > ?" +
+              ")"),
         params: [
           x,
           y,
@@ -176,7 +338,9 @@ export class WorldStore {
           baked.sector.title,
           baked.sector.shortDescription,
           baked.sector.longDescription,
+          baked.sector.image,
           baked.bakedAt,
+          ...(claimId === null ? [] : [claimId, baked.bakedAt]),
         ],
       },
       { sql: "DELETE FROM frontier WHERE x = ? AND y = ?", params: [x, y] },
@@ -193,8 +357,9 @@ export class WorldStore {
       });
     }
 
+    let results;
     try {
-      await this.#db.batch(statements);
+      results = await this.#db.batch(statements);
     } catch (exc) {
       if (isUniqueViolation(exc)) {
         throw new AlreadyBaked(
@@ -202,6 +367,10 @@ export class WorldStore {
         );
       }
       throw exc;
+    }
+    // No rows changed means the claim guard did not match.
+    if (results[0]!.changes === 0) {
+      throw new ClaimNotLive(`claim ${claimId} is no longer live, so nothing was baked`);
     }
   }
 
@@ -226,13 +395,8 @@ export class WorldStore {
   // --- derived exits ------------------------------------------------------
 
   /**
-   * Every side with a neighbour is an exit. Nobody declares these.
-   *
-   * The label a player reads on the door is the neighbour's own `title`, and
-   * examining the door without walking through shows the neighbour's
-   * `shortDescription`. So each sector writes the sign on the outside of its
-   * own front door, and its neighbours never get a say — which is how two
-   * rooms that agree on nothing still join up cleanly.
+   * Returns one exit for each neighbouring coordinate that is baked, labelled
+   * with that neighbour's own title and short description.
    */
   async exitsFrom(coordinate: Coordinate): Promise<Exit[]> {
     const entries = coords.neighbours(coordinate);
@@ -253,18 +417,7 @@ export class WorldStore {
     return found;
   }
 
-  /**
-   * Unbaked, in-bounds coordinates touching at least one baked sector.
-   *
-   * This is the frontier, and the only rule is adjacency — a slot beside a
-   * sector with three neighbours already is worth exactly as much as a slot
-   * beside a lonely one. The world is allowed to grow a corridor if that is
-   * where the dice fall.
-   *
-   * Backed by the `frontier` table, maintained incrementally in `bake()`. A
-   * query that scanned every sector to answer this was measured at 213ms a
-   * claim at 20k sectors; the frontier itself only grows as about 7.6·√N.
-   */
+  /** Returns the unbaked, in-bounds coordinates that touch at least one baked sector. */
   async openSlots(): Promise<Set<CoordKey>> {
     const rows = await this.#db.all<{ x: number; y: number }>("SELECT x, y FROM frontier");
     return new Set(rows.map((r) => coords.key(coords.coord(r.x, r.y))));
@@ -290,8 +443,8 @@ export class WorldStore {
   async addObject(o: WorldObject): Promise<void> {
     try {
       await this.#db.run(
-        "INSERT INTO objects (object_id, x, y, parent_id, title, description, agent_id, " +
-          "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO objects (object_id, x, y, parent_id, title, description, image, " +
+          "use_text, agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           o.objectId,
           o.coordinate.x,
@@ -299,6 +452,8 @@ export class WorldStore {
           o.parentId,
           o.title,
           o.description,
+          o.image,
+          o.useText,
           o.agentId,
           o.createdAt,
         ],
@@ -318,12 +473,7 @@ export class WorldStore {
     return row === null ? null : rowToObject(row);
   }
 
-  /**
-   * Everything standing in one sector, oldest first.
-   *
-   * Indexed by coordinate rather than filtered out of every object in the
-   * world — this is on the player's path, called for every room view.
-   */
+  /** Returns every object standing in one sector, oldest first. */
   async objectsIn(coordinate: Coordinate): Promise<WorldObject[]> {
     const rows = await this.#db.all<ObjectRow>(
       "SELECT * FROM objects WHERE x = ? AND y = ? ORDER BY created_at ASC",
@@ -341,31 +491,67 @@ export class WorldStore {
     return row?.c ?? 0;
   }
 
-  /**
-   * Every object in the world, in creation order.
-   *
-   * Exists for tests that need to check the whole store's contents directly,
-   * and to compare the coordinate index against a full scan.
-   */
+  /** Counts objects in one sector, without fetching them. */
+  async objectCountIn(coordinate: Coordinate): Promise<number> {
+    const row = await this.#db.first<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM objects WHERE x = ? AND y = ?",
+      [coordinate.x, coordinate.y],
+    );
+    return row?.c ?? 0;
+  }
+
+  /** Returns every object in the world, in creation order. */
   async allObjects(): Promise<WorldObject[]> {
     const rows = await this.#db.all<ObjectRow>("SELECT * FROM objects ORDER BY created_at ASC");
     return rows.map(rowToObject);
   }
+
+  // --- interactions ---------------------------------------------------------
+
+  /** Writes one `use A with B` interaction, normalising the object ids to canonical order. */
+  async addInteraction(i: Interaction): Promise<void> {
+    const [objectAId, objectBId] = pairKey(i.objectAId, i.objectBId);
+    try {
+      await this.#db.run(
+        "INSERT INTO interactions (interaction_id, object_a_id, object_b_id, text, " +
+          "agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        [i.interactionId, objectAId, objectBId, i.text, i.agentId, i.createdAt],
+      );
+    } catch (exc) {
+      if (isUniqueViolation(exc)) {
+        throw new Error(`${objectAId} and ${objectBId} already have an interaction`);
+      }
+      throw exc;
+    }
+  }
+
+  /** The interaction between two objects, in either order, or null if there isn't one. */
+  async interactionBetween(objectAId: string, objectBId: string): Promise<Interaction | null> {
+    const [a, b] = pairKey(objectAId, objectBId);
+    const row = await this.#db.first<InteractionRow>(
+      "SELECT * FROM interactions WHERE object_a_id = ? AND object_b_id = ?",
+      [a, b],
+    );
+    return row === null ? null : rowToInteraction(row);
+  }
+
+  async interactionExists(objectAId: string, objectBId: string): Promise<boolean> {
+    const [a, b] = pairKey(objectAId, objectBId);
+    const row = await this.#db.first(
+      "SELECT 1 FROM interactions WHERE object_a_id = ? AND object_b_id = ? LIMIT 1",
+      [a, b],
+    );
+    return row !== null;
+  }
 }
 
-/**
- * Raised when a sector would be rewritten. Its own class so the engine can
- * tell it from any other failure.
- */
+/** Raised when a sector would be rewritten. */
 export class AlreadyBaked extends Error {}
 
-/**
- * Seconds since the epoch, as a float.
- *
- * Kept as this app's one timestamp spelling throughout — sectors, objects,
- * claims and agents all store it this way, so a REAL column holds it without
- * conversion at either end.
- */
+/** Raised when a claim was no longer live when the sector insert ran. */
+export class ClaimNotLive extends Error {}
+
+/** Returns the current time in seconds since the epoch, as a float. */
 export function now(): number {
   return Date.now() / 1000;
 }

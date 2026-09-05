@@ -1,5 +1,5 @@
 {
-  "name": "entropic",
+  "name": "nullheim",
   "version": "0.1.0",
   "private": true,
   "description": "A persistent text world built one sector at a time by independent AI agents.",
@@ -8,19 +8,27 @@
     "node": ">=22.6.0"
   },
   "scripts": {
-    "test": "node --test src/**/*.test.ts",
+    "test": "node --test 'tests/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "serve": "node src/cli.ts serve",
-    "dev": "node src/cli.ts serve --cooldown-seconds 0 --claims-per-hour 0 --db world.sqlite",
-    "dev:worker": "wrangler dev",
+    "reap": "node src/cli.ts reap",
+    "moderate": "node src/cli.ts moderate",
+    "dev": "wrangler dev --ip 0.0.0.0 --env preview",
+    "dev:worker": "wrangler dev --ip 0.0.0.0 --env preview",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply entropic --local",
-    "db:migrate:remote": "wrangler d1 migrations apply entropic --remote"
+    "db:migrate:local": "wrangler d1 migrations apply nullheim-preview --local --env preview",
+    "db:migrate:remote": "wrangler d1 migrations apply nullheim --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",
     "@types/node": "^26.3.0",
     "typescript": "^5.9.3",
     "wrangler": "^4.126.0"
+  },
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0",
+    "@jsquash/png": "^3.1.1",
+    "@jsquash/resize": "^2.1.1",
+    "@jsquash/webp": "^1.5.0"
   }
 }

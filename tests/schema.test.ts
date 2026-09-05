@@ -3,17 +3,19 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { coord } from "./coords.ts";
+import { coord } from "../src/coords.ts";
 import {
+  MAX_INTERACTION_TEXT_LEN,
   MAX_LONG_DESCRIPTION_LEN,
   MAX_OBJECT_DESCRIPTION_LEN,
   MAX_SHORT_DESCRIPTION_LEN,
   MAX_TITLE_LEN,
+  parseInteraction,
   parseObject,
   parseSector,
   sectorAsDict,
-} from "./schema.ts";
-import { codes, obj, sector } from "./testing.ts";
+} from "../src/schema.ts";
+import { codes, interaction, obj, sector } from "./testing.ts";
 
 describe("parsing a sector", () => {
   test("a minimal sector parses clean", () => {
@@ -29,7 +31,6 @@ describe("parsing a sector", () => {
   });
 
   test("a coordinate must be two integers", () => {
-    // The grid is flat — a three-component coordinate is a stale client.
     for (const bad of [[0], [0, 1, 0], [0, "y"], [true, 0], "0,1"]) {
       const { parsed, errors } = parseSector(sector([0, 1], { coordinate: bad }));
       assert.equal(parsed, null, `expected ${JSON.stringify(bad)} to be refused`);
@@ -61,9 +62,7 @@ describe("parsing a sector", () => {
   });
 
   test("caps count characters, not UTF-16 code units", () => {
-    // The hazard this guards: "𝔊".length is 2 in JavaScript and 1 in Python.
-    // A title of exactly MAX_TITLE_LEN astral characters is legal, and a naive
-    // .length would reject it as twice the size.
+    // "𝔊" has a JavaScript .length of 2 but counts as 1 character.
     const astral = "𝔊".repeat(MAX_TITLE_LEN);
     const { errors } = parseSector(sector([0, 1], { title: astral }));
     assert.deepEqual(errors, []);
@@ -74,7 +73,6 @@ describe("parsing a sector", () => {
   });
 
   test("declared exits are rejected as an unknown field", () => {
-    // Exits are derived from adjacency; declaring them is a stale client.
     const { errors } = parseSector(sector([0, 1], { exits: [{ direction: "north" }] }));
     assert.ok(codes(errors).has("unknown_field"));
   });
@@ -116,8 +114,6 @@ describe("parsing an object", () => {
   });
 
   test("a null parent id is rejected", () => {
-    // parent_id is required — null used to mean the sector itself; now the
-    // sector's own id does, so there is nothing left for null to mean.
     const { errors } = parseObject(obj(null));
     assert.ok(codes(errors).has("type_error"));
   });
@@ -158,10 +154,68 @@ describe("parsing an object", () => {
   });
 
   test("unknown fields are reported", () => {
-    // The UOI tags are gone — a client still sending them should hear so.
     const { errors } = parseObject(
       obj("sec_abc123", { weight_class: "light", is_weapon: false }),
     );
+    assert.ok(codes(errors).has("unknown_field"));
+  });
+
+  test("use_text is optional and absent by default", () => {
+    const { parsed, errors } = parseObject(obj("sec_abc123"));
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.useText, null);
+  });
+
+  test("use_text, when given, follows the same text rules as any other field", () => {
+    let result = parseObject(obj("sec_abc123", { use_text: "It creaks, then gives." }));
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.parsed?.useText, "It creaks, then gives.");
+
+    result = parseObject(obj("sec_abc123", { use_text: "   " }));
+    assert.ok(codes(result.errors).has("empty_text"));
+
+    result = parseObject(obj("sec_abc123", { use_text: "x".repeat(MAX_INTERACTION_TEXT_LEN + 1) }));
+    assert.ok(codes(result.errors).has("too_long"));
+  });
+});
+
+describe("parsing an interaction", () => {
+  test("a minimal interaction parses clean", () => {
+    const { parsed, errors } = parseInteraction(interaction("obj_a", "obj_b"));
+    assert.deepEqual(errors, []);
+    assert.equal(parsed?.objectAId, "obj_a");
+    assert.equal(parsed?.objectBId, "obj_b");
+  });
+
+  test("both object ids are required", () => {
+    for (const field of ["object_a_id", "object_b_id"]) {
+      const payload = interaction("obj_a", "obj_b");
+      delete payload[field];
+      const { errors } = parseInteraction(payload);
+      assert.ok(codes(errors).has("type_error"), field);
+    }
+  });
+
+  test("a blank object id is rejected", () => {
+    const { errors } = parseInteraction(interaction("   ", "obj_b"));
+    assert.ok(codes(errors).has("type_error"));
+  });
+
+  test("text is required and capped", () => {
+    let result = parseInteraction(interaction("obj_a", "obj_b", { text: "" }));
+    assert.ok(codes(result.errors).has("empty_text"));
+
+    result = parseInteraction(interaction("obj_a", "obj_b", { text: "x".repeat(MAX_INTERACTION_TEXT_LEN) }));
+    assert.deepEqual(result.errors, []);
+
+    result = parseInteraction(
+      interaction("obj_a", "obj_b", { text: "x".repeat(MAX_INTERACTION_TEXT_LEN + 1) }),
+    );
+    assert.ok(codes(result.errors).has("too_long"));
+  });
+
+  test("unknown fields are reported", () => {
+    const { errors } = parseInteraction(interaction("obj_a", "obj_b", { state: "used" }));
     assert.ok(codes(errors).has("unknown_field"));
   });
 });

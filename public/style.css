@@ -5,24 +5,36 @@
   --fg-bright: #a6ffc1;
   --error: #ff5533;
   --title: #ffcc33;
+  --image: #33ccff;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
+/* `dvh` (dynamic viewport height) is the unit that actually shrinks with
+   the on-screen keyboard on a phone — `%`/`vh` measure the layout viewport,
+   which most mobile browsers leave full-size behind the keyboard instead of
+   resizing. The plain `100%`/`100vh` line first is a fallback for browsers
+   old enough not to know `dvh` at all; they simply ignore the line after
+   it, so this needs no @supports check. Set on both html and body, the same
+   pairing used for this in kira-platform's app/layout.js. */
+html {
   height: 100%;
+  height: 100dvh;
 }
 
 /* Set on <html> while the map popup is open — belt and suspenders against
    page-level scroll, on top of the popup's own containment. */
-html.map-open, html.map-open body {
+html.map-open, html.map-open body,
+html.boss-open, html.boss-open body {
   overflow: hidden;
 }
 
 body {
   margin: 0;
+  height: 100%;
+  height: 100dvh;
   background: #000;
   display: flex;
   align-items: center;
@@ -32,7 +44,7 @@ body {
 
 #crt {
   width: min(900px, 96vw);
-  height: min(640px, 92vh);
+  height: min(800px, 92vh);
   background: var(--bg);
   border: 2px solid var(--fg-dim);
   border-radius: 10px;
@@ -106,6 +118,31 @@ body {
   text-shadow: 0 0 4px rgba(255, 85, 51, 0.6);
 }
 
+/* Boot-time ASCII wordmark: exact-width art, so it scrolls horizontally on a
+   narrow screen instead of wrapping (which would destroy the letterforms),
+   and it skips the bold/underline/title markdown convention entirely (see
+   printLogo) so the figlet art's own underscores and asterisks can't be
+   misread as it. */
+#output .entry.logo {
+  color: var(--fg-bright);
+  text-shadow: 0 0 6px rgba(166, 255, 193, 0.55);
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 6.5px;
+}
+
+/* A sector's own optional uploaded image, shown above its title
+   (see printImage in app.js). Capped to a fraction of the screen's own
+   height so one image can't push the text below it out of view, and
+   `object-fit: contain` keeps an unusual aspect ratio from being cropped. */
+#output .entry.image img {
+  display: block;
+  max-width: 100%;
+  max-height: 50vh;
+  object-fit: contain;
+  margin: auto;
+}
+
 #output strong {
   color: var(--fg-bright);
   font-weight: bold;
@@ -118,6 +155,38 @@ body {
 #output u {
   color: var(--fg-bright);
   font-weight: normal;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#output a {
+  color: var(--fg-bright);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#output a:hover,
+#output a:focus-visible {
+  color: var(--title);
+}
+
+#update-banner {
+  display: none;
+  flex-shrink: 0;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--title);
+  border-radius: 3px;
+  color: var(--title);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#update-banner.visible {
+  display: block;
+}
+
+#update-banner-action {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -149,6 +218,16 @@ body {
 
 #more-indicator.visible {
   display: inline-block;
+}
+
+/* Set by app.js only when its own animated, pinned-to-anchor scroll is what
+   left unread content below the fold — never for a badge shown because the
+   reader scrolled up by hand. `visibility`, not `display`: the prompt and
+   cursor still occupy their box, so #promptline never changes size and
+   nothing below it jumps. */
+#promptline.more-gated .prompt,
+#promptline.more-gated #cursor {
+  visibility: hidden;
 }
 
 #promptline .prompt {
@@ -183,6 +262,7 @@ body {
   opacity: 0;
   border: none;
   padding: 0;
+  resize: none;
 }
 
 #output::-webkit-scrollbar {
@@ -196,6 +276,49 @@ body {
 
 #output::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Touch devices scroll #output by swipe, so its own scrollbar is just
+   clutter there — desktop (mouse-driven) keeps it. */
+@media (pointer: coarse) {
+  #output {
+    scrollbar-width: none;
+  }
+
+  #output::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* --- boss overlay ------------------------------------------------------ */
+
+/* Unlike #map-overlay, this reads as the whole screen being taken over —
+   no framed popup, no dimmed backdrop behind it — because the entire point
+   is that nothing of the game is visible while it's up. */
+#boss-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #000;
+  color: #d8d8d8;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  cursor: default;
+}
+
+#boss-overlay.hidden {
+  display: none;
+}
+
+#boss-sheet {
+  margin: 0;
+  padding: 12px;
+  font-family: "Courier New", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 14px;
+  line-height: 1.25;
+  white-space: pre;
 }
 
 /* --- map overlay ----------------------------------------------------- */
@@ -222,6 +345,7 @@ body {
    fit the viewport outright (never larger), so unlike the scrollable grid
    inside it, this box itself never needs to scroll or grow. */
 #map-popup {
+  position: relative;
   width: min(900px, 96vw);
   height: min(640px, 92vh);
   background: var(--bg);
@@ -251,14 +375,36 @@ body {
   min-height: 0;
   /* Hidden, not auto — no native scrollbar. Still fully scrollable: `hidden`
      only turns off the browser's own scrollbar and wheel/touch handling,
-     not scriptable scrollTop/scrollLeft, so the wheel and arrow-key handlers
-     below drive it directly instead. */
+     not scriptable scrollTop/scrollLeft, so the wheel, arrow-key and touch
+     handlers below drive it directly instead. `touch-action: none` stops
+     the browser's own pan/zoom gestures (and any pull-to-refresh) from
+     intercepting a drag before the touchmove handler sees it. */
+  touch-action: none;
   overflow: hidden;
+  cursor: grab;
+  /* Click-and-hold panning is a mousedown-then-drag, exactly what the
+     browser's own text selection listens for — without this, dragging over
+     a sector's label highlights its text instead of just panning. */
+  user-select: none;
+  -webkit-user-select: none;
   display: flex;
   /* Breathing room lives here, as padding on the scrollable container, not
      as margin on the grid — padding stays reachable at every scroll extreme
      once the grid overflows, where a margin would just get clipped. */
   padding: 24px;
+}
+
+#map-viewport.dragging {
+  cursor: grabbing;
+}
+
+#map-stats {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--fg-dim);
+  color: var(--fg-dim);
+  font-size: 13px;
+  letter-spacing: 0.5px;
 }
 
 #map-grid {
@@ -332,6 +478,43 @@ body {
 .map-cell .map-cell-label strong {
   color: var(--fg-bright);
   font-weight: bold;
+}
+
+/* Tappable equivalents of the +/-/Esc keys — the popup is otherwise
+   keyboard-only, which a touch device has no way to drive. Floated over the
+   viewport's own top-right corner rather than added to #map-hint so they
+   stay reachable by thumb regardless of scroll position. */
+#map-controls {
+  position: absolute;
+  top: 52px;
+  right: 24px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#map-controls button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--title);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--title);
+  font: bold 18px "Courier New", ui-monospace, monospace;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(255, 204, 51, 0.25);
+}
+
+#map-controls button:hover,
+#map-controls button:active {
+  background: rgba(255, 204, 51, 0.22);
+  border-color: var(--title);
+}
+
+#map-controls #map-exit {
+  margin-top: 8px;
 }
 
 #map-tooltip {

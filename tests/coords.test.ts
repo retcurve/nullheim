@@ -18,7 +18,7 @@ import {
   parse,
   step,
   toString,
-} from "./coords.ts";
+} from "../src/coords.ts";
 
 describe("parsing an untrusted coordinate", () => {
   test("two integers parse", () => {
@@ -27,14 +27,12 @@ describe("parsing an untrusted coordinate", () => {
   });
 
   test("anything that is not exactly two integers is refused", () => {
-    // The grid is flat — a three-component coordinate is a stale client.
     for (const bad of [[0], [0, 1, 0], [0, "y"], [true, 0], "0,1", null, {}, [1.5, 0]]) {
       assert.throws(() => parse(bad), Error, `expected ${JSON.stringify(bad)} to be refused`);
     }
   });
 
   test("booleans are not coordinates", () => {
-    // Python had to reject these explicitly because bool subclasses int.
     assert.throws(() => parse([true, false]));
   });
 });
@@ -47,14 +45,11 @@ describe("coordinates as keys", () => {
   });
 
   test("equal coordinates produce the same key, unequal ones do not", () => {
-    // This is the property that lets a Map stand in for Python's dict[Coordinate].
     assert.equal(key(coord(2, 3)), key(coord(2, 3)));
     assert.notEqual(key(coord(2, 3)), key(coord(3, 2)));
   });
 
   test("distinct objects with the same value collide in a Set, as they must", () => {
-    // The bug this guards: Set<Coordinate> would hold both, and the frontier
-    // index would double-count every slot.
     const seen = new Set([key(coord(1, 1)), key(coord(1, 1))]);
     assert.equal(seen.size, 1);
   });

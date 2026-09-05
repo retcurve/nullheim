@@ -1,7 +1,8 @@
-name = "entropic"
+name = "nullheim"
 main = "src/worker.ts"
 compatibility_date = "2026-08-01"
 
+workers_dev = false
 # The prompt templates are bundled in as text, not read from disk — see
 # src/worker.ts and src/worker-env.d.ts. There is no filesystem on Cloudflare
 # at request time.
@@ -25,73 +26,73 @@ run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
-database_name = "entropic"
-database_id = "565f3c83-456a-4f0c-b25f-aa0d367e61fd"
+database_name = "nullheim"
+database_id = "9c51fc64-dcd7-4ef5-8892-ca4febe981ec"
 migrations_dir = "migrations"
 
-# Defaults match registry.ts's own (registry.ts:DEFAULT_*); override per
-# environment with `wrangler secret` or the dashboard, not by editing these.
+# Agent-uploaded images, already resized and compressed before they land
+# here — see src/image-processing.ts and src/images/r2.ts
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "nullheim-images"
+
+# Image moderation's real classifier — see src/moderation/workers-ai.ts.
+[ai]
+binding = "AI"
+
 [vars]
-COOLDOWN_SECONDS = "900"
-CLAIMS_PER_HOUR = "30"
+COOLDOWN_SECONDS = "21600"
+CLAIMS_PER_HOUR = "1000"
+REGISTRATIONS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"
 
+[triggers]
+crons = ["* * * * *"]
+
 [observability]
-enabled = false
-head_sampling_rate = 1
+enabled = true
 
 [observability.logs]
 enabled = true
 head_sampling_rate = 1
-persist = true
 invocation_logs = true
 
 [observability.traces]
 enabled = true
-persist = true
 head_sampling_rate = 1
 
-# A single fixed hostname, not a subdomain wildcard: *.entropic.sector808.org
-# needs Advanced Certificate Manager (a wildcard-on-a-subdomain is not covered
-# by the free Universal SSL cert, which only covers sector808.org and
-# *.sector808.org). This one hostname fits inside that free wildcard.
-[[routes]]
-pattern = "entropic.sector808.org/*"
-zone_name = "sector808.org"
+# Disabled for now — reenable by uncommenting this and removing the
+# top-level `workers_dev = false` near the top of this file (which exists only
+# because, per the preview environment's own comment further down,
+# [[routes]]
+# pattern = "nullheim.sector808.org/*"
+# zone_name = "sector808.org"
 
-# Bindings for branch previews, which all share this one non-production D1
-# database — never the production `entropic` DB above.
-#
-# A preview is a *version* of the production Worker, uploaded by Cloudflare
-# Workers Builds' "version command" (`wrangler versions upload --env preview`)
-# and left at 0% traffic, reachable only at its own preview URL. It is not a
-# Worker of its own: Workers Builds sets WRANGLER_CI_OVERRIDE_NAME to the
-# connected Worker and wrangler applies it after `--name`, so `name` below is
-# overridden to `entropic` in CI and a per-branch Worker cannot be deployed
-# from a build. `wrangler deploy` must therefore never run on a branch — it
-# would publish that branch onto production.
-#
-# `routes` is an inheritable key, so without the empty list here this
-# environment would inherit the production route above and any deploy of it
-# would take entropic.sector808.org.
-#
-# `workers_dev` is also inheritable, and defaults to false once any `routes`
-# exist anywhere above unless an environment says otherwise — which is why
-# adding the production route silently took the preview URL down too. This
-# environment is only ever reachable at its preview URL, so it must say true.
 [env.preview]
-name = "entropic-preview"
+name = "dev-nullheim"
 routes = []
 workers_dev = true
 preview_urls = true
 
 [[env.preview.d1_databases]]
 binding = "DB"
-database_name = "entropic-preview"
-database_id = "11b879d4-dd94-4160-81f6-b5014d0af089"
+database_name = "nullheim-preview"
+database_id = "79a021ed-f7b8-44f3-95eb-58ca95846572"
 migrations_dir = "migrations"
 
+# Shares the one production bucket above
+[[env.preview.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "nullheim-images"
+
+[env.preview.ai]
+binding = "AI"
+
+[env.preview.triggers]
+crons = ["* * * * *"]
+
 [env.preview.vars]
-COOLDOWN_SECONDS = "900"
-CLAIMS_PER_HOUR = "30"
+COOLDOWN_SECONDS = "0"
+CLAIMS_PER_HOUR = "1000"
+REGISTRATIONS_PER_HOUR = "1000"
 LEASE_SECONDS = "900"

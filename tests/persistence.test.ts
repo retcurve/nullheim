@@ -1,17 +1,6 @@
 /**
- * Durability: everything written against a file-backed database is still
- * there once it is reopened.
- *
- * SQLite (via node:sqlite locally, or D1 in production) owns the actual
- * crash-safety mechanics — the WAL, the atomic commit, recovering from a
- * torn write. Re-testing those would just be re-testing SQLite. What is
- * still ours to get wrong is everything layered on top of it: that `bake()`
- * commits the sector *and* its frontier update together, that an agent's
- * repeated saves really do collapse to one row via the upsert in
- * `registry.ts`, and that none of it depends on any state kept in this
- * process — a second `WorldStore`/`Registry` pair opened against the same
- * file, as a restart would produce, must see exactly what the first one
- * wrote.
+ * Opens a file-backed database, writes to it, closes it, and reopens it,
+ * checking that the data is still there.
  */
 
 import { test, describe, afterEach } from "node:test";
@@ -20,22 +9,22 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SCHEMA_SQL } from "./db/schema.node.ts";
-import { openSqlite, type SqliteDb } from "./db/sqlite.ts";
-import * as coords from "./coords.ts";
-import { ensureGenesis } from "./engine.ts";
-import { parseSector } from "./schema.ts";
-import { Registry } from "./registry.ts";
-import { WorldStore } from "./store.ts";
+import { SCHEMA_SQL } from "../src/db/schema.node.ts";
+import { openSqlite, type SqliteDb } from "../src/db/sqlite.ts";
+import * as coords from "../src/coords.ts";
+import { ensureGenesis } from "../src/engine.ts";
+import { parseSector } from "../src/schema.ts";
+import { Registry } from "../src/registry.ts";
+import { WorldStore } from "../src/store.ts";
 import { sector } from "./testing.ts";
 
-/** A world in a temp directory, reopenable as if after a restart. */
+/** A world stored in a temp directory, which can be reopened. */
 class WorldOnDisk {
   readonly dir: string;
   readonly path: string;
 
   constructor() {
-    this.dir = mkdtempSync(join(tmpdir(), "entropic-"));
+    this.dir = mkdtempSync(join(tmpdir(), "nullheim-"));
     this.path = join(this.dir, "world.sqlite");
   }
 
@@ -76,12 +65,15 @@ afterEach(() => {
 async function bakeAt(store: WorldStore, x: number, y: number): Promise<void> {
   const { parsed, errors } = parseSector(sector([x, y]));
   assert.ok(parsed !== null && errors.length === 0, JSON.stringify(errors));
-  await store.bake({
-    sector: parsed,
-    sectorId: `sec_test_${x}_${y}`,
-    agentId: "a",
-    bakedAt: x * 100 + y,
-  });
+  await store.bake(
+    {
+      sector: parsed,
+      sectorId: `sec_test_${x}_${y}`,
+      agentId: "a",
+      bakedAt: x * 100 + y,
+    },
+    null,
+  );
 }
 
 describe("sectors and the frontier", () => {
@@ -120,12 +112,15 @@ describe("sectors and the frontier", () => {
   test("new writes after a reopen build on what was already there", async () => {
     const world = makeWorld();
     const first = track(await world.open());
-    await new WorldStore(first).bake({
-      sector: parseSector(sector([0, 0])).parsed!,
-      sectorId: "sec_test_0_0",
-      agentId: "a",
-      bakedAt: 0,
-    });
+    await new WorldStore(first).bake(
+      {
+        sector: parseSector(sector([0, 0])).parsed!,
+        sectorId: "sec_test_0_0",
+        agentId: "a",
+        bakedAt: 0,
+      },
+      null,
+    );
 
     const reopened = track(await world.open());
     const reopenedStore = new WorldStore(reopened);
@@ -149,6 +144,8 @@ describe("objects", () => {
         parentId: null,
         title,
         description: "d",
+        image: null,
+        useText: null,
         agentId: "a",
         createdAt: index + 1,
       });
@@ -171,8 +168,7 @@ describe("agents", () => {
     const registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     const { agent, token } = await registry.register("persisto");
     const claim = await registry.allocate(agent);
-    // settle() only touches the agents and claims tables — no sector needs to
-    // actually be baked to exercise the persistence this test is about.
+    // settle() writes to the agents and claims tables only.
     await registry.settle(agent, claim);
     await registry.noteContribution(agent);
 
@@ -190,9 +186,7 @@ describe("agents", () => {
     const registry = new Registry(db, { cooldownSeconds: 0, claimsPerHour: 0 });
     const { agent, token } = await registry.register("grinder");
 
-    // Each contribution re-saves the whole agent row (see registry.ts's
-    // #persist) — the same upsert this test is really about, whether it
-    // fires once or a dozen times.
+    // Each contribution re-saves the whole agent row, twelve times.
     for (let i = 0; i < 12; i += 1) {
       agent.objectsCreated = i;
       await registry.noteContribution(agent);
