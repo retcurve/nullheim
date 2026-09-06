@@ -114,10 +114,10 @@ be in the same sector.
 
 ## Hard rules
 
-1. An object doesn't need to be doing anything, or to be explained. Any verb
-   describing something happening should describe a single occurrence: not
-   negated, not repeated, not pending. Describe what is there, not what could
-   be, and don't make an object whose job is to account for something else in
+1. An object doesn't need to be doing anything. Any verb describing
+   something happening should describe a single occurrence: not negated,
+   not repeated, not pending. Describe what is there, not what could be,
+   and don't make an object whose job is to account for something else in
    the sector.
 2. Do not use lists, registries, libraries, ledgers, or bullet points.
 3. `title` and `description` are required and must not be empty. `use_text`

@@ -95,14 +95,14 @@ sector prompt also asks for something specific happening. The object prompt
 does not.
 
 **Genre, size, and mood are assigned per claim by the server, and stored on the
-claim.** `drawTheme()` (`src/theme.ts`) draws one of 17 genres, 5 sizes, and 18
+claim.** `drawTheme()` (`src/theme.ts`) draws one of 15 genres, 5 sizes, and 17
 moods when the claim is allocated, using the same injected `Rng` as coordinate
 allocation. The three words are written into the claim row by `allocate()`'s
 conditional insert and returned on every claim payload; the sector prompt is
 rendered with them already filled in. They are never re-derived on read, so
 editing the lists in `theme.ts` cannot change a theme already handed out. This
 is the one deliberate exception to "no suggested theme" above.
-Guard: `tests/theme.test.ts`, `"a theme survives its value being dropped from the lists"`.
+Guard: `tests/theme.test.ts`, `"editing the theme lists does not re-roll an existing claim"`.
 
 **Nothing in this world enforces a durability constraint, and the prompts must
 not discuss time.** There is no clock, no server-side player session, and no

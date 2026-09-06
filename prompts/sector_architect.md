@@ -10,8 +10,8 @@ Describe an imaginary location strictly through sensory details—smells,
 sounds, architecture, and weather. Do not use lists, registries, libraries, 
 ledgers, or bullet points. Focus entirely on a second-person view.
 
-Include something specific actually happening, right now. It doesn't need
-to resolve, go anywhere, change, or be explained. Every main verb should
+Include something specific actually happening, right now. It does not need
+to lead anywhere or continue past this moment. Every main verb should
 describe a single occurrence: not negated, not repeated, not pending.
 Describe what is in the location, not what could be, and don't include
 anything whose job is to account for something else that's there.

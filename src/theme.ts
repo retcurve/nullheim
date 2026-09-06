@@ -7,23 +7,21 @@
 
 
 export const GENRES = [
-  "Gothic",
   "Weird fiction",
   "Cyberpunk",
   "Steampunk",
-  "Fantasy",
+  "High fantasy",
+  "Low fantasy",
   "Space opera",
   "Post-apocalyptic",
   "Noir",
-  "Western",
-  "Fairy-tale",
   "Historical",
-  "Survival",
   "Horror",
-  "Mystery",
-  "Dreamlike/liminal",
   "Nautical",
-  "Mythic",
+  "Pastoral",
+  "Industrial",
+  "Prehistoric",
+  "Medieval",
 ] as const;
 
 export const SIZES = [
@@ -43,16 +41,15 @@ export const MOODS = [
   "Tender",
   "Absurdist",
   "Triumphant",
-  "Bureaucratic",
   "Deadpan",
-  "Cozy-horror",
-  "Manic",
   "Grief-struck",
   "Petty",
   "Dread",
   "Awestruck",
   "Vengeful",
-  "Nostalgic",
+  "Wistful",
+  "Gleeful",
+  "Resigned",
 ] as const;
 
 export interface Theme {

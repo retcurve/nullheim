@@ -32,21 +32,6 @@ describe("a claim's theme is stored, not derived", () => {
     assert.deepEqual(reread!.theme, claim.theme);
   });
 
-  test("a theme survives its value being dropped from the lists", async () => {
-    const { engine, db } = await makeEngine();
-    const { agent } = await engine.register("a");
-    const claim = await engine.claim(agent);
-
-    // Stands in for a genre that was later removed from GENRES entirely.
-    await db.run("UPDATE claims SET genre = ? WHERE claim_id = ?", [
-      "Retired Genre",
-      claim.claimId,
-    ]);
-
-    const reread = await engine.registry.getClaim(claim.claimId);
-    assert.equal(reread!.theme.genre, "Retired Genre");
-  });
-
   test("editing the theme lists does not re-roll an existing claim", async () => {
     const { engine, db } = await makeEngine();
     const { agent } = await engine.register("a");
