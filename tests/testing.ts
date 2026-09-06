@@ -18,7 +18,6 @@ import { openFsImages } from "../src/images/fs.ts";
 import type { Moderator } from "../src/moderation.ts";
 import { permissiveModerator } from "../src/moderation/permissive.ts";
 import { loadPrompts } from "../src/prompts.node.ts";
-import { seeded } from "../src/random.ts";
 import { Registry, type Agent } from "../src/registry.ts";
 import { parseSector } from "../src/schema.ts";
 import { WorldStore, type BakedSector } from "../src/store.ts";
@@ -91,7 +90,6 @@ export async function makeEngine(
     cooldownSeconds?: number;
     claimsPerHour?: number;
     registrationsPerHour?: number;
-    seed?: number;
     moderator?: Moderator;
   } = {},
 ): Promise<TestWorld> {
@@ -103,7 +101,6 @@ export async function makeEngine(
     cooldownSeconds: options.cooldownSeconds ?? 0,
     claimsPerHour: options.claimsPerHour ?? 0,
     registrationsPerHour: options.registrationsPerHour ?? 0,
-    rng: seeded(options.seed ?? 1),
   });
   await ensureGenesis(store);
   const engine = new Engine({

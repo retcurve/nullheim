@@ -2,22 +2,20 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { GENRES, MOODS, SIZES, drawTheme } from "../src/theme.ts";
-import { seeded } from "../src/random.ts";
 import { makeEngine } from "./testing.ts";
 
 describe("drawTheme", () => {
   test("draws each axis from its own list", () => {
-    const theme = drawTheme(seeded(1));
+    const theme = drawTheme();
     assert.ok((GENRES as readonly string[]).includes(theme.genre));
     assert.ok((SIZES as readonly string[]).includes(theme.size));
     assert.ok((MOODS as readonly string[]).includes(theme.mood));
   });
 
   test("different draws are not all the same theme", () => {
-    const rng = seeded(7);
     const seen = new Set<string>();
     for (let i = 0; i < 20; i += 1) {
-      const theme = drawTheme(rng);
+      const theme = drawTheme();
       seen.add(`${theme.genre}/${theme.size}/${theme.mood}`);
     }
     assert.ok(seen.size > 1);

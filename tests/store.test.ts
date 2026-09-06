@@ -12,8 +12,22 @@ import * as coords from "../src/coords.ts";
 import { MAX_XY, type CoordKey, type Coordinate } from "../src/coords.ts";
 import { parseSector } from "../src/schema.ts";
 import { WorldStore, type WorldObject } from "../src/store.ts";
-import { seeded } from "../src/random.ts";
 import { sector } from "./testing.ts";
+
+/**
+ * mulberry32. Gives the differential walk below a fixed sequence, so a
+ * failure at step N reproduces on the next run.
+ */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 async function freshStore(): Promise<{ store: WorldStore; db: SqliteDb }> {
   const db = openSqlite(":memory:");
@@ -78,7 +92,7 @@ describe("the frontier index", () => {
 
     for (let step = 0; step < 400; step += 1) {
       const candidates = [...(await store.openSlots())].map(coords.fromKey).sort(coords.compare);
-      const slot = candidates[rng.below(candidates.length)]!;
+      const slot = candidates[Math.floor(rng() * candidates.length)]!;
       await bakeAt(store, slot.x, slot.y);
       assert.deepEqual(
         await store.openSlots(),

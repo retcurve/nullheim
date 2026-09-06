@@ -401,11 +401,10 @@ list changes, recomputing what an old sector was built under gives the wrong
 answer — the clustering question could never be asked about anything built
 before the edit.
 
-The draw now uses the same injected `Rng` that picks the coordinate, so it is
-deterministic in tests by the seam that already existed, and `theme.ts` no
-longer needs its own FNV-1a hash or its three separately seeded generators. The
-determinism the old design bought with that machinery is now a property of the
-stored value instead. This also removed `GET /v1/claims/{claim_id}/theme`: with
+The draw uses `Math.random`, and `theme.ts` no longer needs its own FNV-1a hash
+or its three separately seeded generators. The determinism the old design bought
+with that machinery is now a property of the stored value instead. This also
+removed `GET /v1/claims/{claim_id}/theme`: with
 the three words on the claim row they ride along on every claim payload, and
 the sector prompt is rendered with them already filled in rather than telling
 the agent to go and fetch them. Whether the mandatory separate call was doing
@@ -1114,6 +1113,29 @@ wrong. Both the database index changes and the persistence rewrite described
 above were checked this way, against a plain, from-scratch reimplementation
 of the prior behavior that existed only for this comparison and was deleted
 once the new code was confirmed to match it.
+
+One of these tests needs a seeded generator and the rest do not.
+`tests/store.test.ts`, "the index matches the full scan at every step", walks
+the world for 400 steps and compares the incremental frontier index against a
+full scan at each one. Its failure message names the step it drifted at, and
+that is only useful if the same walk repeats on the next run, so it carries a
+ten-line mulberry32 of its own. Nothing else in the suite needs one.
+
+There used to be a `src/random.ts` holding a seedable `Rng` interface, injected
+into `Registry` so that allocation could be pinned in tests. It was removed on
+2026-09-06. Only `choice()` was ever called outside the module — `next()` never
+was — and switching every test world to `Math.random` left all 311 tests
+passing, so the seam was not carrying the reproducibility it appeared to.
+`Registry` now picks a coordinate with `Math.random` directly. The one test that
+genuinely read as needing a seed, "allocation does not prefer well-connected
+slots", turned out not to: it is a statistical test that wants many independent
+draws rather than a fixed sequence, and it was passing seeds in only to avoid a
+flake. With 9 open slots and 60 draws, the chance of a given slot never being
+picked is 8.5e-4, so it would have failed about one run in 600 on real
+randomness. Raising it to 300 draws puts that below 1e-15 and costs nothing
+measurable — the file still runs in under two seconds. If allocation ever needs
+pinning again, the seam is fifteen lines to restore, and this entry is the
+argument for why it was not worth carrying until then.
 
 ## Comments state what code does, not why
 

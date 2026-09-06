@@ -11,7 +11,6 @@ import { Engine, ensureGenesis } from "../src/engine.ts";
 import { openFsImages } from "../src/images/fs.ts";
 import { permissiveModerator } from "../src/moderation/permissive.ts";
 import { loadPrompts } from "../src/prompts.node.ts";
-import { seeded } from "../src/random.ts";
 import {
   RateKind,
   RateLimited,
@@ -104,11 +103,11 @@ describe("the frontier", () => {
     const limbEnd = coords.key(coord(3, 0));
 
     const chosen = new Set<string>();
-    for (let seed = 0; seed < 60; seed += 1) {
+    for (let draw = 0; draw < 300; draw += 1) {
       const db = openSqlite(":memory:");
       await db.exec(SCHEMA_SQL);
       const store = new WorldStore(db);
-      const registry = new Registry(db, { rng: seeded(seed) });
+      const registry = new Registry(db);
       await ensureGenesis(store);
       const engine = new Engine({ store, registry, prompts: PROMPTS, images: openFsImages(null), codecs: CODECS, moderator: permissiveModerator("clean") });
       await build(engine, [1, 0]);

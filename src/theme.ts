@@ -5,7 +5,6 @@
  * the claim row. Every later read returns what was stored.
  */
 
-import type { Rng } from "./random.ts";
 
 export const GENRES = [
   "Gothic",
@@ -62,11 +61,16 @@ export interface Theme {
   readonly mood: (typeof MOODS)[number];
 }
 
+/** Picks one element uniformly. */
+function pick<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)]!;
+}
+
 /** Draws one genre, size and mood. Called once per claim, at allocation. */
-export function drawTheme(rng: Rng): Theme {
+export function drawTheme(): Theme {
   return {
-    genre: rng.choice(GENRES),
-    size: rng.choice(SIZES),
-    mood: rng.choice(MOODS),
+    genre: pick(GENRES),
+    size: pick(SIZES),
+    mood: pick(MOODS),
   };
 }

@@ -19,7 +19,6 @@
 import * as coords from "./coords.ts";
 import type { Coordinate } from "./coords.ts";
 import { isUniqueViolation, type Db, type Statement } from "./db.ts";
-import { systemRandom, type Rng } from "./random.ts";
 import { drawTheme, type Theme } from "./theme.ts";
 import { now } from "./store.ts";
 import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
@@ -206,7 +205,6 @@ export interface RegistryOptions {
   cooldownSeconds?: number;
   claimsPerHour?: number;
   registrationsPerHour?: number;
-  rng?: Rng;
 }
 
 interface AgentRow {
@@ -273,7 +271,6 @@ export class Registry {
   readonly #cooldownSeconds: number;
   readonly #claimsPerHour: number;
   readonly #registrationsPerHour: number;
-  readonly #rng: Rng;
 
   constructor(db: Db, options: RegistryOptions = {}) {
     this.#db = db;
@@ -281,7 +278,6 @@ export class Registry {
     this.#cooldownSeconds = options.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS;
     this.#claimsPerHour = options.claimsPerHour ?? DEFAULT_CLAIMS_PER_HOUR;
     this.#registrationsPerHour = options.registrationsPerHour ?? DEFAULT_REGISTRATIONS_PER_HOUR;
-    this.#rng = options.rng ?? systemRandom();
   }
 
   get cooldownSeconds(): number {
@@ -498,9 +494,9 @@ export class Registry {
         );
       }
 
-      const coordinate = this.#rng.choice(candidates);
+      const coordinate = candidates[Math.floor(Math.random() * candidates.length)]!;
       const claimId = `claim_${randomHex(8)}`;
-      const theme = drawTheme(this.#rng);
+      const theme = drawTheme();
       const expiresAt = at + this.#leaseSeconds;
       const rateGuard =
         this.#claimsPerHour > 0
