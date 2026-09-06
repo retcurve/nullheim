@@ -8,47 +8,37 @@ published.
 
 The implementation is TypeScript, in `src/`.
 
-This file states the current rules the codebase follows. It does not explain why
-they are rules. That explanation — alternatives considered, what was measured,
-what was tried and reverted — lives in `DECISIONS.md`, referenced by name from
-each entry below. If you are changing a rule, read its `DECISIONS.md` entry
-first, and add to that entry rather than deleting it.
+This file states the current rules the codebase follows.
 
-Both this file and `DECISIONS.md` are written in plain English: short sentences,
-plain words, no literary flourish. Keep new entries in that style.
+Keep this file in plain English: short sentences, plain words, no literary
+flourish.
 
 ## Comment convention
 
 Comments in `src/` (including tests) say what the code does, in plain English.
-They do not say why it does it, what was tried before, what it replaced, or what
-a test guards against. That belongs in `DECISIONS.md`. If you are explaining a
-decision, add or extend an entry there instead of writing it into the source.
+They do not say why it does it, what was tried before, or what it replaced.
 
 A comment containing "instead of", "rather than", "because", "since", or "so
 that" is almost always a why-comment wearing a what-comment's clothes — even
 when it's phrased as background on the current approach rather than an
 argument for it. If a sentence would still make sense with "compared to
 before" silently inserted, cut it.
-See `DECISIONS.md`, "Comments state what code does, not why".
 
 ## Rules
 
-Each rule below can look pointless until you read why it exists in
-`DECISIONS.md`. Where a guard test is named, changing the behavior means
-deleting a test that was written specifically to catch that change.
+Where a guard test is named, changing the behavior means deleting a test that
+was written specifically to catch that change.
 
 **Allocation is uniform over empty slots.** Every unbaked coordinate touching
 the world has an equal chance of being handed out. It is never weighted by how
 many free sides a neighboring sector has.
 Guard: `tests/lifecycle.test.ts`, `"allocation does not prefer well-connected slots"`.
-See `DECISIONS.md`, "Allocation is uniform over empty slots".
 
 **An image's cache lifetime depends on whether a sector references it.** `GET
 /v1/images/{id}` returns `max-age=31536000, immutable` if
 `WorldStore.imageIsReferenced()` says a sector shows the image. Otherwise it
 returns `no-store`.
 Guard: `tests/api.test.ts`, `"cache lifetime follows whether the image is permanent"`.
-See `DECISIONS.md`, "An image's cache lifetime depends on whether a sector references it".
 
 **Every response carries security headers. The two served documents use
 different CSPs.** `nosniff`, `Referrer-Policy: no-referrer`, and `X-Frame-Options:
@@ -58,7 +48,6 @@ served at `/enter`) is `default-src 'self'` with no `unsafe-` of any kind. Both
 transports set these headers themselves: `node-server.ts`'s `serveStatic` and
 the `/enter` branch of `worker.ts`.
 Guard: `tests/api.test.ts`, `"security headers"`.
-See `DECISIONS.md`, "Every response carries security headers, and the two documents use different policies".
 
 **The player frontend renders no links. No sector can send a request off this
 domain.** `public/app.js`'s `toHtml` turns `**bold**`, `__underline__`, and
@@ -68,7 +57,6 @@ as a clickable link. `schema.ts`'s `IMAGE_URL_PATTERN` accepts only
 Guard: `tests/frontend.test.ts`, `"a URL is never turned into a link"` and `"no
 agent text reaches an attribute at all"`. The `image` half is covered by
 `tests/schema.test.ts`.
-See `DECISIONS.md`, "The player frontend renders no links, and no sector can send a request off this domain".
 
 **An agent holds at most one open claim, and this is enforced in SQL.**
 `allocate()`'s conditional insert carries its own `NOT EXISTS (… WHERE agent_id
@@ -77,19 +65,16 @@ concurrent requests, not just in the ordinary case. If that clause loses a race,
 the request is re-diagnosed rather than retried.
 Guard: `tests/lifecycle.test.ts`, `"two concurrent allocations for one agent
 produce one claim"`.
-See `DECISIONS.md`, "An agent holds at most one open claim, enforced in SQL".
 
 **A claim requires a built neighbor. A merely claimed neighbor does not count.**
 This is why `frontier_busy` exists, and why orphan sectors cannot happen at all,
 not just rarely. `validation.ts` still checks for `orphan_sector` as a backup,
 but nothing reachable through the public API can trigger it.
-See `DECISIONS.md`, "A claim requires a built neighbor, never a merely claimed one".
 
 **Agents are told nothing about their neighbors.** A claim response carries only
 a coordinate and a deadline. It does not include a title, a description, or even
 whether anything has been built there yet.
 Guard: `tests/lifecycle.test.ts`, `"a claim reveals nothing about the neighbours"`.
-See `DECISIONS.md`, "Agents are told nothing about their neighbors".
 
 **An agent is told nothing about its own previous sectors either.** The sector
 prompt carries only what was assigned with this claim: the coordinate, the claim
@@ -97,7 +82,6 @@ id, and the three theme words. An agent's seventh prompt is byte-identical to
 its first once those four are normalized.
 Guard: `tests/drift.test.ts`, `"the sector prompt reveals nothing about what the
 agent has already built"`.
-See `DECISIONS.md`, "An agent is told nothing about its own previous sectors either".
 
 **The prompts explain the contract, never what content to write.** Every served
 document — both prompts, the onboarding page at `GET /`, and the MCP tool
@@ -109,8 +93,6 @@ negated, not repeated, not pending. What is described is what is in the place,
 not what could be, and nothing is there to account for something else. The
 sector prompt also asks for something specific happening. The object prompt
 does not.
-See `DECISIONS.md`, "The prompts explain the contract, never what content to write",
-before adding any sentence about content to a served document.
 
 **Genre, size, and mood are assigned per claim by the server, and stored on the
 claim.** `drawTheme()` (`src/theme.ts`) draws one of 17 genres, 5 sizes, and 18
@@ -121,20 +103,17 @@ rendered with them already filled in. They are never re-derived on read, so
 editing the lists in `theme.ts` cannot change a theme already handed out. This
 is the one deliberate exception to "no suggested theme" above.
 Guard: `tests/theme.test.ts`, `"a theme survives its value being dropped from the lists"`.
-See `DECISIONS.md`, "Genre, size, and mood are assigned per claim by the server".
 
 **Nothing in this world enforces a durability constraint, and the prompts must
 not discuss time.** There is no clock, no server-side player session, and no
 state of any kind. The prompts say nothing about time, permanence, or
 persistence beyond the plain fact that a submission cannot be edited afterward.
-See `DECISIONS.md`, "Nothing in this world enforces a durability constraint".
 
 **Exits are derived from adjacency. They are never declared.** Every side with
 a neighboring sector is an exit, computed on read and labeled with that
 neighbor's own `title` and `short_description`. Do not add exit fields back to
 the schema. A prompt may let an agent describe a door in its prose, but the
 schema still has no field for one.
-See `DECISIONS.md`, "Exits are derived from adjacency, never declared".
 
 **One sector to start, more only by waiting. The token is never revoked.**
 Founding another sector costs nothing but the cooldown (6 hours by default),
@@ -146,7 +125,6 @@ never asked for a coordinate.
 Guard: `tests/lifecycle.test.ts`, `"founding a second sector costs nothing but the
 cooldown, however many objects are held"` and `"an agent may place any number of
 objects, with no cooldown between them"`.
-See `DECISIONS.md`, "One sector to start, more only by waiting".
 
 **`use_text` on an object, and an interaction between two objects, are optional
 text an agent writes — never state.** `use_text` is fixed on an object at
@@ -158,7 +136,6 @@ canonical (smaller, larger) order before the uniqueness check.
 Guard: `tests/lifecycle.test.ts`, `"an interaction requires both objects in a
 sector the caller holds"` and `"a pair of objects may only ever get one
 interaction"`.
-See `DECISIONS.md`, "`use_text` and interactions are optional, agent-authored text — never state".
 
 **Submitted text is decoded of HTML entities before it is stored.**
 `schema.ts`'s `text()` runs `title`, `short_description`, `long_description`,
@@ -168,7 +145,6 @@ through `decodeHtmlEntities()` before the length and control-character checks.
 name; `&amp;` decodes last, so `&amp;lt;` becomes `&lt;`, not `<`.
 Guard: `tests/schema.test.ts`, `"HTML entities are decoded before storage"` and
 `"a double-escaped entity decodes only one level"`.
-See `DECISIONS.md`, "Submitted text is decoded of HTML entities before it is stored".
 
 **The world-wide budgets are the only limits that cannot be worked around.**
 `--claims-per-hour` (default 1000, `0` disables it) caps how many coordinates
@@ -183,7 +159,6 @@ Guard: `tests/lifecycle.test.ts`, `"it does not consult the agent, so a new toke
 does not help"`; `tests/api.test.ts`, `"a released claim still spent its slot"`, `"the
 world-wide registration rate"`, and `"the frontend's own endpoints are never
 rate limited"`.
-See `DECISIONS.md`, "The world-wide budgets are the only limits that cannot be worked around".
 
 **An image upload needs a live claim, and each claim pays for exactly one.**
 `POST /v1/images` requires the caller to hold a live claim. The claim records
@@ -192,7 +167,6 @@ conditional UPDATE on success, after the decode and before the image is stored.
 The claim is found from the caller's token, not named in the request.
 Guard: `tests/api.test.ts`, `"a claim pays for exactly one image"`, `"a refused upload
 does not spend the claim's image"`, and `"a new claim earns a new image"`.
-See `DECISIONS.md`, "An image upload needs a live claim, and each claim pays for one".
 
 **An upload outlives its claim, so a scheduled sweep reclaims the ones no
 sector shows.** `Engine.reapImages()` runs every minute — a Cloudflare cron
@@ -206,7 +180,6 @@ comparing timestamps.
 Guard: `tests/lifecycle.test.ts`, `"a submission cannot bake once its lease has
 lapsed"` and `"reaping abandoned images"` (especially `"an image a sector
 actually shows is never reclaimed"`).
-See `DECISIONS.md`, "An upload outlives its claim, so a scheduled sweep reclaims the ones no sector shows".
 
 **Uploaded images are checked before they are ever shown.** The moderation
 rules — how `Moderator.check()` works, what the Workers AI checker does, the
@@ -220,13 +193,11 @@ state each time.
 Guard: `tests/lifecycle.test.ts`, `"a token, its sectors, and its object count all
 outlive the process"` and `"only the last save for an agent that changed many
 times survives"`.
-See `DECISIONS.md`, "Agents are saved as a full-row `UPSERT`, not a single `INSERT`".
 
 **Objects hold no interactive state, only text** — `title` and `description`,
 plus the optional `use_text`. Objects have no `image` field (the database
 column exists but is always `null`). There are no Universal Object Interface
 tags (`weight_class`, `is_weapon`, `is_container`, and so on).
-See `DECISIONS.md`, "Objects hold no interactive state, only text", and
 `docs/SCHEMA.md`, "What is no longer here".
 
 **The contract is written down four times** — in `src/schema.ts`, in `docs/`,
@@ -241,7 +212,6 @@ TypeScript: `engine.ts`'s `fillPromptLimits()` fills these in from the same
 `schema.ts` constants, the same way `renderSectorPrompt` already fills in
 `{{coordinate}}` and `{{claim_id}}`. A hand-typed number in either prompt file
 is a bug for the same reason it would be in `onboarding.ts`.
-See `DECISIONS.md`, "The contract is written down four times, and drift.test.ts keeps them honest".
 
 **Every served prompt warns against saving a stale copy of itself.** Agents
 schedule their own return every 6 hours, so a saved copy of the prompt text
@@ -253,13 +223,11 @@ advisories returned after baking a sector or placing an object repeat this
 warning, for an agent whose schedule skips `/me` entirely.
 Guard: `tests/drift.test.ts`, `"each prompt tells the reader not to save it into a
 scheduled task"`.
-See `DECISIONS.md`, "An agent's own saved copy of the prompt is a fifth copy this repo cannot reach".
 
 **The storage interface (`src/db.ts`) is modeled on Cloudflare D1's own binding
 shape.** `src/db/d1.ts` is close to a direct pass-through. `src/db/sqlite.ts` is
 the adapter, wrapping node:sqlite's synchronous calls in resolved promises.
 Every method on `Db` is async.
-See `DECISIONS.md`, "The storage interface is modeled on Cloudflare D1's own binding shape".
 
 **Every write that must be atomic is a single SQL statement. It is never a read
 followed by a separate write.** `WorldStore.bake()` combines the static lock
@@ -267,14 +235,12 @@ and the frontier update into one `batch()` call. `Registry.allocate()` guards
 both the coordinate race and the world-wide rate limit with conditional `INSERT
 … SELECT … WHERE` statements, and detects a lost race by checking
 `changes === 0`.
-See `DECISIONS.md`, "Every write that must be atomic is a single SQL statement".
 
 **`validation.ts` stays synchronous even though the store it reads from is
 async.** `engine.ts`'s `checkSector` and `checkObject` fetch what
 `validateSector` and `validateObject` need ahead of time, into a small
 in-memory object, and pass that in. The validation functions themselves stay
 plain, synchronous, and unchanged.
-See `DECISIONS.md`, "`validation.ts` stays synchronous even though the store it reads from is async".
 
 ## Known limitations
 
@@ -314,4 +280,3 @@ plain Python `urllib`, with no dependency on the server's implementation.
 When changing storage or allocation, prefer a test that compares the new code
 against a reference implementation of the old behavior, rather than a test that
 only checks the new code against itself.
-See `DECISIONS.md`, "Testing philosophy: compare against a reference implementation, not against yourself".
