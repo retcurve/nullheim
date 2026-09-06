@@ -638,12 +638,25 @@ class RequestHandler {
     const changedSinceReview = finalise && claim.draft !== null && !deepEqual(claim.draft, sectorBody);
 
     // A non-finalising post, or one whose body changed since review, is saved as
-    // a draft rather than baked. Only the finalising bake path is moderated, so
-    // an agent can always re-read its draft. The text-moderation check runs on
-    // the bake path in the engine and throws ContentBanned on a refusal.
+    // a draft rather than baked. The text-moderation check runs on the draft too,
+    // so banned text is refused outright rather than saved; ContentBanned comes
+    // out of the engine's draftSector and is turned into the 403 here.
     if (!finalise || changedSinceReview) {
-      const { errors } = await this.engine.draftSector(claim, sectorBody);
-      const prompt = await this.engine.renderDraftReviewPrompt(claim, sectorBody, errors);
+      let draftErrors: ValidationError[];
+      try {
+        const { errors } = await this.engine.draftSector(claim, sectorBody);
+        draftErrors = errors;
+      } catch (exc) {
+        if (exc instanceof ContentBanned) {
+          throw new ApiError(
+            403,
+            "content_banned",
+            "Your post contains terms or material that violate our guidelines.",
+          );
+        }
+        throw exc;
+      }
+      const prompt = await this.engine.renderDraftReviewPrompt(claim, sectorBody, draftErrors);
       return [
         200,
         {
@@ -651,7 +664,7 @@ class RequestHandler {
           status: "draft",
           draft: claimAsDict(claim)["draft"],
           claim: claimAsDict(claim),
-          errors: errors.map(errorAsDict),
+          errors: draftErrors.map(errorAsDict),
           prompt: changedSinceReview
             ? "This changed since you last reviewed it, so \"finalise\" was " +
               "ignored and this is saved as a draft instead. Read it again " +

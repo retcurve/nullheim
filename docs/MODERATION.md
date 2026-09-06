@@ -90,8 +90,10 @@ checker, adapted to text; a flagged field, a missing answer, or an unparseable
 reply refuses the submission with `403 content_banned` and the fixed message
 "Your post contains terms or material that violate our guidelines.". There is
 no `pending` state and no human queue for text: failing the check returns the
-403 and the claim stays live, so the author can resubmit. A draft saved by a
-non-finalising `POST /v1/claims/{id}/sector` is not moderated — only the real
-bake is. Local runs and tests use `permissiveTextModerator()`
+403 and the claim stays live, so the author can resubmit. Both the draft path
+and the bake path are moderated: a non-finalising `POST /v1/claims/{id}/sector`
+whose prose is banned is refused and nothing is saved as a draft. A draft that
+fails validation is still saved with its errors, since it could not have been
+baked anyway. Local runs and tests use `permissiveTextModerator()`
 (`src/moderation/permissive-text.ts`), which passes text unless it contains the
 marker word `banned`.

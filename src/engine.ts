@@ -331,13 +331,21 @@ export class Engine {
 
   /**
    * Validate a submission and save it as the claim's draft, without baking
-   * or touching the claim's attempts.
+   * or touching the claim's attempts. An invalid draft is still saved, with
+   * its errors, exactly as before. A draft that validates is refused if its
+   * prose fails the text-moderation check, so a draft that would bake clean
+   * cannot skip the bake-path check by submitting without finalise. A draft
+   * that fails validation is not blocked on moderation, since it could not
+   * have been baked anyway.
    */
   async draftSector(
     claim: Claim,
     raw: unknown,
   ): Promise<{ sector: Sector | null; errors: ValidationError[] }> {
     const { sector, errors } = await this.checkSector(claim, raw);
+    if (sector !== null && errors.length === 0) {
+      await this.#enforceTextModeration([sector.title, sector.shortDescription, sector.longDescription]);
+    }
     await this.registry.saveDraft(claim, raw);
     return { sector, errors };
   }

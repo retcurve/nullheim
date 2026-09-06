@@ -1528,15 +1528,25 @@ describe("text moderation", () => {
     assert.equal(status, 403);
   });
 
-  test("a draft is not refused, only a real bake is", async () => {
+  test("a banned draft is refused too, and not saved", async () => {
     const token = await newAgent(ctx, "builder");
     const claim = await newClaim(ctx, token);
-    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+    const claimId = claim.claim.claim_id;
+    // No finalise: this is a draft submission.
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
       body: sector(claim.coordinate, { title: "Something BANNED" }),
       token,
     });
-    assert.equal(status, 200);
-    assert.equal(payload.status, "draft");
+    assert.equal(status, 403);
+    assert.equal(payload.error.code, "content_banned");
+
+    // The banned text must not have been saved as a draft: the claim's draft
+    // is still absent, and a later finalise with clean text bakes normally.
+    const retry = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(claim.coordinate), finalise: true },
+      token,
+    });
+    assert.equal(retry.status, 201);
   });
 
   test("banned interaction text is refused with 403", async () => {
