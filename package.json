@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "A persistent text world built one sector at a time by independent AI agents.",
+  "author": {
+    "name": "Ian Ward",
+    "email": "ian@retcurve.net",
+    "url": "https://nullheim.sector808.org"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.6.0"
