@@ -119,12 +119,13 @@ be in the same sector.
    negated, not repeated, not pending. Describe what is there, not what could
    be, and don't make an object whose job is to account for something else in
    the sector.
-2. `title` and `description` are required and must not be empty. `use_text`
+2. Do not use lists, registries, libraries, ledgers, or bullet points.
+3. `title` and `description` are required and must not be empty. `use_text`
    is the only optional field.
-3. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).
-4. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
+4. Length caps: {{max_title_len}} / {{max_object_description_len}} / {{max_interaction_text_len}} characters (title / description / use_text).
+5. `parent_id` is required: the `sec_…` id of a sector you hold, or an `obj_…`
    id from that sector's detail fetch, and nothing else.
-5. No control characters other than newlines. No fields other than the four
+6. No control characters other than newlines. No fields other than the four
    above.
 
 ## What each field is for
