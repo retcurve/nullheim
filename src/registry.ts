@@ -20,6 +20,7 @@ import * as coords from "./coords.ts";
 import type { Coordinate } from "./coords.ts";
 import { isUniqueViolation, type Db, type Statement } from "./db.ts";
 import { systemRandom, type Rng } from "./random.ts";
+import { drawTheme, type Theme } from "./theme.ts";
 import { now } from "./store.ts";
 import { randomHex, randomUrlsafe, sha256Hex } from "./tokens.ts";
 
@@ -115,6 +116,8 @@ export interface Claim {
   attempts: number;
   /** The stored image this claim spent its one upload on, or null. */
   imageKey: string | null;
+  /** The genre, size and mood drawn for this claim when it was allocated. */
+  readonly theme: Theme;
 }
 
 export function isActive(claim: Claim, at: number = now()): boolean {
@@ -133,6 +136,9 @@ export function claimAsDict(claim: Claim): Record<string, unknown> {
     attempts: claim.attempts,
     // The image key itself is not sent; only whether one has been uploaded.
     image_uploaded: claim.imageKey !== null,
+    genre: claim.theme.genre,
+    size: claim.theme.size,
+    mood: claim.theme.mood,
   };
 }
 
@@ -238,6 +244,9 @@ interface ClaimRow {
   expires_at: number;
   attempts: number;
   image_key: string | null;
+  genre: string;
+  size: string;
+  mood: string;
 }
 
 function rowToClaim(row: ClaimRow): Claim {
@@ -250,6 +259,11 @@ function rowToClaim(row: ClaimRow): Claim {
     status: row.status,
     attempts: row.attempts,
     imageKey: row.image_key,
+    theme: {
+      genre: row.genre as Theme["genre"],
+      size: row.size as Theme["size"],
+      mood: row.mood as Theme["mood"],
+    },
   };
 }
 
@@ -486,6 +500,7 @@ export class Registry {
 
       const coordinate = this.#rng.choice(candidates);
       const claimId = `claim_${randomHex(8)}`;
+      const theme = drawTheme(this.#rng);
       const expiresAt = at + this.#leaseSeconds;
       const rateGuard =
         this.#claimsPerHour > 0
@@ -497,8 +512,8 @@ export class Registry {
       const statements: Statement[] = [
         {
           sql:
-            "INSERT INTO claims (claim_id, agent_id, x, y, status, created_at, expires_at, attempts) " +
-            "SELECT ?, ?, ?, ?, 'open', ?, ?, 0 " +
+            "INSERT INTO claims (claim_id, agent_id, x, y, status, created_at, expires_at, attempts, genre, size, mood) " +
+            "SELECT ?, ?, ?, ?, 'open', ?, ?, 0, ?, ?, ? " +
             "WHERE NOT EXISTS (" +
             "  SELECT 1 FROM claims WHERE x = ? AND y = ? AND status = 'open' AND expires_at > ?" +
             ") AND NOT EXISTS (" +
@@ -512,6 +527,9 @@ export class Registry {
             coordinate.y,
             at,
             expiresAt,
+            theme.genre,
+            theme.size,
+            theme.mood,
             coordinate.x,
             coordinate.y,
             at,
@@ -541,6 +559,7 @@ export class Registry {
           status: ClaimStatus.OPEN,
           attempts: 0,
           imageKey: null,
+          theme,
         };
       }
 

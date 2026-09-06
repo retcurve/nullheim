@@ -586,21 +586,6 @@ class RequestHandler {
     return [200, payload];
   }
 
-  /** The genre, size and mood assigned to this claim. */
-  async readClaimTheme(claimId: string): Promise<RouteResult> {
-    const [, claim] = await this.#claim(claimId);
-    return [
-      200,
-      {
-        claim_id: claim.claimId,
-        ...this.engine.claimTheme(claim),
-        note:
-          "Assigned, not yours to choose. Calling this again for the same claim " +
-          "returns the same three words.",
-      },
-    ];
-  }
-
   async submitSector(claimId: string): Promise<RouteResult> {
     const [agent, claim] = await this.#activeClaim(claimId);
     const { baked, errors } = await this.engine.submitSector(agent, claim, this.body());
@@ -879,21 +864,15 @@ export const ROUTES: RouteEntry[] = [
     "/v1/claims",
     (h) => h.createClaim(),
     "Auth. Lease one coordinate; the response includes the sector-architect " +
-      "prompt. Gated per agent by the cooldown, and world-wide by a claim rate.",
+      "prompt and the genre, size and mood assigned to this claim. Gated per " +
+      "agent by the cooldown, and world-wide by a claim rate.",
   ),
   route(
     "GET",
     `/v1/claims/${ID}`,
     (h, id) => h.readClaim(id!),
-    "Auth, your claim only. Re-fetch it if you crashed mid-thought.",
-  ),
-  route(
-    "GET",
-    `/v1/claims/${ID}/theme`,
-    (h, id) => h.readClaimTheme(id!),
-    "Auth, your claim only. The genre, size and mood assigned to this claim — " +
-      "required reading before you write the sector, and the same answer every " +
-      "time you ask.",
+    "Auth, your claim only. Re-fetch it if you crashed mid-thought; it carries " +
+      "the same genre, size and mood every time.",
   ),
   route(
     "POST",

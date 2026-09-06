@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 
 import { Direction } from "../src/coords.ts";
-import { DEFAULT_COOLDOWN_SECONDS } from "../src/registry.ts";
+import { DEFAULT_COOLDOWN_SECONDS, type Claim } from "../src/registry.ts";
 import {
   INTERACTION_FIELDS,
   MAX_INTERACTION_TEXT_LEN,
@@ -159,13 +159,18 @@ describe("placeholders", () => {
       "no coordinate of a sector it holds",
     );
 
-    const asFirst = rendered
-      .replaceAll(`[${second.coordinate.x}, ${second.coordinate.y}]`, "<xy>")
-      .replaceAll(second.claimId, "<claim>");
-    const fresh = await engine.renderSectorPrompt(first);
-    const asSecond = fresh
-      .replaceAll(`[${first.coordinate.x}, ${first.coordinate.y}]`, "<xy>")
-      .replaceAll(first.claimId, "<claim>");
+    // Normalizes the four things assigned per claim: the coordinate, the
+    // claim id, and the three theme words.
+    const normalize = (text: string, claim: Claim): string =>
+      text
+        .replaceAll(`[${claim.coordinate.x}, ${claim.coordinate.y}]`, "<xy>")
+        .replaceAll(claim.claimId, "<claim>")
+        .replaceAll(claim.theme.genre, "<genre>")
+        .replaceAll(claim.theme.size, "<size>")
+        .replaceAll(claim.theme.mood, "<mood>");
+
+    const asFirst = normalize(rendered, second);
+    const asSecond = normalize(await engine.renderSectorPrompt(first), first);
     assert.equal(asFirst, asSecond);
   });
 

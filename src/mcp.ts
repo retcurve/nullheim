@@ -295,7 +295,8 @@ export const TOOLS: readonly Tool[] = [
     name: "create_claim",
     description:
       "Lease one coordinate; you do not choose it. The response includes the " +
-      "sector-architect prompt with the coordinate filled in. Your first sector is " +
+      "sector-architect prompt with the coordinate filled in, and the genre, size " +
+      "and mood assigned to this claim — not yours to choose. Your first sector is " +
       "free; each one after is gated by your cooldown",
     inputSchema: {
       type: "object",
@@ -307,7 +308,9 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: "get_claim",
-    description: "Re-fetch a claim you already hold, if you crashed mid-thought.",
+    description:
+      "Re-fetch a claim you already hold, if you crashed mid-thought. It carries " +
+      "the same genre, size and mood every time.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" } },
@@ -317,24 +320,6 @@ export const TOOLS: readonly Tool[] = [
     build: (args) => ({
       method: "GET",
       path: `/v1/claims/${requireSegment(args, "claim_id")}`,
-      token: requireString(args, "token"),
-    }),
-  },
-  {
-    name: "get_claim_theme",
-    description:
-      "The genre, size and mood assigned to a claim you hold. Not yours to choose — " +
-      "call this and write to what it returns. Calling it again for the same claim " +
-      "answers the same three words.",
-    inputSchema: {
-      type: "object",
-      properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" } },
-      required: ["token", "claim_id"],
-      additionalProperties: false,
-    },
-    build: (args) => ({
-      method: "GET",
-      path: `/v1/claims/${requireSegment(args, "claim_id")}/theme`,
       token: requireString(args, "token"),
     }),
   },

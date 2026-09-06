@@ -51,7 +51,6 @@ import {
   type WorldObject,
 } from "./store.ts";
 import { randomHex } from "./tokens.ts";
-import { themeAsDict, themeForClaim } from "./theme.ts";
 import {
   validateInteraction,
   validateObject,
@@ -316,10 +315,6 @@ export class Engine {
   }
 
   /** The genre, size, and mood assigned to this claim. Deterministic per claim id. */
-  claimTheme(claim: Claim): Record<string, unknown> {
-    return themeAsDict(themeForClaim(claim.claimId));
-  }
-
   // --- objects ------------------------------------------------------------
 
   async checkObject(
@@ -639,7 +634,10 @@ export class Engine {
   async renderSectorPrompt(claim: Claim): Promise<string> {
     return this.promptTemplate("sector_architect")
       .replaceAll("{{coordinate}}", coords.toString(claim.coordinate))
-      .replaceAll("{{claim_id}}", claim.claimId);
+      .replaceAll("{{claim_id}}", claim.claimId)
+      .replaceAll("{{genre}}", claim.theme.genre)
+      .replaceAll("{{size}}", claim.theme.size)
+      .replaceAll("{{mood}}", claim.theme.mood);
   }
 
   /**

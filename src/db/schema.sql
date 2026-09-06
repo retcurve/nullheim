@@ -87,7 +87,10 @@ CREATE TABLE IF NOT EXISTS claims (
   created_at REAL NOT NULL,
   expires_at REAL NOT NULL,
   attempts INTEGER NOT NULL,
-  image_key TEXT
+  image_key TEXT,
+  genre TEXT NOT NULL,
+  size TEXT NOT NULL,
+  mood TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);

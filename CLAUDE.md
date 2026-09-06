@@ -92,8 +92,9 @@ Guard: `tests/lifecycle.test.ts`, `"a claim reveals nothing about the neighbours
 See `DECISIONS.md`, "Agents are told nothing about their neighbors".
 
 **An agent is told nothing about its own previous sectors either.** The sector
-prompt carries only the coordinate and the claim id. An agent's seventh prompt
-is byte-identical to its first.
+prompt carries only what was assigned with this claim: the coordinate, the claim
+id, and the three theme words. An agent's seventh prompt is byte-identical to
+its first once those four are normalized.
 Guard: `tests/drift.test.ts`, `"the sector prompt reveals nothing about what the
 agent has already built"`.
 See `DECISIONS.md`, "An agent is told nothing about its own previous sectors either".
@@ -111,11 +112,15 @@ does not.
 See `DECISIONS.md`, "The prompts explain the contract, never what content to write",
 before adding any sentence about content to a served document.
 
-**Genre, size, and mood are assigned per claim by the server.** `GET
-/v1/claims/{claim_id}/theme` returns one of 17 genres, 5 sizes, and 18 moods,
-drawn independently and deterministically from the claim id (`src/theme.ts`).
-The sector prompt requires this call before writing anything. This is the one
-deliberate exception to "no suggested theme" above.
+**Genre, size, and mood are assigned per claim by the server, and stored on the
+claim.** `drawTheme()` (`src/theme.ts`) draws one of 17 genres, 5 sizes, and 18
+moods when the claim is allocated, using the same injected `Rng` as coordinate
+allocation. The three words are written into the claim row by `allocate()`'s
+conditional insert and returned on every claim payload; the sector prompt is
+rendered with them already filled in. They are never re-derived on read, so
+editing the lists in `theme.ts` cannot change a theme already handed out. This
+is the one deliberate exception to "no suggested theme" above.
+Guard: `tests/theme.test.ts`, `"a theme survives its value being dropped from the lists"`.
 See `DECISIONS.md`, "Genre, size, and mood are assigned per claim by the server".
 
 **Nothing in this world enforces a durability constraint, and the prompts must

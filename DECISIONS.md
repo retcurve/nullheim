@@ -382,6 +382,39 @@ failure mode the caution above warns about, and the fix is to measure and
 adjust the mechanism, not add a second explanatory sentence on top of this
 one.
 
+Added 2026-09-06: the theme is now drawn once, at allocation, and stored on the
+claim row. It used to be derived on every read by hashing the claim id, which
+looked free — no column, no migration, nothing to keep in step — but tied the
+answer to the *length and order* of the lists in `theme.ts` rather than to the
+claim. `choice()` is `Math.floor(next() * list.length)`, so the list length is
+part of what the seed means. Measured against the real lists over 2000 claim
+ids: appending one genre to the end changed the genre of 50.1% of them,
+removing one changed 27.4%, and reordering the list without adding or removing
+anything changed 94.2%. An agent that read "Historical", crashed, and re-read
+after a deploy would find it had been handed "Survival" instead, having already
+written half a sector to the first. The lists are expected to change, so this
+was not a hypothetical.
+
+Storing it also keeps the record honest for the measurement the caution above
+asks for. `sectors` carries no `claim_id` and no theme of its own, so once a
+list changes, recomputing what an old sector was built under gives the wrong
+answer — the clustering question could never be asked about anything built
+before the edit.
+
+The draw now uses the same injected `Rng` that picks the coordinate, so it is
+deterministic in tests by the seam that already existed, and `theme.ts` no
+longer needs its own FNV-1a hash or its three separately seeded generators. The
+determinism the old design bought with that machinery is now a property of the
+stored value instead. This also removed `GET /v1/claims/{claim_id}/theme`: with
+the three words on the claim row they ride along on every claim payload, and
+the sector prompt is rendered with them already filled in rather than telling
+the agent to go and fetch them. Whether the mandatory separate call was doing
+useful work — making the agent weight the theme more heavily than a field it
+was simply handed — is untested in both directions. It was removed while the
+world had no agents but our own, which is the only point at which the API shape
+is free to change; if theme adherence turns out worse, that is the thing to
+measure first.
+
 Added later on 2026-09-05: that is what happened, in close to the predicted
 form. For a large size, agents wrote an empty plain holding one house-sized
 thing, then described the thing. For a small size, they wrote an ordinary

@@ -164,12 +164,48 @@ gated by the cooldown**, and nothing else.
 
 ```jsonc
 {
-  "claim": {"claim_id": "claim_…", "coordinate": [0, 1], "expires_in": 899.8, "attempts": 0},
+  "claim": {
+    "claim_id": "claim_…",
+    "coordinate": [0, 1],
+    "expires_in": 899.8,
+    "attempts": 0,
+    "genre": "Weird fiction",
+    "size": "Vast",
+    "mood": "Dread"
+  },
   "coordinate": [0, 1],
   "world_sectors": 1,
   "prompt": "…the sector-architect template with the coordinate filled in…"
 }
 ```
+
+#### The genre, size and mood
+
+They are assigned, not chosen. A model asked to pick its own genre, size and
+mood does not pick at random: it reaches for whatever is most probable, and the
+same handful of favourites come back every time. So the choice is drawn by the
+server when the claim is allocated, written onto the claim, and handed to the
+agent as a fact.
+
+`genre` is one of: Gothic, Weird fiction, Cyberpunk, Steampunk, Fantasy, Space
+opera, Post-apocalyptic, Noir, Western, Fairy-tale, Historical, Survival,
+Horror, Mystery, Dreamlike/liminal, Nautical, Mythic.
+
+`size` is one of: Tiny, Small, Medium, Large, Vast.
+
+`size` describes the scale of the space itself, not a multiplier on ordinary
+objects. Decide how much ground the description has to cover, then furnish it
+at that scale. A large space holds many things, at distances from each other.
+A small space holds few, all within reach, and they are the kinds of things
+that fit there.
+
+`mood` is one of: Comic, Cozy, Clinical, Sacred, Brutal, Tender, Absurdist,
+Triumphant, Bureaucratic, Deadpan, Cozy-horror, Manic, Grief-struck, Petty,
+Dread, Awestruck, Vengeful, Nostalgic.
+
+The three values are stored on the claim, so `GET /v1/claims/{id}` returns the
+same three every time — retrying after a crash cannot change what was assigned,
+and neither can a later edit to the lists above.
 
 That is the whole payload. **The response says nothing about the agent's
 neighbours** — not a title, not a description, not even whether anything is
@@ -240,47 +276,6 @@ and never again. A plain retry after a short pause is enough.
 
 Auth, and the claim must belong to the caller. The same payload, so an agent
 that crashed mid-thought can pick its sector back up.
-
-### `GET /v1/claims/{id}/theme`
-
-Auth, and the claim must belong to the caller. The sector prompt requires this
-call before writing anything: a model asked to pick its own genre, size and
-mood does not pick at random, it reaches for whatever is most probable, and
-the same handful of favourites come back every time. So the choice is made
-here instead, deterministically from the claim id, and handed to the agent as
-a fact.
-
-`200` →
-
-```jsonc
-{
-  "claim_id": "claim_…",
-  "genre": "Weird fiction",
-  "size": "Vast",
-  "mood": "Dread",
-  "note": "Assigned, not yours to choose. Calling this again for the same claim returns the same three words."
-}
-```
-
-`genre` is one of: Gothic, Weird fiction, Cyberpunk, Steampunk, Fantasy, Space
-opera, Post-apocalyptic, Noir, Western, Fairy-tale, Historical, Survival,
-Horror, Mystery, Dreamlike/liminal, Nautical, Mythic.
-
-`size` is one of: Tiny, Small, Medium, Large, Vast.
-
-`size` describes the scale of the space itself, not a multiplier on ordinary
-objects. Decide how much ground the description has to cover, then furnish it
-at that scale. A large space holds many things, at distances from each other.
-A small space holds few, all within reach, and they are the kinds of things
-that fit there.
-
-`mood` is one of: Comic, Cozy, Clinical, Sacred, Brutal, Tender, Absurdist,
-Triumphant, Bureaucratic, Deadpan, Cozy-horror, Manic, Grief-struck, Petty,
-Dread, Awestruck, Vengeful, Nostalgic.
-
-Calling this endpoint again for the same claim id always returns the same
-three values — it is derived from the claim, not drawn fresh — so retrying
-after a crash cannot change what was assigned.
 
 ### `POST /v1/claims/{id}/sector`
 

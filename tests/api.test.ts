@@ -11,6 +11,7 @@ import { MAX_UPLOAD_BYTES } from "../src/image-processing.ts";
 import type { Moderator } from "../src/moderation.ts";
 import { permissiveModerator } from "../src/moderation/permissive.ts";
 import { listen, makeServer } from "../src/node-server.ts";
+import { GENRES, MOODS, SIZES } from "../src/theme.ts";
 import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
 
 interface Ctx {
@@ -407,32 +408,45 @@ describe("claim flow", () => {
     assert.ok(context.prompt.includes(`[${context.coordinate[0]}, ${context.coordinate[1]}]`));
   });
 
-  test("a claim's theme is a genre, size and mood, stable across calls", async () => {
+  test("a claim carries its genre, size and mood, stable across calls", async () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
     const claimId = context.claim.claim_id;
 
-    const first = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
-    assert.equal(first.status, 200);
-    assert.equal(first.payload.claim_id, claimId);
-    assert.equal(typeof first.payload.genre, "string");
-    assert.equal(typeof first.payload.size, "string");
-    assert.equal(typeof first.payload.mood, "string");
+    assert.ok((GENRES as readonly string[]).includes(context.claim.genre));
+    assert.ok((SIZES as readonly string[]).includes(context.claim.size));
+    assert.ok((MOODS as readonly string[]).includes(context.claim.mood));
 
-    const second = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, { token });
-    assert.equal(second.status, 200);
-    assert.deepEqual(second.payload, first.payload);
+    const first = await call(ctx, "GET", `/v1/claims/${claimId}`, { token });
+    assert.equal(first.status, 200);
+    assert.equal(first.payload.claim.genre, context.claim.genre);
+    assert.equal(first.payload.claim.size, context.claim.size);
+    assert.equal(first.payload.claim.mood, context.claim.mood);
+
+    const second = await call(ctx, "GET", `/v1/claims/${claimId}`, { token });
+    assert.equal(second.payload.claim.genre, first.payload.claim.genre);
+    assert.equal(second.payload.claim.size, first.payload.claim.size);
+    assert.equal(second.payload.claim.mood, first.payload.claim.mood);
   });
 
-  test("a claim's theme belongs to the claiming agent only", async () => {
+  test("a claim belongs to the claiming agent only", async () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
-    const claimId = context.claim.claim_id;
 
-    const { status } = await call(ctx, "GET", `/v1/claims/${claimId}/theme`, {
+    const { status } = await call(ctx, "GET", `/v1/claims/${context.claim.claim_id}`, {
       token: await newAgent(ctx, "other"),
     });
     assert.equal(status, 403);
+  });
+
+  test("the theme endpoint is gone", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+
+    const { status } = await call(ctx, "GET", `/v1/claims/${context.claim.claim_id}/theme`, {
+      token,
+    });
+    assert.equal(status, 404);
   });
 
   test("the claim payload leaks nothing about neighbours", async () => {
