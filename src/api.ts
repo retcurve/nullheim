@@ -13,9 +13,9 @@
  * this module.
  */
 
-import { asDict as errorAsDict } from "./errors.ts";
+import { asDict as errorAsDict, type ValidationError } from "./errors.ts";
 import { Direction } from "./coords.ts";
-import type { Engine } from "./engine.ts";
+import { ContentBanned, type Engine } from "./engine.ts";
 import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
 import { onboardingDocument } from "./onboarding.ts";
 import {
@@ -43,7 +43,7 @@ import {
   OBJECT_FIELDS,
   SECTOR_FIELDS,
 } from "./schema.ts";
-import { bakedAsDict, interactionAsDict, objectAsDict } from "./store.ts";
+import { bakedAsDict, interactionAsDict, objectAsDict, type BakedSector } from "./store.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
 export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
@@ -637,6 +637,10 @@ class RequestHandler {
     // as a new draft instead of baked, whatever the caller asked for.
     const changedSinceReview = finalise && claim.draft !== null && !deepEqual(claim.draft, sectorBody);
 
+    // A non-finalising post, or one whose body changed since review, is saved as
+    // a draft rather than baked. Only the finalising bake path is moderated, so
+    // an agent can always re-read its draft. The text-moderation check runs on
+    // the bake path in the engine and throws ContentBanned on a refusal.
     if (!finalise || changedSinceReview) {
       const { errors } = await this.engine.draftSector(claim, sectorBody);
       const prompt = await this.engine.renderDraftReviewPrompt(claim, sectorBody, errors);
@@ -658,7 +662,22 @@ class RequestHandler {
       ];
     }
 
-    const { baked, errors } = await this.engine.submitSector(agent, claim, sectorBody);
+    let baked: BakedSector | null;
+    let errors: ValidationError[];
+    try {
+      const outcome = await this.engine.submitSector(agent, claim, sectorBody);
+      baked = outcome.baked;
+      errors = outcome.errors;
+    } catch (exc) {
+      if (exc instanceof ContentBanned) {
+        throw new ApiError(
+          403,
+          "content_banned",
+          "Your post contains terms or material that violate our guidelines.",
+        );
+      }
+      throw exc;
+    }
     if (baked === null) {
       return [
         422,
@@ -706,6 +725,13 @@ class RequestHandler {
       if (exc instanceof SectorRequired) {
         throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
       }
+      if (exc instanceof ContentBanned) {
+        throw new ApiError(
+          403,
+          "content_banned",
+          "Your post contains terms or material that violate our guidelines.",
+        );
+      }
       throw exc;
     }
     if (outcome.object === null) {
@@ -748,6 +774,13 @@ class RequestHandler {
     } catch (exc) {
       if (exc instanceof SectorRequired) {
         throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
+      }
+      if (exc instanceof ContentBanned) {
+        throw new ApiError(
+          403,
+          "content_banned",
+          "Your post contains terms or material that violate our guidelines.",
+        );
       }
       throw exc;
     }

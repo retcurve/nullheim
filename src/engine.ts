@@ -13,7 +13,7 @@ import { ORIGIN, type Coordinate } from "./coords.ts";
 import type { ValidationError } from "./errors.ts";
 import { processUpload, type CodecModules } from "./image-processing.ts";
 import type { ImageStore } from "./images.ts";
-import type { Moderator } from "./moderation.ts";
+import type { Moderator, TextModerator } from "./moderation.ts";
 import {
   Registry,
   UploadRefused,
@@ -67,16 +67,21 @@ export const IMAGE_REAP_LIMIT = 1000;
 /** The starting sector, authored by the system rather than an agent. */
 export const GENESIS: Sector = {
   coordinate: ORIGIN,
-  title: "The Grey Expanse",
-  shortDescription: "Flat grey extends in every direction, floor and ceiling both, lit by no source you can find.",
+  title: "The Lantern Void",
+  shortDescription: "A dark void that swallows sound, pricked here and there by small lights that drift on their own.",
   longDescription:
-    "Grey extends flat in every direction: underfoot, overhead, and however far " +
-    "out you look. Nothing marks where it stops. No source explains the light " +
-    "that reaches all of it evenly. It shows no sign of having been built for a " +
-    "purpose; it is simply where the world begins. What continues from here was " +
-    "built by separate hands, and will resemble " +
-    "neither this nor each other.",
-  image: "/v1/images/548324a7-47d1-46e8-b99a-eb7d71a17a8e.webp",
+    "Darkness in every direction, and no floor and no ceiling to find. A void " +
+    "that swallows sound, so the only sign of its size is how far the nearest " +
+    "light hangs. Small lights drift through it, each on its own: some no bigger " +
+    "than a spark, a few the size of a cupped hand, all of them moving with a " +
+    "slow, unhurried current as though carried by a wind you cannot feel. None " +
+    "of them illuminates the one next to it, and none comes close enough to " +
+    "touch. They follow no pattern a waiting eye can trace. Watch one long " +
+    "enough and it is gone, and another has drifted in somewhere you did not " +
+    "see. It shows no sign of having been built for a purpose; it is simply " +
+    "where the world begins. What continues from here was built by separate hands, " +
+    "and will resemble neither this nor each other.",
+  image: "/v1/images/238d0983-ab91-423b-916a-9b0b17df368f.webp",
 };
 
 /** The one object standing in `GENESIS`, explaining the world to a new player. */
@@ -180,6 +185,19 @@ export interface EngineOptions {
   images: ImageStore;
   codecs: CodecModules;
   moderator: Moderator;
+  /**
+   * Checks authored prose (titles and descriptions) before it is stored.
+   * Defaults to a checker that passes everything, so a local world that has
+   * no Workers AI binding never rejects on content.
+   */
+  textModerator?: TextModerator;
+}
+
+/** A submission was refused because its prose failed the text-moderation check. */
+export class ContentBanned extends Error {}
+
+function permissiveTextModerator(): TextModerator {
+  return { async check() { return { ok: true, reason: null }; } };
 }
 
 export class Engine {
@@ -189,6 +207,7 @@ export class Engine {
   readonly #prompts: PromptTemplates;
   readonly #codecs: CodecModules;
   readonly #moderator: Moderator;
+  readonly #textModerator: TextModerator;
 
   constructor(options: EngineOptions) {
     this.store = options.store;
@@ -197,6 +216,19 @@ export class Engine {
     this.#prompts = options.prompts;
     this.#codecs = options.codecs;
     this.#moderator = options.moderator;
+    this.#textModerator = options.textModerator ?? permissiveTextModerator();
+  }
+
+  /** Refuses the submission if the given prose fails the text-moderation check. */
+  async #enforceTextModeration(fields: Array<string | null>): Promise<void> {
+    const text = fields.filter((f) => f !== null && f !== "").join("\n");
+    if (text === "") {
+      return;
+    }
+    const { ok } = await this.#textModerator.check(text);
+    if (!ok) {
+      throw new ContentBanned();
+    }
   }
 
   /**
@@ -322,6 +354,8 @@ export class Engine {
       return { baked: null, errors };
     }
 
+    await this.#enforceTextModeration([sector.title, sector.shortDescription, sector.longDescription]);
+
     const baked: BakedSector = {
       sector,
       sectorId: `sec_${randomHex(8)}`,
@@ -392,6 +426,8 @@ export class Engine {
     if (draft === null || errors.length) {
       return { object: null, errors };
     }
+
+    await this.#enforceTextModeration([draft.title, draft.description, draft.useText]);
 
     const baked = await this.#sectorFor(agent, draft.parentId);
     // A parentId equal to the sector's own id is stored as null.
@@ -469,6 +505,7 @@ export class Engine {
       agentId: agent.agentId,
       createdAt: now(),
     };
+    await this.#enforceTextModeration([interaction.text]);
     await this.store.addInteraction(interaction);
     return { interaction, errors: [] };
   }

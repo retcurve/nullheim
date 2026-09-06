@@ -728,7 +728,7 @@ describe("the read model", () => {
       northSide.map((e) => e.direction),
       ["south"],
     );
-    assert.equal(northSide[0]!.name, "The Grey Expanse");
+    assert.equal(northSide[0]!.name, "The Lantern Void");
   });
 
   test("the player's view shows the long description and object titles", async () => {

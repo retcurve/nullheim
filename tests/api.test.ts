@@ -10,6 +10,7 @@ import type { Engine } from "../src/engine.ts";
 import { MAX_UPLOAD_BYTES } from "../src/image-processing.ts";
 import type { Moderator } from "../src/moderation.ts";
 import { permissiveModerator } from "../src/moderation/permissive.ts";
+import { permissiveTextModerator } from "../src/moderation/permissive-text.ts";
 import { listen, makeServer } from "../src/node-server.ts";
 import { GENRES, MOODS, SIZES } from "../src/theme.ts";
 import { interaction, makeEngine, makePng, sector, obj } from "./testing.ts";
@@ -135,7 +136,10 @@ type CtxOptions = {
 async function makeCtx(
   options: CtxOptions = {},
 ): Promise<{ ctx: Ctx; engine: Engine; db: SqliteDb }> {
-  const { engine, db } = await makeEngine(options);
+  const { engine, db } = await makeEngine({
+    ...options,
+    textModerator: permissiveTextModerator(),
+  });
   const server = makeServer(engine, { quiet: true });
   return { ctx: { base: "", server }, engine, db };
 }
@@ -251,7 +255,7 @@ describe("public endpoints", () => {
   test("reading a sector gives the player's view", async () => {
     const { status, payload } = await call(ctx, "GET", "/v1/sectors/0/0");
     assert.equal(status, 200);
-    assert.equal(payload.title, "The Grey Expanse");
+    assert.equal(payload.title, "The Lantern Void");
     assert.ok("description" in payload);
     assert.deepEqual(payload.exits, []);
   });
@@ -264,7 +268,7 @@ describe("public endpoints", () => {
     assert.equal(origin.exits.length, 1);
     assert.equal(origin.exits[0].name, "Somewhere Else");
     assert.equal(theirs.exits.length, 1);
-    assert.equal(theirs.exits[0].name, "The Grey Expanse");
+    assert.equal(theirs.exits[0].name, "The Lantern Void");
   });
 
   test("reading an empty coordinate is a 404", async () => {
@@ -472,7 +476,7 @@ describe("claim flow", () => {
     const context = await newClaim(ctx, await newAgent(ctx, "next"));
     const blob = JSON.stringify(context);
     assert.ok(!blob.includes("Tell-Tale"));
-    assert.ok(!blob.includes("The Grey Expanse"));
+    assert.ok(!blob.includes("The Lantern Void"));
   });
 
   test("a rejected submission returns 422 and structured errors", async () => {
@@ -1446,6 +1450,112 @@ describe("malformed input", () => {
     const { status, payload } = await call(ctx, "GET", "/v1/health");
     assert.equal(status, 200);
     assert.equal(payload.status, "ok");
+  });
+});
+
+describe("text moderation", () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await setup({ cooldownSeconds: 0 });
+  });
+  afterEach(async () => {
+    await teardown();
+  });
+
+  test("a banned sector is refused with 403 and the standard error body", async () => {
+    const token = await newAgent(ctx, "builder");
+    const claim = await newClaim(ctx, token);
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: { ...sector(claim.coordinate, { title: "Something BANNED" }), finalise: true },
+      token,
+    });
+    assert.equal(status, 403);
+    assert.equal(payload.error.code, "content_banned");
+    assert.equal(
+      payload.error.message,
+      "Your post contains terms or material that violate our guidelines.",
+    );
+  });
+
+  test("a banned long description refuses the sector too", async () => {
+    const token = await newAgent(ctx, "builder");
+    const claim = await newClaim(ctx, token);
+    const { status } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: { ...sector(claim.coordinate, { long_description: "BANNED prose" }), finalise: true },
+      token,
+    });
+    assert.equal(status, 403);
+  });
+
+  test("the claim is still live after a ban, so the agent may submit again", async () => {
+    const token = await newAgent(ctx, "builder");
+    const claim = await newClaim(ctx, token);
+    const claimId = claim.claim.claim_id;
+    const first = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(claim.coordinate, { long_description: "Offensive BANNED prose" }), finalise: true },
+      token,
+    });
+    assert.equal(first.status, 403);
+
+    // A 403 must not have settled or lapsed the claim: a clean resubmission
+    // bakes rather than hitting a stale-claim 409.
+    const second = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(claim.coordinate), finalise: true },
+      token,
+    });
+    assert.equal(second.status, 201);
+  });
+
+  test("a banned object is refused with 403", async () => {
+    // The sector bakes clean; only the object's text is banned.
+    const { token } = await settle(ctx, "builder");
+    const parent = await sectorIdFor(ctx, token);
+    const { status, payload } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(parent, { description: "BANNED sexual content" }),
+      token,
+    });
+    assert.equal(status, 403);
+    assert.equal(payload.error.code, "content_banned");
+  });
+
+  test("a banned object title is refused with 403", async () => {
+    const { token } = await settle(ctx, "builder");
+    const parent = await sectorIdFor(ctx, token);
+    const { status } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(parent, { title: "A BANNED Thing" }),
+      token,
+    });
+    assert.equal(status, 403);
+  });
+
+  test("a draft is not refused, only a real bake is", async () => {
+    const token = await newAgent(ctx, "builder");
+    const claim = await newClaim(ctx, token);
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
+      body: sector(claim.coordinate, { title: "Something BANNED" }),
+      token,
+    });
+    assert.equal(status, 200);
+    assert.equal(payload.status, "draft");
+  });
+
+  test("banned interaction text is refused with 403", async () => {
+    const { token } = await settle(ctx, "builder");
+    const sectorId = await sectorIdFor(ctx, token);
+    const { payload: a } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { title: "Rope" }),
+      token,
+    });
+    const { payload: b } = await call(ctx, "POST", "/v1/objects", {
+      body: obj(sectorId, { title: "Hook" }),
+      token,
+    });
+    const { status, payload } = await call(ctx, "POST", "/v1/interactions", {
+      body: interaction(a.object.object_id, b.object.object_id, { text: "BANNED misuse" }),
+      token,
+    });
+    assert.equal(status, 403);
+    assert.equal(payload.error.code, "content_banned");
   });
 });
 

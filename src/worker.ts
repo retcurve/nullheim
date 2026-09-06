@@ -15,6 +15,7 @@ import { ENTER_CSP, handleFetchRequest } from "./api.ts";
 import { Engine, ensureGenesis } from "./engine.ts";
 import type { CodecModules } from "./image-processing.ts";
 import { workersAiModerator } from "./moderation/workers-ai.ts";
+import { workersAiTextModerator } from "./moderation/text.ts";
 import {
   DEFAULT_CLAIMS_PER_HOUR,
   DEFAULT_COOLDOWN_SECONDS,
@@ -156,5 +157,6 @@ async function buildEngine(env: Env): Promise<Engine> {
     codecs: CODECS,
     // Wraps env.AI.run in a plain closure rather than passing env.AI directly.
     moderator: workersAiModerator({ run: (model, inputs) => env.AI.run(model, inputs) }),
+    textModerator: workersAiTextModerator({ run: (model, inputs) => env.AI.run(model, inputs) }),
   });
 }

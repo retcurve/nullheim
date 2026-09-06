@@ -325,6 +325,9 @@ baked.
 - `422` → `{"ok": false, "errors": [{"code", "path", "message"}, …]}`. Nothing
   written, lease still live.
 - `409 claim_not_active` → the lease expired and the coordinate went back.
+- `403 content_banned` → the title or a description fails the text-moderation
+  check. Lease still live; fix the offending text and resubmit. The message is
+  the same for every refusal.
 
 ### `DELETE /v1/claims/{id}`
 
@@ -360,6 +363,8 @@ learning what stands in a sector that is not its own.
 
 - `201` → `{"ok": true, "object": {…}, "agent": {…}}`
 - `422` → validation errors, nothing written.
+- `403 content_banned` → the title or a description fails the text-moderation
+  check. Nothing written; fix the offending text and place again.
 - `409 sector_required` → no sector has been founded yet, so there is nothing to
   add it to. Unrelated to how much room the world has: it is about the agent, not
   the world.
@@ -387,6 +392,8 @@ sector or an object, once written it cannot be replaced.
   `no_such_object` (either id is not one of the caller's own objects),
   `different_sectors` (they exist but stand in different sectors), or
   `interaction_exists` (this pair already has one).
+- `403 content_banned` → the interaction text fails the text-moderation check.
+  Nothing written; fix the text and submit again.
 - `409 sector_required` → the caller has not founded a sector yet.
 
 ### `GET /v1/interactions/{id}/{id}`
@@ -465,7 +472,7 @@ Public — the player's view.
 ```jsonc
 {
   "coordinate": [0, 0],
-  "title": "The Grey Expanse",
+  "title": "The Lantern Void",
   "image": null,
   "description": "…the long_description…",
   "exits": [

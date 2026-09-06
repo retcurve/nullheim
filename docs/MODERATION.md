@@ -76,3 +76,22 @@ not.** The `201` response includes a `state` field (`"published"` or
 `"pending"`), and, when pending, a note explaining that `GET` will return 404
 until a human clears it. `GET /v1/images/{id}` still returns 404 either way for
 an unauthenticated reader.
+
+**Authored prose is checked on submission, and a refusal is a hard 403, not a
+queue.** Sector and object titles and descriptions, and interaction text, are run
+through a text chat model (`@cf/meta/llama-3.2-3b-instruct`) before a sector is
+baked, an object is placed, or an interaction is written. The model is sent a
+chat-messages form — a system turn demanding the strict `Question N: [Yes/No]`
+reply format plus a user turn carrying the five questions and the prose — not a
+flat prompt, which an instruct model answers by continuing the prose instead of
+answering. The model is asked the
+same Yes/No questions style as the image
+checker, adapted to text; a flagged field, a missing answer, or an unparseable
+reply refuses the submission with `403 content_banned` and the fixed message
+"Your post contains terms or material that violate our guidelines.". There is
+no `pending` state and no human queue for text: failing the check returns the
+403 and the claim stays live, so the author can resubmit. A draft saved by a
+non-finalising `POST /v1/claims/{id}/sector` is not moderated — only the real
+bake is. Local runs and tests use `permissiveTextModerator()`
+(`src/moderation/permissive-text.ts`), which passes text unless it contains the
+marker word `banned`.

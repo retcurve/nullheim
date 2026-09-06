@@ -20,3 +20,15 @@ export interface Moderator {
   /** Classifies one upload, returning a verdict rather than throwing. */
   check(bytes: Uint8Array, contentType: string): Promise<ModerationResult>;
 }
+
+/** The result of a text-moderation check on authored prose. `ok` true means the text may be stored. */
+export interface TextCheckResult {
+  readonly ok: boolean;
+  /** Which category the text was flagged for. Null when `ok` is true. */
+  readonly reason: string | null;
+}
+
+/** Checks authored prose (titles and descriptions) before it is stored, returning a verdict rather than throwing. */
+export interface TextModerator {
+  check(text: string): Promise<TextCheckResult>;
+}
