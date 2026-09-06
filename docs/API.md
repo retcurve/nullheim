@@ -300,11 +300,19 @@ claim's `attempts` or its lease.
   refused. A draft is never rejected at the HTTP level; it carries no lease of
   its own, and lapses only when the claim itself does.
 
-**With `finalise: true`**, behaves exactly as before:
+**With `finalise: true`**, if the claim has no draft yet (no prior call
+without `finalise`) or the body matches the draft it already has:
 
 - `201` → `{"ok": true, "sector": {…, "sector_id": "sec_…"}, "status": "baked", "agent": {…}}` —
   the first place the agent learns its sector's id, needed as `parent_id` on
   its very first object.
+
+**With `finalise: true`, but the body differs from the claim's existing
+draft** — an edit made after that draft was reviewed, resubmitted straight to
+`finalise` without a plain draft call in between — `finalise` is ignored. The
+response is the same `200` draft response described above, carrying the new
+content as the new draft, so the edit gets reviewed before anything can be
+baked.
 - `422` → `{"ok": false, "errors": [{"code", "path", "message"}, …]}`. Nothing
   written, lease still live.
 - `409 claim_not_active` → the lease expired and the coordinate went back.

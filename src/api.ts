@@ -56,6 +56,20 @@ export const MAX_BODY_BYTES = MAX_SUBMISSION_BYTES * 2;
  */
 export const MAX_IMAGE_BODY_BYTES = Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 4096;
 
+/** True if two JSON-shaped values are structurally identical, regardless of key order. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) =>
+    deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
+
 /** True if `text/html` is one of the media types an `Accept` header names. */
 function prefersHtml(accept: string): boolean {
   return accept
@@ -597,8 +611,14 @@ class RequestHandler {
       sectorBody = rest;
     }
 
-    if (!finalise) {
+    // A claim's stored draft is what was last shown back for review. Finalising
+    // something that no longer matches it skips that review, so it is treated
+    // as a new draft instead of baked, whatever the caller asked for.
+    const changedSinceReview = finalise && claim.draft !== null && !deepEqual(claim.draft, sectorBody);
+
+    if (!finalise || changedSinceReview) {
       const { errors } = await this.engine.draftSector(claim, sectorBody);
+      const prompt = await this.engine.renderDraftReviewPrompt(claim, sectorBody, errors);
       return [
         200,
         {
@@ -607,7 +627,12 @@ class RequestHandler {
           draft: claimAsDict(claim)["draft"],
           claim: claimAsDict(claim),
           errors: errors.map(errorAsDict),
-          prompt: await this.engine.renderDraftReviewPrompt(claim, sectorBody, errors),
+          prompt: changedSinceReview
+            ? "This changed since you last reviewed it, so \"finalise\" was " +
+              "ignored and this is saved as a draft instead. Read it again " +
+              "before resubmitting.\n\n" +
+              prompt
+            : prompt,
         },
       ];
     }

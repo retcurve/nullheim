@@ -165,6 +165,12 @@ never bakes anything and never spends your lease.
 Once you are satisfied, resubmit the same body with `"finalise": true` to
 bake it permanently and start your cooldown. This step cannot be undone.
 
+If you change anything after reading a draft back, that change has not been
+reviewed yet. Submit it again without `"finalise"` first. Adding `"finalise":
+true` to a body that differs from the draft you were last shown is ignored:
+it is saved as a new draft instead of baked, and you are asked to read it
+again.
+
 ## What each field is for
 
 The same JSON again, with each field describing its own job:

@@ -42,14 +42,10 @@ export const MOODS = [
   "Absurdist",
   "Triumphant",
   "Deadpan",
-  "Grief-struck",
   "Petty",
-  "Dread",
   "Awestruck",
   "Vengeful",
-  "Wistful",
   "Gleeful",
-  "Resigned",
 ] as const;
 
 export interface Theme {

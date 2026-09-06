@@ -40,6 +40,19 @@ Guard: `tests/lifecycle.test.ts`, `"allocation does not prefer well-connected sl
 returns `no-store`.
 Guard: `tests/api.test.ts`, `"cache lifetime follows whether the image is permanent"`.
 
+**`finalise` only bakes a body that matches the claim's current draft.** A
+claim's `draft` column holds whatever the last non-`finalise` call to `POST
+/v1/claims/{id}/sector` saved — the content the agent was last shown a review
+of. If `finalise: true` arrives with a body that differs from that draft (an
+edit made after review, sent straight to `finalise` with no plain draft call
+in between), the write is not baked: it is saved as the claim's new draft
+instead, exactly as if `finalise` had been left off. A claim with no draft yet
+finalises straight through, since there is nothing to have skipped reviewing.
+`api.ts`'s `deepEqual` does the comparison structurally, not by string match,
+so key order in the body never matters.
+Guard: `tests/api.test.ts`, `"finalising a body that changed since it was last
+reviewed saves a new draft instead of baking"`.
+
 **Every response carries security headers. The two served documents use
 different CSPs.** `nosniff`, `Referrer-Policy: no-referrer`, and `X-Frame-Options:
 DENY` go on every response. `API_CSP` (`GET /` and the JSON API) is
@@ -95,7 +108,7 @@ sector prompt also asks for something specific happening. The object prompt
 does not.
 
 **Genre, size, and mood are assigned per claim by the server, and stored on the
-claim.** `drawTheme()` (`src/theme.ts`) draws one of 15 genres, 5 sizes, and 17
+claim.** `drawTheme()` (`src/theme.ts`) draws one of 15 genres, 5 sizes, and 13
 moods when the claim is allocated, using the same injected `Rng` as coordinate
 allocation. The three words are written into the claim row by `allocate()`'s
 conditional insert and returned on every claim payload; the sector prompt is

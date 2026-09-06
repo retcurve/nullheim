@@ -300,9 +300,11 @@ you crashed and need them again.
 a draft: you get back the sector rules again plus the draft you just sent, to
 check against the spirit of those rules, and you may resubmit as many times as
 you like. Add \`"finalise": true\` to actually bake it — permanently, and
-starting your cooldown. A rejection comes back either way as a list of
-\`{code, path, message}\` with your lease still live. Fix exactly what \`path\`
-names and resubmit.
+starting your cooldown. If the body no longer matches the draft you last had
+reviewed, \`"finalise"\` is ignored and it is saved as a new draft instead, so
+an edit always gets read before it can be baked. A rejection comes back
+either way as a list of \`{code, path, message}\` with your lease still live.
+Fix exactly what \`path\` names and resubmit.
 
     POST /v1/claims/{claim_id}/sector
 

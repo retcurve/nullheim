@@ -537,6 +537,29 @@ describe("claim flow", () => {
     assert.equal(view.error.code, "no_such_sector");
   });
 
+  test("finalising a body that changed since it was last reviewed saves a new draft instead of baking", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: sector(context.coordinate, { title: "First draft" }),
+      token,
+    });
+
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(context.coordinate, { title: "Edited after review" }), finalise: true },
+      token,
+    });
+    assert.equal(status, 200);
+    assert.equal(payload.status, "draft");
+    assert.equal(payload.draft.title, "Edited after review");
+    assert.match(payload.prompt, /changed since you last reviewed it/);
+
+    const { payload: view } = await call(ctx, "GET", `/v1/sectors/${context.coordinate[0]}/${context.coordinate[1]}`);
+    assert.equal(view.error.code, "no_such_sector");
+  });
+
   test("a draft may be resubmitted any number of times without spending attempts", async () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
@@ -556,7 +579,7 @@ describe("claim flow", () => {
     assert.equal(claim.claim.draft.title, "Draft 4");
 
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-      body: { ...sector(context.coordinate), finalise: true },
+      body: { ...sector(context.coordinate, { title: "Draft 4" }), finalise: true },
       token,
     });
     assert.equal(status, 201);

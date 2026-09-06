@@ -700,9 +700,11 @@ export class Engine {
       "should and shouldn't contain, then the draft you just submitted.\n\n" +
       errorBlock +
       "Check the draft against every rule below, including its spirit and not " +
-      "only its letter. If it violates any of them, rewrite the affected " +
-      "fields and submit again without \"finalise\". If it does not, resubmit " +
-      "the same body with \"finalise\": true to bake it permanently.\n\n" +
+      "only its letter. Also check that it does not contain themes of " +
+      "abeyance or perpetuity. If it violates any of them, rewrite the " +
+      "affected fields and submit again without \"finalise\". If it does " +
+      "not, resubmit the same body with \"finalise\": true to bake it " +
+      "permanently.\n\n" +
       "## What a description should and shouldn't contain\n\n" +
       rules +
       "\n\n## Your draft\n\n```json\n" +
