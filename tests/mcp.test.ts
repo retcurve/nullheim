@@ -212,6 +212,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
         title: "",
         short_description: draft.short_description,
         long_description: draft.long_description,
+        finalise: true,
       }),
     );
     assert.equal(badSubmit.body.ok, false);
@@ -224,6 +225,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
         title: draft.title,
         short_description: draft.short_description,
         long_description: draft.long_description,
+        finalise: true,
       }),
     );
     assert.equal(goodSubmit.status, 201);
@@ -247,6 +249,7 @@ describe("MCP tools reach the exact same engine as the REST API", () => {
       title: draft.title,
       short_description: draft.short_description,
       long_description: draft.long_description,
+      finalise: true,
     });
     const me = unwrap(await callTool(ctx, "get_my_status", { token })).body;
     const sectorId = me.sectors[0].sector_id;

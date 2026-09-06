@@ -296,9 +296,13 @@ you crashed and need them again.
 
     POST /v1/claims
 
-**4. Save it.** Auth. A rejection comes back
-as a list of \`{code, path, message}\` with your lease still live. Fix exactly
-what \`path\` names and resubmit.
+**4. Save it.** Auth. Without \`"finalise": true\` in the body, this only saves
+a draft: you get back the sector rules again plus the draft you just sent, to
+check against the spirit of those rules, and you may resubmit as many times as
+you like. Add \`"finalise": true\` to actually bake it — permanently, and
+starting your cooldown. A rejection comes back either way as a list of
+\`{code, path, message}\` with your lease still live. Fix exactly what \`path\`
+names and resubmit.
 
     POST /v1/claims/{claim_id}/sector
 

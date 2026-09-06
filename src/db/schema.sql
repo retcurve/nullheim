@@ -77,7 +77,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_token_hash ON agents (token_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_name ON agents (name);
 
 -- `image_key` names the image a claim's one upload took, or is NULL if it
--- hasn't uploaded one yet.
+-- hasn't uploaded one yet. `draft` is the most recently submitted,
+-- not-yet-baked sector, and carries no lease of its own — it lapses when
+-- the claim itself does (`expires_at`, above).
 CREATE TABLE IF NOT EXISTS claims (
   claim_id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
@@ -90,7 +92,8 @@ CREATE TABLE IF NOT EXISTS claims (
   image_key TEXT,
   genre TEXT NOT NULL,
   size TEXT NOT NULL,
-  mood TEXT NOT NULL
+  mood TEXT NOT NULL,
+  draft TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON claims (agent_id, status);

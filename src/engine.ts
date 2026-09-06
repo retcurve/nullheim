@@ -152,6 +152,27 @@ export function fillPromptLimits(text: string): string {
     .replaceAll("{{max_interaction_text_len}}", String(MAX_INTERACTION_TEXT_LEN));
 }
 
+/** A prompt's `<!-- content-rule:start -->…<!-- content-rule:end -->` blocks: what a description should and shouldn't contain. */
+const CONTENT_RULE_TAG = "content-rule";
+
+function markerPattern(tag: string): RegExp {
+  return new RegExp(`<!--\\s*${tag}:start\\s*-->([\\s\\S]*?)<!--\\s*${tag}:end\\s*-->`, "g");
+}
+
+/** The text inside every `tag`-marked block, in order, joined with a blank line. */
+function extractMarked(text: string, tag: string): string {
+  const blocks: string[] = [];
+  for (const match of text.matchAll(markerPattern(tag))) {
+    blocks.push(match[1]!.trim());
+  }
+  return blocks.join("\n\n");
+}
+
+/** The prompt with its `tag` markers removed, keeping the text between them in place. */
+function stripMarkers(text: string, tag: string): string {
+  return text.replaceAll(new RegExp(`<!--\\s*${tag}:(start|end)\\s*-->\n?`, "g"), "");
+}
+
 export interface EngineOptions {
   store: WorldStore;
   registry: Registry;
@@ -274,6 +295,19 @@ export class Engine {
       sector: parsed,
       errors: [...errors, ...validateSector(parsed, claim.coordinate, store)],
     };
+  }
+
+  /**
+   * Validate a submission and save it as the claim's draft, without baking
+   * or touching the claim's attempts.
+   */
+  async draftSector(
+    claim: Claim,
+    raw: unknown,
+  ): Promise<{ sector: Sector | null; errors: ValidationError[] }> {
+    const { sector, errors } = await this.checkSector(claim, raw);
+    await this.registry.saveDraft(claim, raw);
+    return { sector, errors };
   }
 
   /** Validate and, if clean, bake permanently and start the agent's clock. */
@@ -626,8 +660,12 @@ export class Engine {
 
   // --- prompts ------------------------------------------------------------
 
-  promptTemplate(name: keyof PromptTemplates): string {
+  #filledPromptTemplate(name: keyof PromptTemplates): string {
     return fillPromptLimits(this.#prompts[name] ?? "");
+  }
+
+  promptTemplate(name: keyof PromptTemplates): string {
+    return stripMarkers(this.#filledPromptTemplate(name), CONTENT_RULE_TAG);
   }
 
   /** The sector prompt: the coordinate and the claim id, and nothing else about the world. */
@@ -638,6 +676,39 @@ export class Engine {
       .replaceAll("{{genre}}", claim.theme.genre)
       .replaceAll("{{size}}", claim.theme.size)
       .replaceAll("{{mood}}", claim.theme.mood);
+  }
+
+  /**
+   * What a description should and shouldn't contain, pulled from the sector
+   * prompt's own `content-rule` blocks, followed by the draft just
+   * submitted, for the agent to check against the spirit of those rules
+   * before finalising.
+   */
+  async renderDraftReviewPrompt(
+    claim: Claim,
+    draft: unknown,
+    errors: ValidationError[],
+  ): Promise<string> {
+    const rules = extractMarked(this.#filledPromptTemplate("sector_architect"), CONTENT_RULE_TAG);
+    const errorBlock = errors.length
+      ? "This draft does not validate yet:\n" +
+        errors.map((error) => `- ${error.path}: ${error.message}`).join("\n") +
+        "\n\n"
+      : "";
+    return (
+      "This is a draft. Nothing has been baked. Below is what a description " +
+      "should and shouldn't contain, then the draft you just submitted.\n\n" +
+      errorBlock +
+      "Check the draft against every rule below, including its spirit and not " +
+      "only its letter. If it violates any of them, rewrite the affected " +
+      "fields and submit again without \"finalise\". If it does not, resubmit " +
+      "the same body with \"finalise\": true to bake it permanently.\n\n" +
+      "## What a description should and shouldn't contain\n\n" +
+      rules +
+      "\n\n## Your draft\n\n```json\n" +
+      JSON.stringify(draft, null, 2) +
+      "\n```\n"
+    );
   }
 
   /**

@@ -106,7 +106,7 @@ async function settle(
   const context = await newClaim(ctx, token);
   const claimId = context.claim.claim_id;
   const { status } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-    body: sector(context.coordinate, overrides),
+    body: { ...sector(context.coordinate, overrides), finalise: true },
     token,
   });
   assert.equal(status, 201);
@@ -471,7 +471,7 @@ describe("claim flow", () => {
     const claimId = context.claim.claim_id;
 
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-      body: sector([99, 99], { title: "" }),
+      body: { ...sector([99, 99], { title: "" }), finalise: true },
       token,
     });
     assert.equal(status, 422);
@@ -486,9 +486,12 @@ describe("claim flow", () => {
     const context = await newClaim(ctx, token);
     const claimId = context.claim.claim_id;
 
-    await call(ctx, "POST", `/v1/claims/${claimId}/sector`, { body: sector([99, 99]), token });
+    await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector([99, 99]), finalise: true },
+      token,
+    });
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-      body: sector(context.coordinate),
+      body: { ...sector(context.coordinate), finalise: true },
       token,
     });
     assert.equal(status, 201);
@@ -499,14 +502,83 @@ describe("claim flow", () => {
     const token = await newAgent(ctx);
     const context = await newClaim(ctx, token);
     const claimId = context.claim.claim_id;
-    await call(ctx, "POST", `/v1/claims/${claimId}/sector`, { body: sector(context.coordinate), token });
+    await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(context.coordinate), finalise: true },
+      token,
+    });
 
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
-      body: sector(context.coordinate),
+      body: { ...sector(context.coordinate), finalise: true },
       token,
     });
     assert.equal(status, 409);
     assert.equal(payload.error.code, "claim_not_active");
+  });
+
+  test("submitting without finalise saves a draft instead of baking", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+    const draft = sector(context.coordinate, { title: "A Draft Place" });
+
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: draft,
+      token,
+    });
+    assert.equal(status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.status, "draft");
+    assert.deepEqual(payload.draft, draft);
+    assert.deepEqual(payload.errors, []);
+    assert.match(payload.prompt, /spirit/);
+    assert.match(payload.prompt, /"finalise": true/);
+
+    const { payload: view } = await call(ctx, "GET", `/v1/sectors/${context.coordinate[0]}/${context.coordinate[1]}`);
+    assert.equal(view.error.code, "no_such_sector");
+  });
+
+  test("a draft may be resubmitted any number of times without spending attempts", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    for (let i = 0; i < 5; i += 1) {
+      const { status } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+        body: sector(context.coordinate, { title: `Draft ${i}` }),
+        token,
+      });
+      assert.equal(status, 200);
+    }
+
+    const { payload: claim } = await call(ctx, "GET", `/v1/claims/${claimId}`, { token });
+    assert.equal(claim.claim.attempts, 0);
+    assert.equal(claim.claim.status, "open");
+    assert.equal(claim.claim.draft.title, "Draft 4");
+
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: { ...sector(context.coordinate), finalise: true },
+      token,
+    });
+    assert.equal(status, 201);
+    assert.equal(payload.status, "baked");
+  });
+
+  test("an invalid draft is still saved, with its errors attached, not rejected", async () => {
+    const token = await newAgent(ctx);
+    const context = await newClaim(ctx, token);
+    const claimId = context.claim.claim_id;
+
+    const { status, payload } = await call(ctx, "POST", `/v1/claims/${claimId}/sector`, {
+      body: sector(context.coordinate, { title: "" }),
+      token,
+    });
+    assert.equal(status, 200);
+    assert.equal(payload.status, "draft");
+    assert.ok(payload.errors.some((e: any) => e.code === "empty_text"));
+
+    const { payload: claim } = await call(ctx, "GET", `/v1/claims/${claimId}`, { token });
+    assert.ok(claim.claim.draft !== null);
+    assert.equal(claim.claim.status, "open");
   });
 
   test("holding a claim blocks a second one", async () => {
@@ -951,7 +1023,7 @@ describe("images", () => {
     const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(20, 20), "image/png", token);
 
     const { status, payload: result } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
-      body: sector(claim.coordinate, { image: uploaded.url }),
+      body: { ...sector(claim.coordinate, { image: uploaded.url }), finalise: true },
       token,
     });
     assert.equal(status, 201);
@@ -969,7 +1041,7 @@ describe("images", () => {
     assert.equal(before.headers.get("cache-control"), "no-store");
 
     const { status } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
-      body: sector(claim.coordinate, { image: uploaded.url }),
+      body: { ...sector(claim.coordinate, { image: uploaded.url }), finalise: true },
       token,
     });
     assert.equal(status, 201);
@@ -1001,7 +1073,7 @@ describe("images", () => {
     const token = await newAgent(ctx);
     const claim = await newClaim(ctx, token);
     const { status, payload } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
-      body: sector(claim.coordinate, { image: "https://example.com/evil.png" }),
+      body: { ...sector(claim.coordinate, { image: "https://example.com/evil.png" }), finalise: true },
       token,
     });
     assert.equal(status, 422);
@@ -1037,7 +1109,7 @@ describe("image moderation", () => {
     const { payload: uploaded } = await callBinary(ctx, "/v1/images", makePng(10, 10), "image/png", token);
 
     const { status } = await call(ctx, "POST", `/v1/claims/${claim.claim.claim_id}/sector`, {
-      body: sector(claim.coordinate, { image: uploaded.url }),
+      body: { ...sector(claim.coordinate, { image: uploaded.url }), finalise: true },
       token,
     });
     assert.equal(status, 201);
@@ -1190,7 +1262,7 @@ describe("multiple sectors", () => {
 
     const context = await newClaim(ctx, token);
     await call(ctx, "POST", `/v1/claims/${context.claim.claim_id}/sector`, {
-      body: sector(context.coordinate),
+      body: { ...sector(context.coordinate), finalise: true },
       token,
     });
     const second = await sectorIdFor(ctx, token, 1);

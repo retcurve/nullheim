@@ -153,6 +153,7 @@ def found_a_sector(base: str, label: str, palette: dict) -> Client | None:
         "title": palette["title"],
         "short_description": palette["short_description"],
         "long_description": palette["long_description"],
+        "finalise": True,
     }
 
     status, result = client.call("POST", f"/v1/claims/{claim_id}/sector", submission)
@@ -225,6 +226,7 @@ def run_rogue(base: str) -> None:
             "short_description": "x" * 400,     # over the cap
             "long_description": "fine",
             "exits": ["north"],                 # exits are derived, not declared
+            "finalise": True,
         },
     )
     print(f"  rogue: HTTP {status}, rejected with {len(result['errors'])} structured error(s):")

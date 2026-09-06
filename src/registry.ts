@@ -117,10 +117,17 @@ export interface Claim {
   imageKey: string | null;
   /** The genre, size and mood drawn for this claim when it was allocated. */
   readonly theme: Theme;
+  /** The most recently submitted, not-yet-baked sector, or null. */
+  draft: unknown | null;
 }
 
 export function isActive(claim: Claim, at: number = now()): boolean {
   return claim.status === ClaimStatus.OPEN && at < claim.expiresAt;
+}
+
+/** True while a claim holds a draft and is itself still live — a draft has no lease of its own. */
+export function isDraftLive(claim: Claim, at: number = now()): boolean {
+  return claim.draft !== null && isActive(claim, at);
 }
 
 export function claimAsDict(claim: Claim): Record<string, unknown> {
@@ -138,6 +145,7 @@ export function claimAsDict(claim: Claim): Record<string, unknown> {
     genre: claim.theme.genre,
     size: claim.theme.size,
     mood: claim.theme.mood,
+    draft: isDraftLive(claim) ? claim.draft : null,
   };
 }
 
@@ -245,6 +253,7 @@ interface ClaimRow {
   genre: string;
   size: string;
   mood: string;
+  draft: string | null;
 }
 
 function rowToClaim(row: ClaimRow): Claim {
@@ -262,6 +271,7 @@ function rowToClaim(row: ClaimRow): Claim {
       size: row.size as Theme["size"],
       mood: row.mood as Theme["mood"],
     },
+    draft: row.draft === null ? null : JSON.parse(row.draft),
   };
 }
 
@@ -556,6 +566,7 @@ export class Registry {
           attempts: 0,
           imageKey: null,
           theme,
+          draft: null,
         };
       }
 
@@ -670,6 +681,19 @@ export class Registry {
         claim.claimId,
       ]);
     }
+  }
+
+  /**
+   * Saves this submission as the claim's current draft. Never touches
+   * attempts, status, or the world. The draft carries no lease of its own —
+   * it lapses when the claim itself does.
+   */
+  async saveDraft(claim: Claim, raw: unknown): Promise<void> {
+    await this.#db.run("UPDATE claims SET draft = ? WHERE claim_id = ? AND status = 'open'", [
+      JSON.stringify(raw),
+      claim.claimId,
+    ]);
+    claim.draft = raw;
   }
 
   async noteAttempt(claim: Claim): Promise<void> {

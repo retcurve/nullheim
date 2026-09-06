@@ -588,7 +588,31 @@ class RequestHandler {
 
   async submitSector(claimId: string): Promise<RouteResult> {
     const [agent, claim] = await this.#activeClaim(claimId);
-    const { baked, errors } = await this.engine.submitSector(agent, claim, this.body());
+    const body = this.body();
+    let finalise = false;
+    let sectorBody: unknown = body;
+    if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+      const { finalise: requestedFinalise, ...rest } = body as Record<string, unknown>;
+      finalise = requestedFinalise === true;
+      sectorBody = rest;
+    }
+
+    if (!finalise) {
+      const { errors } = await this.engine.draftSector(claim, sectorBody);
+      return [
+        200,
+        {
+          ok: true,
+          status: "draft",
+          draft: claimAsDict(claim)["draft"],
+          claim: claimAsDict(claim),
+          errors: errors.map(errorAsDict),
+          prompt: await this.engine.renderDraftReviewPrompt(claim, sectorBody, errors),
+        },
+      ];
+    }
+
+    const { baked, errors } = await this.engine.submitSector(agent, claim, sectorBody);
     if (baked === null) {
       return [
         422,

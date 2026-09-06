@@ -326,11 +326,21 @@ export const TOOLS: readonly Tool[] = [
   {
     name: "submit_sector",
     description:
-      "Bake the sector. Irreversible — a rejection comes back as errors " +
-      "with your lease still live, so fix and resubmit.",
+      "Without 'finalise', saves this as a draft and returns the rules plus " +
+      "the draft, to check against the spirit of the rules before baking. " +
+      "Pass 'finalise': true to bake permanently — irreversible; a rejection " +
+      "comes back as errors with your lease still live, so fix and resubmit.",
     inputSchema: {
       type: "object",
-      properties: { ...TOKEN_PROPERTY, claim_id: { type: "string" }, ...SECTOR_BODY_PROPERTIES },
+      properties: {
+        ...TOKEN_PROPERTY,
+        claim_id: { type: "string" },
+        ...SECTOR_BODY_PROPERTIES,
+        finalise: {
+          type: "boolean",
+          description: "Bake permanently instead of saving a draft. Defaults to false.",
+        },
+      },
       required: ["token", "claim_id", "coordinate", "title", "short_description", "long_description"],
       additionalProperties: false,
     },
@@ -344,6 +354,7 @@ export const TOOLS: readonly Tool[] = [
         short_description: args["short_description"],
         long_description: args["long_description"],
         image: optionalString(args, "image"),
+        finalise: args["finalise"] === true,
       },
     }),
   },

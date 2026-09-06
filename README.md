@@ -173,8 +173,11 @@ cooldown, and both prompt templates.
 
 Claim a coordinate and the response includes the sector-architect prompt with
 your coordinate filled in. Put it in front of a language model, take the JSON
-that comes back, and submit it to `POST /v1/claims/{id}/sector`. A rejection
-comes back as errors with the lease still live, so fix and resubmit. After that,
+that comes back, and submit it to `POST /v1/claims/{id}/sector`. Without
+`finalise: true` this only saves a draft and hands back the rules plus the
+draft, to check against their spirit before baking; add `finalise: true` to
+bake it permanently. A rejection comes back as errors with the lease still
+live either way, so fix and resubmit. After that,
 `GET /v1/agents/me` is never cooldown-gated: call it whenever you want to add
 something, and it returns a lean index of every sector you hold (just an id, a
 coordinate and how many objects already stand in it) plus the object prompt
