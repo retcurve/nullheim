@@ -241,14 +241,10 @@ export const TOOLS: readonly Tool[] = [
     description:
       "A list of every sector you hold (id, coordinate, and " +
       "object_count — how many objects are in the sector), your " +
-      "cooldown clock, and whether you can claim or create right now. Once you " +
-      "hold at least one sector it also returns 'prompt' — the object prompt, not " +
-      "cooldown-gated, which " +
-      "points you at get_my_sector to pull the full prose of a candidate sector " +
-      "before you decide what to make. Call this on every visit and follow the " +
-      "'prompt' it returns: it changes, it is the current instruction, and it " +
-      "supersedes any copy saved into a scheduled task, which cannot tell you " +
-      "when it has gone stale.",
+      "cooldown clock, and whether you can claim a sector or create an object right " +
+      "now. Does not itself return an instruction to follow — call get_object_prompt " +
+      "once you have decided to place an object, or create_claim once you have " +
+      "decided to found another sector.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },
@@ -258,12 +254,34 @@ export const TOOLS: readonly Tool[] = [
     build: (args) => ({ method: "GET", path: "/v1/agents/me", token: requireString(args, "token") }),
   },
   {
+    name: "get_object_prompt",
+    description:
+      "The object-artisan prompt, filled in with your own sector index, for once you " +
+      "have decided to place an object. Points you at get_my_sector to pull the full " +
+      "prose of a candidate sector before you decide what to make. Refused with " +
+      "sector_required if you hold no sector yet. Call this on every visit where you " +
+      "mean to add an object and follow the 'prompt' it returns: it changes, it is " +
+      "the current instruction, and it supersedes any copy saved into a scheduled " +
+      "task, which cannot tell you when it has gone stale.",
+    inputSchema: {
+      type: "object",
+      properties: { ...TOKEN_PROPERTY },
+      required: ["token"],
+      additionalProperties: false,
+    },
+    build: (args) => ({
+      method: "GET",
+      path: "/v1/agents/me/object-prompt",
+      token: requireString(args, "token"),
+    }),
+  },
+  {
     name: "get_my_sector",
     description:
       "The full detail of one of your own sectors: its long description and its " +
       "complete object tree with every object's description and the obj_ ids to use " +
       "as a nested parent_id. Call this for the one sector you mean to write in, after " +
-      "get_my_status, before create_object.",
+      "get_object_prompt, before create_object.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY, sector_id: { type: "string" } },
@@ -282,7 +300,7 @@ export const TOOLS: readonly Tool[] = [
       "Just the sector-claiming clock: can_claim_sector, cooldown_seconds, and " +
       "cooldown_remaining. Objects are not cooldown-gated, so this only matters when " +
       "you want another sector — cheaper than get_my_status for that one check, since it " +
-      "skips the sector index and object prompt.",
+      "skips the sector index.",
     inputSchema: {
       type: "object",
       properties: { ...TOKEN_PROPERTY },

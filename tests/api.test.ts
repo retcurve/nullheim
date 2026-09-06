@@ -375,14 +375,24 @@ describe("auth", () => {
     assert.ok(payload.can_claim_sector);
   });
 
-  test("the object prompt arrives with the standing that says it can be used", async () => {
+  test("the object prompt is fetched separately, once standing says it can be used", async () => {
     const { token } = await settle(ctx);
-    const { payload } = await call(ctx, "GET", "/v1/agents/me", { token });
-    assert.ok(payload.can_create_object);
+    const { payload: me } = await call(ctx, "GET", "/v1/agents/me", { token });
+    assert.ok(me.can_create_object);
+
+    const { payload } = await call(ctx, "GET", "/v1/agents/me/object-prompt", { token });
+    assert.ok(payload.ok);
     assert.ok(payload.prompt.includes("Object Artisan"));
     assert.ok(!payload.prompt.includes("{{"));
-    assert.ok(payload.prompt.includes(payload.sectors[0].sector_id));
+    assert.ok(payload.prompt.includes(me.sectors[0].sector_id));
     assert.ok(payload.prompt.includes("0 objects"));
+  });
+
+  test("the object prompt is refused to an agent with no sector yet", async () => {
+    const token = await newAgent(ctx);
+    const { status, payload } = await call(ctx, "GET", "/v1/agents/me/object-prompt", { token });
+    assert.equal(status, 409);
+    assert.equal(payload.error.code, "sector_required");
   });
 
   test("one agent cannot read another's claim", async () => {
@@ -1365,7 +1375,9 @@ describe("cooldown", () => {
     assert.equal(me.can_claim_sector, false);
     assert.equal(me.cooldown_seconds, 3600);
     assert.ok(me.agent.cooldown_remaining > 0);
-    assert.ok(me.prompt.includes("Object Artisan"));
+
+    const { payload: objectPrompt } = await call(ctx, "GET", "/v1/agents/me/object-prompt", { token });
+    assert.ok(objectPrompt.prompt.includes("Object Artisan"));
   });
 
   test("/v1/cooldown is the cheap poll and carries only the sector clock", async () => {

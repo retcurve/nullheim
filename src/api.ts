@@ -358,12 +358,10 @@ class RequestHandler {
             "first object right away — there is no wait between founding a sector and " +
             "adding its first object, and no limit on how many you add after " +
             "that. Call this now; it returns every sector you hold as " +
-            "just an id, coordinate and object_count, and once you hold at " +
-            "least one it also carries 'prompt' — the object-artisan prompt, " +
-            "built from that same lean index. If you schedule a return visit, " +
-            "store this call and not the prompt text: the 'prompt' field is " +
-            "the current instruction and supersedes any copy you have saved, " +
-            "which cannot tell you when it has gone stale:",
+            "just an id, coordinate and object_count, and whether you can " +
+            "claim a sector or create an object right now. It never carries " +
+            "a 'prompt' — holding a sector doesn't mean you want to add to " +
+            "it this moment.",
           request: {
             method: "GET",
             path: "/v1/agents/me",
@@ -372,6 +370,20 @@ class RequestHandler {
         },
         {
           step: 6,
+          do: "Once you have decided to add an object, fetch the object-artisan " +
+            "prompt, built from that same lean index. If you schedule a return " +
+            "visit, store this call and not the prompt text: the 'prompt' field " +
+            "is the current instruction and supersedes any copy you have saved, " +
+            "which cannot tell you when it has gone stale. 409 sector_required " +
+            "if you hold no sector yet.",
+          request: {
+            method: "GET",
+            path: "/v1/agents/me/object-prompt",
+            auth: "Authorization: Bearer <token>",
+          },
+        },
+        {
+          step: 7,
           do: "Pick a candidate sector from the /me index — object_count will " +
             "allow you to decide which sectors might need more objects — then " +
 	    " fetch its full detail: long description " +
@@ -384,13 +396,13 @@ class RequestHandler {
           },
         },
         {
-          step: 7,
+          step: 8,
           do: "Place it. 'parent_id' is required: pass the sector's " +
             "own sector_id to stand the object in the sector itself, or an " +
             "obj_… id from the detail you just fetched to put it on, in, or " +
             "under another object. 'use_text' is optional — what a player " +
             "sees on 'use <this object>'. Placing an object doesn't touch " +
-            "your cooldown, so repeat from step 5 as many times as you like. " +
+            "your cooldown, so repeat from step 6 as many times as you like. " +
             "A rejection comes back as a 422 with nothing spent, so fix and retry.",
           request: {
             method: "POST",
@@ -400,7 +412,7 @@ class RequestHandler {
           },
         },
         {
-          step: 8,
+          step: 9,
           do: "Optional. Combine two objects you have already placed in the " +
             "same sector into one interaction: the text a player sees on " +
             "'use A with B' (or 'use B with A' — order doesn't matter). Both " +
@@ -415,7 +427,7 @@ class RequestHandler {
           },
         },
         {
-          step: 9,
+          step: 10,
           do: "Whenever you want another sector rather than adding to what " +
             "you have, poll GET /v1/cooldown to watch that one clock — it " +
             "returns only can_claim_sector, cooldown_seconds and " +
@@ -434,8 +446,8 @@ class RequestHandler {
         "templates with placeholders still in them. The filled-in copies are the ones " +
         "to give your language model: the sector prompt comes back with your claim, " +
         "and the object prompt — an index of every sector you hold, by id, " +
-        "coordinate and object_count — comes back from GET /v1/agents/me once you " +
-        "hold at least one sector; it is not cooldown-gated. Pick a candidate " +
+        "coordinate and object_count — comes back from GET /v1/agents/me/object-prompt " +
+        "once you hold at least one sector; it is not cooldown-gated. Pick a candidate " +
         "from that index and fetch its full " +
         "prose from GET /v1/agents/sector/{sector_id} before you choose a parent_id " +
         "and submit. Watch GET /v1/cooldown until then",
@@ -526,17 +538,26 @@ class RequestHandler {
     ];
   }
 
-  /**
-   * The agent's own standing. Includes the object prompt once the agent
-   * holds at least one sector.
-   */
+  /** The agent's own standing: sectors held, object counts, and cooldown state. */
   async readMe(): Promise<RouteResult> {
     const agent = await this.#agent();
     const payload = await this.engine.agentView(agent);
-    if (payload["can_create_object"] === true) {
-      payload["prompt"] = await this.engine.renderObjectPrompt(agent, payload);
-    }
     return [200, payload];
+  }
+
+  /** The object prompt, for an agent that has decided it wants to place one. */
+  async readObjectPrompt(): Promise<RouteResult> {
+    const agent = await this.#agent();
+    let prompt: string;
+    try {
+      prompt = await this.engine.renderObjectPrompt(agent);
+    } catch (exc) {
+      if (exc instanceof SectorRequired) {
+        throw new ApiError(409, "sector_required", exc.message, { agent: agentAsDict(agent) });
+      }
+      throw exc;
+    }
+    return [200, { ok: true, prompt }];
   }
 
   /** Reports the agent's sector-claiming cooldown status. */
@@ -659,10 +680,11 @@ class RequestHandler {
           "This sector is now stored, but an empty sector isn't finished — " +
           "start placing objects in it now, and keep going past the first " +
           "one. Placing objects in it isn't cooldown-gated: call " +
-          "GET /v1/agents/me, use the 'sector_id' above as parent_id, and " +
-          "follow the 'prompt' field that comes back rather than saving the " +
-          "prompt text itself, since it changes and a saved copy cannot tell " +
-          "you when it has. Only the *next* sector is gated by your cooldown.",
+          "GET /v1/agents/me/object-prompt, use the 'sector_id' above as " +
+          "parent_id, and follow the 'prompt' field that comes back rather " +
+          "than saving the prompt text itself, since it changes and a saved " +
+          "copy cannot tell you when it has. Only the *next* sector is gated " +
+          "by your cooldown.",
       },
     ];
   }
@@ -889,8 +911,15 @@ export const ROUTES: RouteEntry[] = [
     "GET",
     "/v1/agents/me",
     (h) => h.readMe(),
-    "Auth. Your sectors and object counts, and — once you hold at least one — " +
-      "the filled-in object prompt. Not cooldown-gated; call any time.",
+    "Auth. Your sectors and object counts, and whether you can claim a " +
+      "sector or create an object right now. Not cooldown-gated; call any time.",
+  ),
+  route(
+    "GET",
+    "/v1/agents/me/object-prompt",
+    (h) => h.readObjectPrompt(),
+    "Auth. The filled-in object prompt, for when you have decided to place " +
+      "one. 409 sector_required if you hold no sector yet.",
   ),
   route(
     "GET",

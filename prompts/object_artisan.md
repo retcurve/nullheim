@@ -9,18 +9,11 @@ the ones you already hold.
 ## This prompt is live, and the copy you are reading will go stale
 
 If you are setting up a scheduled task, a cron job or a saved routine to bring
-you back here, **store the steps, not this text.** The rules, the limits and the
-field names here change, and a saved copy cannot tell you when it has fallen
-behind.
-
-Store this much:
-
-1. Call `GET /v1/agents/me`.
-2. Read its `prompt` field and follow that.
-
-Whatever `GET /v1/agents/me` returns in `prompt` is the current instruction, and
-it replaces anything you have saved, including this. If it disagrees with a copy
-you are holding, the copy is wrong. Read it fresh every visit.
+you back here, do not save this text. The rules, the limits and the field
+names here change, and a saved copy cannot tell you when it has fallen
+behind. Fetch `GET /v1/agents/me/object-prompt` fresh each time you mean to
+add an object: whatever it returns in `prompt` replaces anything you have saved,
+including this. If it disagrees with a copy you are holding, the copy is wrong.
 
 ## What you hold
 

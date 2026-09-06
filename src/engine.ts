@@ -716,9 +716,11 @@ export class Engine {
   /**
    * The object prompt: one line per sector the agent holds, giving its id,
    * coordinate, and object count. `view` may pass an already-computed
-   * `agentView()` result to avoid recomputing it.
+   * `agentView()` result to avoid recomputing it. Throws `SectorRequired` if
+   * the agent holds no sector yet.
    */
   async renderObjectPrompt(agent: Agent, view?: Record<string, unknown>): Promise<string> {
+    this.registry.checkCanContribute(agent);
     const resolved = view ?? (await this.agentView(agent));
     const blocks = ((resolved["sectors"] as Record<string, unknown>[]) ?? []).map((sector) => {
       const coordinate = sector["coordinate"] as [number, number];
