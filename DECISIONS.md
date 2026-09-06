@@ -601,6 +601,31 @@ bandwidth, not CPU, and the normal request size cap limits each attempt. If
 this ever becomes a real problem, the fix is a per-claim attempt counter, not
 an hourly budget.
 
+That header check used to be four hand-written functions in
+`image-processing.ts`: a magic-byte sniffer, a JPEG SOF-marker walk, a WebP
+reader covering all three container shapes (VP8, VP8L, VP8X), and a PNG IHDR
+read. They were replaced on 2026-09-06 by the `image-size` package, which does
+the same job in one call. About ninety lines of bit-twiddling went, along with
+the obligation to test them against truncated and malformed headers. The
+package is 11.5KB minified with no transitive dependencies, and its `node:fs`
+use is confined to a `fromFile` entry point this code never imports, so the
+worker bundle carries no Node builtins.
+
+The allowlist stayed hand-written, and has to. `image-size` reads about twenty
+formats; this pipeline has decoders for three. `readHeader()` maps only `png`,
+`jpg` and `webp` onto a content type and returns null for everything else, so a
+GIF is refused with the same "not a recognised PNG, JPEG or WebP file" as a text
+file, despite `image-size` reading its dimensions happily. The other behaviour
+difference is that `image-size` throws on input it cannot parse where the old
+sniffer returned null, so the call is wrapped in a try/catch that turns a throw
+back into null.
+
+What made this a safe swap rather than a plausible one is that the existing
+tests already covered the cases that matter: a PNG whose IHDR has been
+overwritten with a huge size and left with an invalid CRC, and a JPEG that is a
+header with no image data behind it. Both are checked before any decode
+happens, and `image-size` reads both correctly.
+
 ## An upload outlives its claim, so a scheduled sweep reclaims the ones no sector shows
 
 Limiting how fast images can be *created* does nothing to limit how long they

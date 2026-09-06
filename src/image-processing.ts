@@ -19,6 +19,7 @@ import { init as initJpegEncode } from "@jsquash/jpeg/encode.js";
 import decodeWebp from "@jsquash/webp/decode.js";
 import { init as initWebpDecode } from "@jsquash/webp/decode.js";
 import resizeImage, { initResize } from "@jsquash/resize";
+import { imageSize } from "image-size";
 import webpEncoderFactory from "@jsquash/webp/codec/enc/webp_enc.js";
 import { defaultOptions as webpDefaultOptions } from "@jsquash/webp/meta.js";
 import { initEmscriptenModule } from "@jsquash/webp/utils.js";
@@ -59,105 +60,36 @@ export interface ProcessedImage {
 /** Thrown when the upload is too large, or is not a JPEG, PNG or WebP file. */
 export class UnsupportedImage extends Error {}
 
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46]; // "RIFF"
-const WEBP_SIGNATURE = [0x57, 0x45, 0x42, 0x50]; // "WEBP", at offset 8 of a RIFF file
+/** The three formats a decoder exists for, keyed by what `imageSize` calls them. */
+const ACCEPTED: Record<string, "image/png" | "image/jpeg" | "image/webp"> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+};
 
-/** Detects the image format from its magic bytes. */
-function sniff(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | null {
-  if (PNG_SIGNATURE.every((b, i) => bytes[i] === b)) {
-    return "image/png";
-  }
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    RIFF_SIGNATURE.every((b, i) => bytes[i] === b) &&
-    WEBP_SIGNATURE.every((b, i) => bytes[i + 8] === b)
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
-interface Size {
+interface Header {
+  readonly format: "image/png" | "image/jpeg" | "image/webp";
   readonly width: number;
   readonly height: number;
 }
 
-/** Reads the frame size from a JPEG's first SOF segment, without decoding the image. */
-function jpegSize(bytes: Uint8Array, view: DataView): Size | null {
-  let offset = 2; // past SOI
-  while (offset + 4 <= bytes.length) {
-    if (bytes[offset] !== 0xff) {
-      return null;
-    }
-    const marker = bytes[offset + 1]!;
-    if (marker === 0xff) {
-      offset += 1; // fill byte before the real marker
-      continue;
-    }
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
-      offset += 2; // standalone: no length, no payload
-      continue;
-    }
-    const length = view.getUint16(offset + 2);
-    if (length < 2) {
-      return null;
-    }
-    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-      if (offset + 9 > bytes.length) {
-        return null;
-      }
-      return { height: view.getUint16(offset + 5), width: view.getUint16(offset + 7) };
-    }
-    offset += 2 + length;
+/**
+ * Reads the format and declared size from the file's header, without
+ * decoding it. Returns null for anything `imageSize` cannot read, and for
+ * the formats it reads that this pipeline has no decoder for.
+ */
+function readHeader(bytes: Uint8Array): Header | null {
+  let measured;
+  try {
+    measured = imageSize(bytes);
+  } catch {
+    return null;
   }
-  return null;
-}
-
-/** Reads the canvas size from a WebP file, handling its three container shapes (VP8, VP8L, VP8X). */
-function webpSize(bytes: Uint8Array, view: DataView): Size | null {
-  const fourcc = String.fromCharCode(...bytes.slice(12, 16));
-  if (fourcc === "VP8X" && bytes.length >= 30) {
-    return {
-      width: (bytes[24]! | (bytes[25]! << 8) | (bytes[26]! << 16)) + 1,
-      height: (bytes[27]! | (bytes[28]! << 8) | (bytes[29]! << 16)) + 1,
-    };
+  const format = measured.type === undefined ? undefined : ACCEPTED[measured.type];
+  if (format === undefined) {
+    return null;
   }
-  if (
-    fourcc === "VP8 " &&
-    bytes.length >= 30 &&
-    // The keyframe start code, immediately before the width and height fields.
-    bytes[23] === 0x9d &&
-    bytes[24] === 0x01 &&
-    bytes[25] === 0x2a
-  ) {
-    return {
-      width: view.getUint16(26, true) & 0x3fff,
-      height: view.getUint16(28, true) & 0x3fff,
-    };
-  }
-  if (fourcc === "VP8L" && bytes.length >= 25 && bytes[20] === 0x2f) {
-    const packed = view.getUint32(21, true);
-    return { width: (packed & 0x3fff) + 1, height: ((packed >>> 14) & 0x3fff) + 1 };
-  }
-  return null;
-}
-
-/** Reads the declared width and height from the file's header without decoding it. Returns null if the header can't be read. */
-function declaredSize(bytes: Uint8Array, format: NonNullable<ReturnType<typeof sniff>>): Size | null {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (format === "image/png") {
-    if (bytes.length < 24 || String.fromCharCode(...bytes.slice(12, 16)) !== "IHDR") {
-      return null;
-    }
-    return { width: view.getUint32(16), height: view.getUint32(20) };
-  }
-  if (format === "image/jpeg") {
-    return jpegSize(bytes, view);
-  }
-  return webpSize(bytes, view);
+  return { format, width: measured.width, height: measured.height };
 }
 
 type WebpModule = Awaited<ReturnType<typeof initEmscriptenModule>>;
@@ -194,18 +126,14 @@ export async function processUpload(
   }
   await ensureReady(codecs);
 
-  const format = sniff(bytes);
-  if (format === null) {
+  const header = readHeader(bytes);
+  if (header === null) {
     throw new UnsupportedImage("not a recognised PNG, JPEG or WebP file");
   }
-
-  const size = declaredSize(bytes, format);
-  if (size === null) {
-    throw new UnsupportedImage(`the ${format} header is unreadable, so its size is unknown`);
-  }
-  if (size.width * size.height > MAX_DECODED_PIXELS) {
+  const { format } = header;
+  if (header.width * header.height > MAX_DECODED_PIXELS) {
     throw new UnsupportedImage(
-      `${size.width}x${size.height} decodes to more than ${MAX_DECODED_PIXELS} pixels`,
+      `${header.width}x${header.height} decodes to more than ${MAX_DECODED_PIXELS} pixels`,
     );
   }
 
