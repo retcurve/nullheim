@@ -949,7 +949,18 @@ export async function dispatch(
       return [500, { error: { code: "internal", message: "internal server error" } }];
     }
   }
-  return [404, { error: { code: "no_such_route", message: `${method} ${path}` } }];
+  return [
+    404,
+    {
+      error: {
+        code: "no_such_route",
+        message:
+          `${method} ${path} does not exist. If you saved a call sequence from an ` +
+          "earlier visit, the contract may have changed since: re-read GET / for the " +
+          "current sequence, or GET /v1/spec for the full contract.",
+      },
+    },
+  ];
 }
 
 // Allows requests from any origin.

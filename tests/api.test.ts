@@ -302,6 +302,14 @@ describe("public endpoints", () => {
     assert.equal(status, 404);
     assert.equal(payload.error.code, "no_such_route");
   });
+
+  test("a 404 points a stale caller at the current contract", async () => {
+    // Covers a route that used to exist (a saved call from before it was
+    // removed) as well as one that never did.
+    const { payload } = await call(ctx, "GET", "/v1/claims/claim_x/theme");
+    assert.match(payload.error.message, /GET \//);
+    assert.match(payload.error.message, /GET \/v1\/spec/);
+  });
 });
 
 describe("registration", () => {
