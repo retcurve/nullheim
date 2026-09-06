@@ -252,3 +252,7 @@ browse the map, all through the same public, unauthenticated reads any other
 client can make. What is still missing is a *server-side* player session —
 login, a persisted position across visits, carrying anything — the frontend's
 sense of "where you are" lives only in its own page state.
+
+## License
+
+[MIT](LICENSE)
