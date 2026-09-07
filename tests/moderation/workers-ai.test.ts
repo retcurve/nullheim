@@ -26,6 +26,11 @@ describe("the classifier's verdict", () => {
     assert.equal((await replying(bracketed).check(new Uint8Array(), "image/webp")).verdict, "clean");
   });
 
+  test("the bare numbered form is read the same way", async () => {
+    const bare = Array.from({ length: 5 }, (_, i) => `${i + 1}. No`).join("\n");
+    assert.equal((await replying(bare).check(new Uint8Array(), "image/webp")).verdict, "clean");
+  });
+
   test("any single Yes is unsure, whichever question it answers", async () => {
     for (let n = 1; n <= 5; n++) {
       const lines = ALL_NO.split("\n");

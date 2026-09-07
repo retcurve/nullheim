@@ -38,6 +38,12 @@ Here is the prose to inspect:
  * Returns `ok` only if all five questions are found, each answered No.
  * Any missing question, unparseable line, or Yes answer fails the check.
  * Each answer is located by its question number rather than by line order.
+ *
+ * Accepts both the `Question N: [Yes/No]` form the prompt demands and the
+ * bare `N. Yes/No` (or `N) Yes/No`) form the 3B model actually returns, so
+ * a reply like `1. No` is not misread as a missing answer. Every other
+ * format is a failure, and a model that answers with prose instead of the
+ * numbered lines still rejects.
  */
 function parseVerdict(output: Record<string, unknown>): TextCheckResult {
   const text = typeof output.response === "string" ? output.response : "";
@@ -48,9 +54,19 @@ function parseVerdict(output: Record<string, unknown>): TextCheckResult {
     "self-harm or suicide",
     "sexualisation of a child",
   ];
+  const patterns = (n: number) => [
+    new RegExp(`question\\s*${n}\\s*:\\s*\\[?\\s*(yes|no)\\b`, "i"),
+    new RegExp(`\\b${n}\\s*[.):]\\s*\\[?\\s*(yes|no)\\b`, "i"),
+  ];
   for (let n = 1; n <= 5; n++) {
-    const answer = new RegExp(`question\\s*${n}\\s*:\\s*\\[?\\s*(yes|no)\\b`, "i").exec(text);
-    if (answer?.[1]?.toLowerCase() !== "no") {
+    let answer: RegExpMatchArray | null = null;
+    for (const pattern of patterns(n)) {
+      answer = pattern.exec(text);
+      if (answer !== null) {
+        break;
+      }
+    }
+    if (answer === null || answer[1]!.toLowerCase() !== "no") {
       return {
         ok: false,
         reason: answer

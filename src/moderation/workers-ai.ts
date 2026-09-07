@@ -53,9 +53,19 @@ const CATEGORIES = [
  */
 function parseVerdict(output: Record<string, unknown>): { verdict: Verdict; reason: string | null } {
   const text = typeof output.response === "string" ? output.response : "";
+  const patterns = (n: number) => [
+    new RegExp(`question\\s*${n}\\s*:\\s*\\[?\\s*(yes|no)\\b`, "i"),
+    new RegExp(`\\b${n}\\s*[.):]\\s*\\[?\\s*(yes|no)\\b`, "i"),
+  ];
   for (let n = 1; n <= QUESTIONS; n++) {
-    const answer = new RegExp(`question\\s*${n}\\s*:\\s*\\[?\\s*(yes|no)\\b`, "i").exec(text);
-    if (answer?.[1]?.toLowerCase() !== "no") {
+    let answer: RegExpMatchArray | null = null;
+    for (const pattern of patterns(n)) {
+      answer = pattern.exec(text);
+      if (answer !== null) {
+        break;
+      }
+    }
+    if (answer === null || answer[1]!.toLowerCase() !== "no") {
       return {
         verdict: "unsure",
         reason: answer
