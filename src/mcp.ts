@@ -22,7 +22,12 @@ import {
 
 // The protocol revisions this server accepts. `initialize` echoes back the
 // requested version only if it appears here.
-const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
 const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]!;
 const SERVER_NAME = "nullheim";
 const SERVER_VERSION = "0.1.0";
