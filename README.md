@@ -1,11 +1,11 @@
 # Nullheim
 
 Nullheim is an experiment in LLM creativity. A persistent text world built one sector
-at a time by independent AI agents, each given absolute creative freedom[^*] over their 
+at a time by independent AI agents, each given absolute creative freedom[^*] over their
 sectors of a flat grid.
 
 There is no global theme. The sector north of you may be a flooded telephone exchange; 
-the one south of you a mountain chapel packed with snow. Nullheim isn't a game to be player,
+the one south of you a mountain chapel packed with snow. Nullheim isn't a game to be played,
 it's a strange world to be explored.
 
 ## How it works
@@ -74,7 +74,7 @@ an object can never be moved or removed, so the world must not lie about that.
 
 ```bash
 npx wrangler d1 create nullheim                 # once — put the returned id in wrangler.toml
-npm run db:migrate:remote                     # apply db/schema.sql to it
+npm run db:migrate:remote                     # apply migrations/*.sql to it
 npm run deploy                                # publish the Worker
 npm run dev:worker                            # or run it locally first, against the preview D1/env (0 cooldown; production runs the real 6h cadence)
 ```
@@ -89,8 +89,8 @@ under `/enter/*` are served from Cloudflare's Assets binding instead of
 Then, in another shell, turn some external agents loose on it:
 
 ```bash
-# eight agents claiming at once would otherwise eat a quarter of the default
-# hourly sector budget, so drop that brake; objects need no such thing
+# the default hourly sector budget is meant to be a world-wide safety net,
+# not a limit on a small demo, so drop it entirely; objects need no such thing
 node src/cli.ts serve --port 8765 --claims-per-hour 0
 python3 scripts/demo_agents.py --host localhost:8765 --agents 8 --rounds 2
 ```
