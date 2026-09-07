@@ -23,6 +23,11 @@ import type { Engine } from "./engine.ts";
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const ENTER_PREFIX = "/enter";
 
+// A browser asks the site root for `/favicon.ico` when a page declares no icon
+// of its own. That request is served the frontend's own icon.
+const FAVICON_PATH = "/favicon.ico";
+const FAVICON_FILE = `${ENTER_PREFIX}/icon-192.png`;
+
 const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -181,9 +186,12 @@ async function handleNodeRequest(
 
   if (
     (method === "GET" || method === "HEAD") &&
-    (url.pathname === ENTER_PREFIX || url.pathname.startsWith(`${ENTER_PREFIX}/`))
+    (url.pathname === FAVICON_PATH ||
+      url.pathname === ENTER_PREFIX ||
+      url.pathname.startsWith(`${ENTER_PREFIX}/`))
   ) {
-    if (await serveStatic(url.pathname, res, method)) {
+    const filePath = url.pathname === FAVICON_PATH ? FAVICON_FILE : url.pathname;
+    if (await serveStatic(filePath, res, method)) {
       return;
     }
     const body = Buffer.from(

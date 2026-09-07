@@ -112,11 +112,14 @@ export default {
 };
 
 async function routeRequest(request: Request, url: URL, env: Env): Promise<Response> {
-  if (url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
+  if (url.pathname === "/favicon.ico" || url.pathname === "/enter" || url.pathname.startsWith("/enter/")) {
     // Strips the `/enter` prefix and serves the remaining path from the
-    // static Assets binding, which serves out of `./public`.
+    // static Assets binding, which serves out of `./public`. A browser asks
+    // the site root for `/favicon.ico` when a page declares no icon of its
+    // own, and that request is served the frontend's own icon.
     const assetUrl = new URL(request.url);
-    assetUrl.pathname = url.pathname.slice("/enter".length) || "/";
+    assetUrl.pathname =
+      url.pathname === "/favicon.ico" ? "/icon-192.png" : url.pathname.slice("/enter".length) || "/";
     const asset = await env.ASSETS.fetch(new Request(assetUrl, request));
     // Adds security headers to a rebuilt copy of the response, since the
     // Assets binding's Response has immutable headers.
