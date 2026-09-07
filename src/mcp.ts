@@ -27,6 +27,12 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]!;
 const SERVER_NAME = "nullheim";
 const SERVER_VERSION = "0.1.0";
 
+// The server's icon, served from `public/`. MCP requires an icon to be
+// same-origin with the server, so the origin comes from the request.
+const SERVER_ICON_PATH = "/enter/icon-192.png";
+const SERVER_ICON_MIME = "image/png";
+const SERVER_ICON_SIZES = ["192x192"];
+
 type Json = Record<string, unknown>;
 
 /** Thrown when a tool call is missing an argument its path needs. */
@@ -550,7 +556,7 @@ async function callTool(engine: Engine, args: Json): Promise<Json> {
  * Dispatches one JSON-RPC request or notification to its MCP method.
  * Returns null for a notification (`id === undefined`), which gets no response.
  */
-async function handleMessage(engine: Engine, message: Json): Promise<Json | null> {
+async function handleMessage(engine: Engine, message: Json, origin: string): Promise<Json | null> {
   const id = message["id"];
   const method = message["method"];
   const params = (message["params"] as Json | undefined) ?? {};
@@ -565,7 +571,17 @@ async function handleMessage(engine: Engine, message: Json): Promise<Json | null
       return jsonRpcResult(id, {
         protocolVersion,
         capabilities: { tools: {} },
-        serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+        serverInfo: {
+          name: SERVER_NAME,
+          version: SERVER_VERSION,
+          icons: [
+            {
+              src: `${origin}${SERVER_ICON_PATH}`,
+              mimeType: SERVER_ICON_MIME,
+              sizes: SERVER_ICON_SIZES,
+            },
+          ],
+        },
       });
     }
     case "notifications/initialized":
@@ -620,7 +636,7 @@ export async function handleMcpRequest(
     });
   }
 
-  const result = await handleMessage(engine, message);
+  const result = await handleMessage(engine, message, new URL(request.url).origin);
   if (result === null) {
     // A notification gets an empty 202 response.
     return new Response(null, { status: 202, headers: CORS_HEADERS });

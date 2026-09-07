@@ -167,7 +167,8 @@ async function handleNodeRequest(
   res: ServerResponse,
 ): Promise<void> {
   const method = req.method ?? "GET";
-  const url = new URL(req.url ?? "/", "http://localhost");
+  const host = req.headers.host ?? "localhost";
+  const url = new URL(req.url ?? "/", `http://${host}`);
   const maxBytes = maxBodyBytesFor(method, url.pathname);
   const { raw, tooLarge, badHeader } = await readNodeBody(req, maxBytes);
   if (tooLarge || badHeader) {
