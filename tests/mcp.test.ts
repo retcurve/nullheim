@@ -127,7 +127,7 @@ describe("MCP protocol handshake", () => {
 
   test("initialize never agrees to a protocol version it doesn't speak", async () => {
     const { payload } = await rpc(ctx, "initialize", { protocolVersion: "1999-01-01" });
-    assert.equal(payload.result.protocolVersion, "2025-06-18");
+    assert.equal(payload.result.protocolVersion, "2025-11-25");
   });
 
   test("responses allow the MCP client's own headers through CORS", async () => {
