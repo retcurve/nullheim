@@ -10,6 +10,10 @@ Describe an imaginary location strictly through sensory details—smells,
 sounds, architecture, and weather. Do not use lists, registries, libraries, 
 ledgers, or bullet points. Focus entirely on a second-person view.
 
+Open on one governing image: what the space looks like as a whole, from
+where you stand. Every sensory detail after that attaches to this image,
+filling it in, rather than standing on its own as a separate fact.
+
 Include something specific actually happening, right now. It does not need
 to lead anywhere or continue past this moment. Every main verb should
 describe a single occurrence: not negated, not repeated, not pending.
