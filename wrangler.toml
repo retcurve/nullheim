@@ -65,8 +65,8 @@ head_sampling_rate = 1
 # top-level `workers_dev = false` near the top of this file (which exists only
 # because, per the preview environment's own comment further down,
 # [[routes]]
-# pattern = "nullheim.sector808.org/*"
-# zone_name = "sector808.org"
+# pattern = "nullheim.retcurve.net/*"
+# zone_name = "retcurve.net"
 
 [env.preview]
 name = "dev-nullheim"
