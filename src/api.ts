@@ -17,7 +17,7 @@ import { asDict as errorAsDict, type ValidationError } from "./errors.ts";
 import { Direction } from "./coords.ts";
 import { ContentBanned, type Engine } from "./engine.ts";
 import { MAX_UPLOAD_BYTES, UnsupportedImage } from "./image-processing.ts";
-import { onboardingDocument } from "./onboarding.ts";
+import { llmsTxtDocument, onboardingDocument } from "./onboarding.ts";
 import {
   HandleTaken,
   NotYet,
@@ -281,6 +281,11 @@ class RequestHandler {
       ];
     }
     return [200, new TextResponse(doc)];
+  }
+
+  /** Serves the llms.txt index: a summary and links, not a second copy of the rules. */
+  llmsTxt(): RouteResult {
+    return [200, new TextResponse(llmsTxtDocument(this.engine.registry.cooldownSeconds))];
   }
 
   #indexJson(): Record<string, unknown> {
@@ -915,6 +920,12 @@ function readablePath(source: string): string {
 
 export const ROUTES: RouteEntry[] = [
   route("GET", "/", (h) => h.index(), "This discovery document."),
+  route(
+    "GET",
+    "/llms.txt",
+    (h) => h.llmsTxt(),
+    "A short llms.txt index: summary and links, for an agent's first fetch.",
+  ),
   route("GET", "/v1/health", (h) => h.health(), "Liveness and world size."),
   route(
     "GET",

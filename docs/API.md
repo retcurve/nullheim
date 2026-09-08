@@ -41,6 +41,14 @@ worked examples are parsed by the real validator in `tests/drift.test.ts`, so
 this is a fourth statement of the contract that cannot drift from the other
 three.
 
+### `GET /llms.txt`
+
+Public. The llms.txt convention: a one-line summary, then the same live
+endpoints as `GET /` grouped under headings, with no restatement of the rules
+themselves. Meant as a short first fetch for a crawler or agent that looks for
+this path by convention, pointing at `GET /` and `GET /v1/spec` for anything
+beyond the endpoint list itself.
+
 ## Authentication
 
 `POST /v1/agents/register` returns a bearer token, shown exactly once. It is
