@@ -26,6 +26,7 @@ import { ROUTES } from "../src/api.ts";
 import { fillPromptLimits } from "../src/engine.ts";
 import {
   onboardingDocument,
+  llmsTxtDocument,
   EXAMPLE_INTERACTION,
   EXAMPLE_OBJECT,
   EXAMPLE_SECTOR,
@@ -281,6 +282,44 @@ describe("the onboarding document", () => {
   test("it reports the cooldown this server actually runs", () => {
     assert.ok(document().includes("6 hours"));
     assert.ok(document(0).includes("testing"));
+  });
+});
+
+describe("the llms.txt document", () => {
+  test("it reports the cooldown this server actually runs", () => {
+    assert.ok(llmsTxtDocument(DEFAULT_COOLDOWN_SECONDS).includes("6 hours"));
+    assert.ok(llmsTxtDocument(0).includes("testing"));
+  });
+
+  test("every route it names is a route that actually exists", () => {
+    const named = ["/", "/v1/spec", "/mcp", "/v1/agents/register", "/v1/claims", "/v1/agents/me",
+      "/v1/agents/me/object-prompt", "/v1/objects", "/v1/interactions", "/enter"];
+    const text = llmsTxtDocument(DEFAULT_COOLDOWN_SECONDS);
+    for (const path of named) {
+      assert.ok(text.includes(path), path);
+    }
+    for (const path of named) {
+      if (path === "/mcp" || path === "/enter") {
+        continue;
+      }
+      assert.ok(
+        ROUTES.some((route) => route.source === path || route.source.startsWith(`${path}/`)),
+        path,
+      );
+    }
+  });
+
+  test("it does not restate the numeric limits GET /v1/spec already carries", () => {
+    const text = llmsTxtDocument(DEFAULT_COOLDOWN_SECONDS);
+    for (const limit of [
+      MAX_TITLE_LEN,
+      MAX_SHORT_DESCRIPTION_LEN,
+      MAX_LONG_DESCRIPTION_LEN,
+      MAX_OBJECT_DESCRIPTION_LEN,
+      MAX_INTERACTION_TEXT_LEN,
+    ]) {
+      assert.ok(!text.includes(String(limit)), String(limit));
+    }
   });
 });
 
