@@ -184,6 +184,7 @@
     inputDisabledForMore = false;
     hiddenInput.disabled = false;
     promptline.classList.remove("more-gated");
+    refocus();
   }
 
   function engageMoreGate() {
@@ -1556,7 +1557,6 @@ C15: (C9) @SUM(C5..C13)  "trust the process"                       READY
     ev.preventDefault();
     releaseMoreGate();
     scrollOutputTo(maxScroll());
-    refocus();
   });
 
   // A tap on the terminal is the one case that means "I want to type" —
